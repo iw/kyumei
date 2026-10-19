@@ -36,3 +36,19 @@ provenance = [
   { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/tally_metrics_handler.go", line = 230, excerpt = "tmh.cachedTaggedScope(t).Counter(counter).Inc(i)" },
   { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/otel_metrics_handler.go", line = 96, excerpt = "c.Add(context.Background(), i, option)" },
 ]
+
+[[statement]]
+id = "behaviour.frontend-connection-age"
+category = "behaviour"
+title = "The Frontend closes each client connection after five minutes"
+statement = "The Frontend's gRPC server closes a client connection once it is frontend.keepAliveMaxConnectionAge old, 5 minutes by default, by sending GOAWAY, and closes it outright frontend.keepAliveMaxConnectionAgeGrace later, 70 seconds by default. A Worker that runs for longer reconnects at least that often."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 957, excerpt = "\"frontend.keepAliveMaxConnectionAge\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 958, excerpt = "5*time.Minute," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 965, excerpt = "\"frontend.keepAliveMaxConnectionAgeGrace\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 966, excerpt = "70*time.Second," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/fx.go", line = 267, excerpt = "MaxConnectionAge:      serviceConfig.KeepAliveMaxConnectionAge()," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/fx.go", line = 268, excerpt = "MaxConnectionAgeGrace: serviceConfig.KeepAliveMaxConnectionAgeGrace()," },
+]

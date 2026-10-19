@@ -266,7 +266,7 @@ given as its `contrib/…` directory.
 
 The same check runs as a test when `KYUMEI_VERIFY_SOURCES` lists
 `id=path` pairs separated by `;`. Against the sources at hand, every one of the
-43,451 citations it checks is confirmed at its exact line, the 98 references at
+43,519 citations it checks is confirmed at its exact line, the 98 references at
 `5a71c36` among them. Kyumei's heuristics cite nothing to check, and the
 citations of a source not at hand, such as a Micrometer release, are listed as
 skipped.

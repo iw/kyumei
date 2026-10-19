@@ -45,6 +45,15 @@ authored = 2026-09-30
 provenance = [{ source = "kyumei-heuristics" }]
 
 [[heuristic]]
+id = "heuristic.isolated-poll-failures"
+title = "Isolated poll failures"
+statement = "Polls that failed at most 0.01 times a second on average across the window are treated as not failing, however high a single minute peaked."
+rationale = "The Frontend closes each Worker's connection every few minutes, and a poll in flight on a closing connection can fail once before the SDK retries it. One such failure makes a one-minute rate of about 0.02 a second, while the mean across a window of many minutes stays near zero. Polls that a rate limit or a failing Frontend rejects fail again and again, and the mean shows them."
+authored = 2026-10-19
+relies_on = ["behaviour.frontend-connection-age", "sdk.long-poll-failures-counted-on-failure"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
 id = "heuristic.backlog-carries-latency"
 title = "Backlog accounts for the latency"
 statement = "When Matching's backlog age is at least half of schedule-to-start, the latency is treated as accruing in Matching; at least 80% leaves too little for a delay before Matching to matter; below 30% points before Matching."
