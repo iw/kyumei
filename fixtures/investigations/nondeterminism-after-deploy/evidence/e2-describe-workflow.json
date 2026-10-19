@@ -1,0 +1,40 @@
+{
+ "executionConfig": {
+  "taskQueue": {
+   "name": "order-fulfilment",
+   "kind": "TASK_QUEUE_KIND_NORMAL"
+  },
+  "workflowExecutionTimeout": "0s",
+  "workflowRunTimeout": "0s",
+  "defaultWorkflowTaskTimeout": "10s"
+ },
+ "workflowExecutionInfo": {
+  "execution": {
+   "workflowId": "order-7f3c2a91",
+   "runId": "0199b8a4-52d1-7c3e-9a1f-4be2c07d5e18"
+  },
+  "type": {
+   "name": "OrderWorkflow"
+  },
+  "startTime": "2026-10-06T13:41:12.118Z",
+  "status": "WORKFLOW_EXECUTION_STATUS_RUNNING",
+  "historyLength": "23",
+  "executionTime": "2026-10-06T13:41:12.118Z",
+  "memo": {},
+  "taskQueue": "order-fulfilment",
+  "stateTransitionCount": "17",
+  "historySizeBytes": "6412",
+  "rootExecution": {
+   "workflowId": "order-7f3c2a91",
+   "runId": "0199b8a4-52d1-7c3e-9a1f-4be2c07d5e18"
+  },
+  "firstRunId": "0199b8a4-52d1-7c3e-9a1f-4be2c07d5e18"
+ },
+ "pendingWorkflowTask": {
+  "state": "PENDING_WORKFLOW_TASK_STATE_STARTED",
+  "scheduledTime": "2026-10-06T14:36:24.402Z",
+  "originalScheduledTime": "2026-10-06T14:36:24.402Z",
+  "startedTime": "2026-10-06T14:36:24.418Z",
+  "attempt": 13
+ }
+}

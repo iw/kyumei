@@ -1,0 +1,8 @@
+/target/
+# Investigation data from `kyumei serve --data-dir .kyumei`.
+/.kyumei/
+*.tmp
+.DS_Store
+# Claude Code's worktrees and local settings.
+/.claude/worktrees/
+/.claude/settings.local.json

@@ -1,0 +1,97 @@
+# Statements about Temporal Server metrics.
+#
+# The metrics themselves are generated from the source (generated/server-metrics.toml); the
+# label sets, purposes and notes that a diagnostic relies on are reviewed annotations
+# (server-annotations.toml). Server metrics carry the Task Queue in the `taskqueue` tag (the
+# SDKs use `task_queue`).
+
+[[statement]]
+id = "server.metrics-framework"
+category = "behaviour"
+title = "Server metric names and units depend on the metrics framework"
+statement = "Temporal Server exports Prometheus metrics through tally unless `global.metrics.prometheus.framework` is `opentelemetry`. tally exports names unchanged and timers as histograms in seconds. OpenTelemetry records timers in milliseconds unless `recordTimerInSeconds` is set, appends a unit suffix (`_milliseconds`, `_seconds`, `_bytes`, or `_ratio` for a dimensionless histogram) unless `withoutUnitSuffix` is set, and appends `_total` to counters unless `withoutCounterSuffix` is set. With all three set, it exports the names and units tally does."
+notes = [
+  "Each generated server metric lists the names and units it can be exported under, with the configuration that produces each, tally first.",
+  "The name alone does not always settle the unit: a bare timer name such as `service_latency_bucket` is seconds under tally but milliseconds under OpenTelemetry with only `withoutUnitSuffix` set.",
+  "Releases 1.27.2 to 1.27.4 pin version 0.57.0 of the OpenTelemetry Prometheus exporter, which adds the `_` before each suffix itself; the names are the same.",
+  "A `global.metrics.prefix` is a separate matter (server.metrics-prefix).",
+]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 479, excerpt = "if c.Prometheus != nil && c.Prometheus.Framework == FrameworkOpentelemetry {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 489, excerpt = "return NewTallyMetricsHandler(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 337, excerpt = "TimerType: \"histogram\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/otel_metrics_handler.go", line = 155, excerpt = "if omp.recordTimerInSeconds {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/otel_metrics_handler.go", line = 158, excerpt = "return omp.timerInMilliseconds(timer)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 57, excerpt = "// WithoutUnitSuffix controls the additional of unit suffixes to metric names." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 61, excerpt = "// WithoutCounterSuffix controls the additional of _total suffixes to counter metric names." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 65, excerpt = "// RecordTimerInSeconds controls if Timer metric should be emitted as number of seconds" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 55, excerpt = "// All configs should be set to true when using opentelemetry framework to have the same behavior as tally." },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 421, excerpt = "if suffix, ok := unitSuffixes[m.Unit]; ok && !c.withoutUnits && !strings.HasSuffix(name, suffix) {" },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 401, excerpt = "\"1\": \"_ratio\"," },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 425, excerpt = "name += counterSuffix" },
+]
+
+[[statement]]
+id = "server.metrics-service-name"
+category = "behaviour"
+title = "Every server metric carries the service that recorded it"
+statement = "Each service records its metrics through a handler tagged with the service's name, so every server metric carries a `service_name` label, such as `frontend` or `history`. Persistence calls made while the server starts, before the services, carry `server`."
+notes = ["Reviewed label sets list `service_name` only where its values were checked; the label is on every server metric regardless."]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "temporal/fx.go", line = 485, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "temporal/fx.go", line = 658, excerpt = "metricsHandler = metricsHandler.WithTags(metrics.ServiceNameTag(primitives.ServerService))" },
+]
+
+[[statement]]
+id = "server.metrics-prefix"
+category = "behaviour"
+title = "A metrics prefix is joined to every name with an underscore"
+statement = "A `global.metrics.prefix` is prepended to every metric name, separated by `_`, under either framework: tally joins them with its Prometheus separator, and the OpenTelemetry exporter takes the prefix as its namespace and adds the `_` when the prefix does not end with one."
+notes = ["A prefix that already ends with `_` gets a second one under tally but not under OpenTelemetry, so the names differ between the frameworks; the configuration's comment advises adding an extra `_` to such a prefix when moving to OpenTelemetry."]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 40, excerpt = "// This is because tally implementation blindly adds \"_\" as the separator between the prefix" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 453, excerpt = "Separator:       prometheus.DefaultSeparator," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/opentelemetry_provider.go", line = 74, excerpt = "if clientConfig.Prefix != \"\" {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/opentelemetry_provider.go", line = 75, excerpt = "exporterOpts = append(exporterOpts, exporters.WithNamespace(clientConfig.Prefix))" },
+  { source = "tally-v4.1.17", path = "prometheus/reporter.go", line = 38, excerpt = "DefaultSeparator = \"_\"" },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "config.go", line = 142, excerpt = "ns = ns + \"_\"" },
+]
+
+[[statement]]
+id = "server.taskqueue-tag"
+category = "behaviour"
+title = "Server Task Queue tag key"
+statement = "Server metrics tag the Task Queue as `taskqueue` (not `task_queue`), or `__omitted__` when `metrics.breakdownByTaskQueue` is false."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/tags.go", line = 35, excerpt = "taskQueue               = \"taskqueue\"" },
+]
+
+[[statement]]
+id = "server.metrics-label-values"
+category = "behaviour"
+title = "Under tally, label values keep only letters, digits and underscores"
+statement = "With the tally framework, the default, the server writes every character of a metric label's name or value other than an ASCII letter, a digit or `_` as `_`, unless the Prometheus configuration sets its own `sanitizeOptions`. A namespace or Task Queue named `orders-prod` is labelled `orders_prod`. The OpenTelemetry framework writes label values unchanged."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 205, excerpt = "safeCharacters = []rune{'_'}" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 216, excerpt = "ValueCharacters: tally.ValidCharacters{" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 217, excerpt = "Ranges:     tally.AlphanumericRange," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 220, excerpt = "ReplacementCharacter: tally.DefaultReplacementCharacter," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 316, excerpt = "if config.SanitizeOptions == nil {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 317, excerpt = "return defaultTallySanitizeOptions, nil" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/config.go", line = 454, excerpt = "SanitizeOptions: &sanitizeOptions," },
+  { source = "tally-v4.1.17", path = "scope_registry.go", line = 205, excerpt = "tags = parent.copyAndSanitizeMap(tags)" },
+  { source = "tally-v4.1.17", path = "scope.go", line = 589, excerpt = "v = s.sanitizer.Value(v)" },
+  { source = "tally-v4.1.17", path = "sanitize.go", line = 31, excerpt = "DefaultReplacementCharacter = '_'" },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 327, excerpt = "values = append(values, kv.Value.Emit())" },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 346, excerpt = "values = append(values, strings.Join(vals, \";\"))" },
+]

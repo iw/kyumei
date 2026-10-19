@@ -1,0 +1,91 @@
+# Reference fixture for Workflow Task failures.
+#
+# At 14:05 UTC a new build of the order-fulfilment Workers adds an Activity
+# call ahead of a timer in OrderWorkflow. About 300 orders were already
+# running. As each wakes, its history replays on the new code, the commands
+# no longer match the recorded events, and the Go SDK fails the Workflow Task
+# with a nondeterminism error. History retries each task without limit, the
+# retries fail too, and the orders stop progressing. Orders started after the
+# deploy are unaffected.
+#
+# The investigation must find the nondeterminism in the Workers' failure
+# reasons, rule out the other reasons, and show from one stuck order's pending
+# task that retries do not help, without blaming the server.
+
+[fixture]
+id = "nondeterminism-after-deploy"
+title = "Deploy breaks replay: ~300 orders stuck on nondeterminism errors"
+description = "Reference fixture for Workflow Task failures. Two evidence submissions take the investigation from symptom to a final diagnosis."
+investigation = "inv-golden-nondeterminism"
+
+[open]
+at = 2026-10-06T14:32:00Z
+description = "Since we deployed a new build of the order-fulfilment workers at about 14:05 UTC, roughly 300 running OrderWorkflow executions have stopped progressing (namespace commerce). Queries to them fail with 'Workflow Task in failed state'. Orders started after the deploy complete normally. Go SDK 1.44."
+server_version = "1.31.0"
+sdks = [{ language = "go", version = "1.44.0" }]
+namespaces = ["commerce"]
+task_queues = ["order-fulfilment"]
+window_start = 2026-10-06T14:05:00Z
+window_end = 2026-10-06T14:45:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 3
+history_hosts = 6
+matching_hosts = 3
+worker_processes = 6
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "failures-by-reason"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+nondeterminism = "candidate"
+workflow-code-error = "candidate"
+completion-too-large = "candidate"
+stuck-retrying = "candidate"
+
+# E1 — Failed Workflow Task attempts by failure reason, from 30 minutes before the deploy.
+[[step]]
+at = 2026-10-06T14:36:00Z
+answers = "failures-by-reason"
+file = "evidence/e1-failures-by-reason.json"
+channel = "paste"
+query = 'sum by (failure_reason) (rate(temporal_workflow_task_execution_failed{namespace="commerce", task_queue="order-fulfilment"}[1m]))'
+
+[step.expect]
+next_request = "retry-attempts"
+findings = ["F-nondeterminism-failing", "F-no-code-errors", "F-nothing-too-large"]
+bound_signals = ["nondeterminism_failures", "workflow_error_failures", "too_large_failures"]
+conclusion = "nondeterminism"
+concluded = false
+
+[step.expect.states]
+nondeterminism = "established"
+workflow-code-error = "eliminated"
+completion-too-large = "eliminated"
+stuck-retrying = "candidate"
+
+# E2 — One order that stopped progressing, described with the CLI.
+[[step]]
+at = 2026-10-06T14:40:00Z
+answers = "retry-attempts"
+file = "evidence/e2-describe-workflow.json"
+channel = "paste"
+window_start = 2026-10-06T14:38:00Z
+note = "Captured at 14:38 UTC with temporal workflow describe --workflow-id order-7f3c2a91 -o json"
+
+[step.expect]
+next_request = "none"
+findings = ["F-pending-attempt-high"]
+bound_signals = ["pending_attempt"]
+conclusion = "nondeterminism-stuck"
+concluded = true
+
+[step.expect.states]
+nondeterminism = "established"
+workflow-code-error = "eliminated"
+completion-too-large = "eliminated"
+stuck-retrying = "established"

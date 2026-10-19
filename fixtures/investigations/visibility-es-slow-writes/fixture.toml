@@ -1,0 +1,104 @@
+# Reference fixture for visibility lag and errors: Elasticsearch slow to write.
+#
+# From 10:00 UTC the visibility Elasticsearch cluster is overloaded: a
+# reindex competes with indexing, and bulks take tens of seconds to commit.
+# History's visibility writes wait up to the 30-second acknowledgement
+# timeout, so records fall minutes behind: new Workflows are missing from
+# lists and completed ones still show as Running. Nothing is refused by a
+# limit, and nothing fails outright, since a write that times out waiting
+# for its acknowledgement is not counted as a store error.
+#
+# The investigation must find the records late, skip the listing-call
+# questions, rule out the write limit and store errors, and find the slow
+# writes.
+
+[fixture]
+id = "visibility-es-slow-writes"
+title = "Elasticsearch slow to write: records minutes behind"
+description = "Reference fixture for visibility lag and errors. An overloaded Elasticsearch cluster takes tens of seconds to commit History's visibility writes."
+investigation = "inv-golden-visibility"
+
+[open]
+at = 2026-10-16T10:38:00Z
+description = "Since about 10:00 UTC, Workflows in the orders namespace take minutes to appear in the Web UI and in temporal workflow list, and Workflows that have completed still show as Running. The Workflows themselves run normally. Our visibility store is Elasticsearch."
+server_version = "1.31.0"
+namespaces = ["orders"]
+window_start = 2026-10-16T10:00:00Z
+window_end = 2026-10-16T10:40:00Z
+
+[open.expect]
+next_request = "visibility-lag"
+conclusion = "none"
+concluded = false
+
+# E1 — Visibility record lag by task type.
+[[step]]
+at = 2026-10-16T10:40:00Z
+answers = "visibility-lag"
+file = "evidence/e1-record-lag.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_queue_bucket{namespace="orders", task_type=~"VisibilityTask.*"}[1m])))'
+
+[step.expect]
+next_request = "visibility-persistence-refusals"
+findings = ["F-records-late"]
+bound_signals = ["visibility_task_latency"]
+conclusion = "records-late"
+concluded = false
+
+[step.expect.states]
+records-late = "established"
+
+# E2 — Refusals by the visibility persistence limits, by call. The counters
+# exist from an earlier refusal, so the series are flat zero.
+[[step]]
+at = 2026-10-16T10:43:00Z
+answers = "visibility-persistence-refusals"
+file = "evidence/e2-refusals.json"
+channel = "paste"
+query = 'sum by (operation) (rate(visibility_persistence_resource_exhausted[1m]))'
+
+[step.expect]
+next_request = "visibility-persistence-errors"
+findings = ["F-records-late", "F-no-write-refusals"]
+bound_signals = ["write_refusals"]
+conclusion = "records-late"
+concluded = false
+
+# E3 — Store errors by call, and visibility tasks moved to the DLQ (a
+# Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-16T10:46:00Z
+answers = "visibility-persistence-errors"
+file = "evidence/e3-errors.csv"
+channel = "upload"
+query = 'sum by (operation) (rate(visibility_persistence_errors[1m])) and sum(rate(dlq_writes{task_category="visibility"}[1m]))'
+
+[step.expect]
+next_request = "visibility-persistence-latency"
+findings = ["F-records-late", "F-no-write-refusals", "F-store-not-failing"]
+bound_signals = ["store_errors", "visibility_dlq_writes"]
+conclusion = "records-late"
+concluded = false
+
+# E4 — Store latency by call: writes wait up to the acknowledgement timeout.
+[[step]]
+at = 2026-10-16T10:49:00Z
+answers = "visibility-persistence-latency"
+file = "evidence/e4-store-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, operation) (rate(visibility_persistence_latency_bucket[1m])))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-records-late", "F-no-write-refusals", "F-store-not-failing", "F-writes-slow"]
+bound_signals = ["write_latency", "query_latency"]
+conclusion = "slow-writes"
+concluded = true
+
+[step.expect.states]
+records-late = "established"
+write-limit = "eliminated"
+store-errors = "eliminated"
+slow-writes = "established"
+queue-backlog = "candidate"

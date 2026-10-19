@@ -1,0 +1,13 @@
+# config/dynamicconfig/production.yaml (excerpt, via grep)
+# order-fulfillment is being reduced to 3 partitions: write partitions first,
+# read partitions once the fourth has drained.
+matching.numTaskqueueReadPartitions:
+  - value: 4
+    constraints:
+      namespace: "commerce-prod"
+      taskQueueName: "order-fulfillment"
+matching.numTaskqueueWritePartitions:
+  - value: 3
+    constraints:
+      namespace: "commerce-prod"
+      taskQueueName: "order-fulfillment"

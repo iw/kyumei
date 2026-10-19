@@ -1,0 +1,56 @@
+# How the Java SDK (v1.40.0) runs Workflows on a bounded pool of threads,
+# what holds those threads, and what a Worker does when none is free.
+
+[[statement]]
+id = "sdk.java-workflow-thread-pool"
+category = "behaviour"
+title = "Java Workflows run on a bounded pool of threads"
+statement = "A Java worker factory runs its Workflows on one pool of at most WorkerFactoryOptions.maxWorkflowThreadCount threads (600 by default, and 600 when set to 0), shared by all its Workers and counting the threads of cached Workflows. A Workflow takes a thread when it starts running and keeps it while it waits, so every cached Workflow holds at least one. More threads are held by each Signal or Update being handled, until its handler returns, and by each branch run with Async.function or Async.procedure on anything other than an Activity or child Workflow stub, until the branch finishes. The factory's Workflow cache, WorkerFactoryOptions.workflowCacheSize, is also 600 by default. With setUsingVirtualWorkflowThreads (JDK 21 or later, off by default) Workflows run on virtual threads and maxWorkflowThreadCount is ignored."
+scope = { sdk = [{ family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 26, excerpt = "private static final int DEFAULT_MAX_WORKFLOW_THREAD_COUNT = 600;" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 244, excerpt = "if (maxWorkflowThreadCount == 0) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 79, excerpt = "* Maximum number of threads available for workflow execution across all workers created by the" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 80, excerpt = "* Factory. This includes cached workflows." },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactory.java", line = 143, excerpt = "this.factoryOptions.getMaxWorkflowThreadCount()," },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactory.java", line = 146, excerpt = "new SynchronousQueue<>());" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactory.java", line = 206, excerpt = "workflowThreadExecutor," },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/DeterministicRunnerImpl.java", line = 175, excerpt = "rootWorkflowThread.start();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/WorkflowThreadImpl.java", line = 220, excerpt = "taskFuture = workflowThreadExecutor.submit(task);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/WorkflowThreadScheduler.java", line = 37, excerpt = "this.runCondition.await();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/SyncWorkflow.java", line = 135, excerpt = "\"signal \" + signalName," },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/SyncWorkflow.java", line = 151, excerpt = "\"update \" + updateName," },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/DeterministicRunnerImpl.java", line = 195, excerpt = ".newCallbackThread(nr.runnable, nr.name);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/AsyncInternal.java", line = 268, excerpt = "if (temporalStub) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/AsyncInternal.java", line = 280, excerpt = "WorkflowThread.newThread(" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 25, excerpt = "private static final int DEFAULT_WORKFLOW_CACHE_SIZE = 600;" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 134, excerpt = "* option is only supported for JDK >= 21. If set then {@link #setMaxWorkflowThreadCount(int)}" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 137, excerpt = "* <p>Default is false" },
+]
+
+[[statement]]
+id = "sdk.java-thread-forced-eviction"
+category = "behaviour"
+title = "A Java Worker out of threads evicts a cached Workflow, or fails the task"
+statement = "When a Java Workflow needs a thread and the pool has none free, the Worker evicts a cached Workflow that no task is processing, freeing its threads, and counts temporal_sticky_cache_thread_forced_eviction; the evicted Workflow replays its whole history at its next task. If every cached Workflow is being processed, nothing can be evicted and the Workflow Task fails with WorkflowRejectedExecutionError, without waiting for a thread. The Worker logs \"Workflow task processing failure\" and counts workflow_task_execution_failed with failure_reason WorkflowError; it reports the failure to the server only on the task's first attempt, and later attempts time out. An eviction is not counted while the Workflow that needs the thread is replaying its history."
+scope = { sdk = [{ family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/WorkflowThreadImpl.java", line = 222, excerpt = "} catch (RejectedExecutionException e) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/WorkflowThreadImpl.java", line = 227, excerpt = "cache.evictAnyNotInProcessing(" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 118, excerpt = "boolean locked = runLockManager.tryLock(key);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 128, excerpt = "cache.invalidate(key);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 129, excerpt = "workflowTypeScope.counter(MetricsType.STICKY_CACHE_THREAD_FORCED_EVICTION).inc(1);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 139, excerpt = "return false;" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/WorkflowThreadImpl.java", line = 233, excerpt = "throw new WorkflowRejectedExecutionError(e);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 307, excerpt = "\"Workflow task processing failure. startedEventId={}, WorkflowId={}, RunId={}. If seen continuously the workflow might be stuck.\"," },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 316, excerpt = "if (workflowTask.getAttempt() > 1) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 781, excerpt = "taskFailureType = MetricsTag.TASK_FAILURE_VALUE_WORKFLOW_ERROR;" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 855, excerpt = "ImmutableMap.of(TASK_FAILURE_TYPE, MetricsTag.TASK_FAILURE_VALUE_WORKFLOW_ERROR));" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/WorkflowThreadImpl.java", line = 228, excerpt = "context.getWorkflowExecution(), workflowContext.getMetricsScope());" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/SyncWorkflowContext.java", line = 1533, excerpt = "return replayContext.getMetricsScope();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowContextImpl.java", line = 65, excerpt = "new ReplayAwareScope(workflowMetricsScope, this, workflowStateMachines::currentTimeMillis);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayAwareScope.java", line = 38, excerpt = "if (context.isReplaying()) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowRunTaskHandler.java", line = 243, excerpt = "workflowStateMachines.setReplaying(workflowTask.getPreviousStartedEventId() > 0);" },
+]

@@ -1,0 +1,100 @@
+# Reference fixture for shard ownership churn.
+#
+# A rolling deploy restarts the six History hosts one by one, every two
+# minutes from 15:00 UTC. Each host leaves membership and returns, so its
+# shards move twice, and until their new owner takes them requests for their
+# Workflows fail. The Frontend counts ShardOwnershipLost and returns it to
+# clients as Unavailable. Taking each shard is quick: the errors come from
+# how often the shards move. The server uses tally, so the error type is
+# labelled serviceerror_ShardOwnershipLost.
+#
+# The investigation must tie the clients' errors to moving shards, find the
+# membership changes, rule out slow acquisition, and recommend draining
+# History hosts on shutdown.
+
+[fixture]
+id = "history-deploy-churn"
+title = "History rolling deploy: shards move twice per host, clients see Unavailable"
+description = "Reference fixture for shard ownership churn. Three evidence submissions take the investigation from symptom to a final diagnosis."
+investigation = "inv-golden-shard-churn"
+
+[open]
+at = 2026-10-18T15:20:00Z
+description = "During every History deploy our clients get 'shard unavailable, please backoff and retry' errors for several minutes. The last deploy ran from 15:00 to 15:12 UTC. Namespace payments."
+server_version = "1.31.0"
+namespaces = ["payments"]
+window_start = 2026-10-18T15:00:00Z
+window_end = 2026-10-18T15:20:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 3
+history_hosts = 6
+matching_hosts = 3
+persistence = "Cassandra 4.1"
+
+[open.expect]
+next_request = "ownership-errors"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+ownership-errors = "candidate"
+membership-changes = "candidate"
+slow-acquisition = "candidate"
+
+# E1 — ShardOwnershipLost errors at the Frontend, tally's spelling.
+[[step]]
+at = 2026-10-18T15:22:00Z
+answers = "ownership-errors"
+file = "evidence/e1-ownership-errors.json"
+channel = "paste"
+query = 'sum by (error_type) (rate(service_error_with_type{service_name="frontend", error_type=~"serviceerror.ShardOwnershipLost", namespace="payments"}[1m]))'
+
+[step.expect]
+next_request = "membership-changes"
+findings = ["F-ownership-failing"]
+bound_signals = ["ownership_errors"]
+conclusion = "ownership-errors"
+concluded = false
+
+[step.expect.states]
+ownership-errors = "established"
+
+# E2 — Membership changes, from 30 minutes before.
+[[step]]
+at = 2026-10-18T15:24:00Z
+answers = "membership-changes"
+file = "evidence/e2-membership-changes.json"
+channel = "paste"
+query = 'sum(rate(membership_changed_count{service_name="history"}[1m]))'
+
+[step.expect]
+next_request = "shard-acquisition"
+findings = ["F-membership-changed"]
+bound_signals = ["membership_changes"]
+conclusion = "membership-churn"
+concluded = false
+
+[step.expect.states]
+membership-changes = "established"
+
+# E3 — Shard acquisition pass time.
+[[step]]
+at = 2026-10-18T15:26:00Z
+answers = "shard-acquisition"
+file = "evidence/e3-acquisition.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le) (rate(acquire_shards_latency_bucket{service_name="history"}[1m])))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-acquisition-fast"]
+bound_signals = ["acquire_latency"]
+conclusion = "membership-churn"
+concluded = true
+
+[step.expect.states]
+ownership-errors = "established"
+membership-changes = "established"
+slow-acquisition = "eliminated"

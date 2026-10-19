@@ -1,0 +1,20 @@
+# Which pollers DescribeTaskQueue lists, which decides what an empty list
+# means.
+
+[[statement]]
+id = "behaviour.pollers-listed-for-ttl"
+category = "behaviour"
+title = "DescribeTaskQueue lists the pollers of the last PollerHistoryTTL"
+statement = "Matching records a poller's identity in the queue's poller history when each poll arrives and again when it ends, unless the poll was cancelled, and the history drops a poller matching.PollerHistoryTTL after its last record, 5 minutes by default. DescribeTaskQueue lists the pollers still in the history of the partitions it describes. An empty list means no Worker has polled them for at least that long."
+notes = ["The TTL is dc.matching.PollerHistoryTTL, set per namespace."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 602, excerpt = "dbq.UpdatePollerInfo(pollerIdentity(identity), pollMetadata)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 624, excerpt = "dbq.UpdatePollerInfo(pollerIdentity(identity), pollMetadata)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/physical_task_queue_manager.go", line = 166, excerpt = "pqMgr.pollerHistory = newPollerHistory(partitionMgr.config.PollerHistoryTTL())" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/poller_history.go", line = 32, excerpt = "TTL: pollerHistoryTTL," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 429, excerpt = "return entry.refCount == 0 && !entry.createTime.IsZero() && currentTime.After(entry.createTime.Add(c.ttl))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/physical_task_queue_manager.go", line = 632, excerpt = "Pollers: c.GetAllPollerInfo()," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 957, excerpt = "Pollers: pm.GetAllPollerInfo()," },
+]

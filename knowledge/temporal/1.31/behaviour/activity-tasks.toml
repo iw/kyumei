@@ -1,0 +1,19 @@
+# How Activity Tasks are scheduled and reach Matching in 1.31.0.
+
+[[statement]]
+id = "behaviour.schedule-activity-adds-task"
+category = "behaviour"
+title = "Each scheduled Activity adds an Activity Task"
+statement = "When a Workflow Task completes with a ScheduleActivityTask command, History records the Activity as scheduled and generates a transfer task, which adds an Activity Task to Matching with AddActivityTask. An Activity started eagerly, returned to the Worker with the completion, is not added. A retry is added again when its retry timer fires, without a new command."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/workflow_task_completed_handler.go", line = 501, excerpt = "eagerStartActivity := attr.RequestEagerExecution && handler.config.EnableActivityEagerExecution(namespace) &&" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/workflow_task_completed_handler.go", line = 505, excerpt = "bypassActivityTaskGeneration := eagerStartActivity" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/mutable_state_impl.go", line = 3952, excerpt = "if !bypassTaskGeneration {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/mutable_state_impl.go", line = 3953, excerpt = "if err := ms.taskGenerator.GenerateActivityTasks(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/transfer_queue_active_task_executor.go", line = 257, excerpt = "return t.pushActivity(ctx, task, timeout, directive, priority, historyi.TransactionPolicyActive)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/transfer_queue_task_executor_base.go", line = 103, excerpt = "resp, err := t.matchingRawClient.AddActivityTask(ctx, &matchingservice.AddActivityTaskRequest{" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 522, excerpt = "func (t *timerQueueActiveTaskExecutor) executeActivityRetryTimerTask(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 605, excerpt = "resp, err := t.matchingRawClient.AddActivityTask(ctx, &matchingservice.AddActivityTaskRequest{" },
+]

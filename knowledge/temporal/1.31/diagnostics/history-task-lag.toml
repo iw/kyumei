@@ -1,0 +1,478 @@
+# Diagnostic: History's own tasks run late: timers fire late, Activities and
+# Workflow Tasks are scheduled late.
+#
+# History turns every timer, Activity and Workflow Task into a task of its
+# own, persists it, loads it, waits for a worker of a host-wide scheduler,
+# and executes it, retrying it with backoff when it fails. The investigation
+# locates the delay along that path: loading, scheduling, one attempt's
+# execution, then retries by cause. A slow or failing attempt also backs up
+# the stages before it, so the deepest stage that is delayed is the cause.
+
+[diagnostic]
+id = "history-task-lag"
+title = "History task processing lag"
+summary = "Timers fire late, and Activities and Workflow Tasks are scheduled late, because History processes its own tasks late."
+# After the Workflow Task and Activity diagnostics, whose symptoms are more
+# specific, and before persistence latency.
+precedence = 12
+
+[diagnostic.path]
+description = "The path of a History task: History persists it, a queue reader loads it, it waits for a worker of the host's scheduler, the worker executes it against the Workflow's state and persistence, and a failed attempt is retried with backoff."
+layers = ["history", "persistence"]
+labels = { history = "History task queues" }
+
+[[symptom]]
+id = "history-task-lag"
+title = "History tasks running late"
+patterns = [
+  "\\btimers?\\b.{0,40}\\b(late|delayed|lag|lagging|behind|slow)\\b",
+  "\\b(fire|fires|firing|fired)\\b.{0,20}\\blate\\b",
+  "history tasks?\\b.{0,40}\\b(lag|late|delay|delayed|backlog|latency)",
+  "task_latency_(queue|load|schedule|processing)",
+  "(transfer|timer) (queue|tasks?)\\b.{0,40}\\b(lag|backlog|behind|late)",
+]
+signal = "task_queue_latency"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "load"
+order = 1
+title = "Loading"
+question = "Are tasks loaded late?"
+
+[[stage]]
+id = "schedule"
+order = 2
+title = "Scheduling"
+question = "Do loaded tasks wait for a scheduler worker?"
+
+[[stage]]
+id = "processing"
+order = 3
+title = "Processing"
+question = "Is each attempt slow?"
+
+[[stage]]
+id = "retries"
+order = 4
+title = "Retries"
+question = "Are tasks failing and retried?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "task_queue_latency"
+title = "History task latency, end to end"
+unit = "seconds"
+description = "Time from a History task's creation, or a timer's fire time, to its completion (a high quantile over the window)."
+source = [{ claim = "server.task_latency_queue" }]
+
+[[signal]]
+id = "task_load_latency"
+title = "History task load latency"
+unit = "seconds"
+description = "Time from a task's creation, or a timer's fire time, to its loading into memory (a high quantile over the window)."
+source = [{ claim = "server.task_latency_load" }]
+
+[[signal]]
+id = "task_schedule_latency"
+title = "History task scheduler wait"
+unit = "seconds"
+description = "Time loaded tasks waited for a worker of the host's scheduler (a high quantile over the window)."
+source = [{ claim = "server.task_latency_schedule" }]
+
+[[signal]]
+id = "task_processing_latency"
+title = "History task attempt latency"
+unit = "seconds"
+description = "Time one attempt of a task took to execute (a high quantile over the window)."
+source = [{ claim = "server.task_latency_processing" }]
+
+[[signal]]
+id = "persistence_throttled_retries"
+title = "Task attempts refused by persistence limits"
+unit = "per_second"
+description = "History task attempts per second that failed with ResourceExhausted, cause PersistenceLimit."
+combine = "sum"
+source = [{ claim = "server.task_errors_throttled", labels = { resource_exhausted_cause = "PersistenceLimit" }, transform = "rate" }]
+
+[[signal]]
+id = "busy_workflow_retries"
+title = "Task attempts against busy Workflows"
+unit = "per_second"
+description = "History task attempts per second that failed with ResourceExhausted, cause BusyWorkflow: another caller held the Workflow's lock too long."
+combine = "sum"
+source = [{ claim = "server.task_errors_throttled", labels = { resource_exhausted_cause = "BusyWorkflow" }, transform = "rate" }]
+
+[[signal]]
+id = "task_error_rate"
+title = "Task attempts failing unexpectedly"
+unit = "per_second"
+description = "History task attempts per second that failed with an unexpected error."
+combine = "sum"
+source = [{ claim = "server.task_errors", transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "load-lag"
+stage = "load"
+primary = true
+layer = "history"
+title = "Tasks loaded late"
+question = "Tasks loaded late?"
+statement = "History's queue readers load tasks late: they pause while their queue holds history.queuePendingTasksMaxCount tasks not yet completed, or their reads are slow or throttled."
+
+[[hypothesis]]
+id = "scheduler-backlog"
+stage = "schedule"
+primary = true
+layer = "history"
+title = "Scheduler workers all busy"
+question = "Waiting for scheduler workers?"
+statement = "Loaded tasks wait for a worker of the host's scheduler: the host has more tasks to run than its workers (512 per queue category by default) get through."
+
+[[hypothesis]]
+id = "slow-processing"
+stage = "processing"
+primary = true
+layer = "persistence"
+title = "Each attempt slow"
+question = "Attempts slow?"
+statement = "Each task attempt takes long to execute, usually waiting on persistence calls or on the Workflow's lock, so the scheduler's workers stay busy and the tasks behind them wait."
+
+[[hypothesis]]
+id = "persistence-throttled"
+stage = "retries"
+primary = true
+layer = "persistence"
+title = "Persistence limits refusing tasks"
+question = "Persistence limits refusing?"
+statement = "A persistence rate limit refuses History tasks' calls, so the tasks fail with ResourceExhausted and wait seconds to minutes before each retry."
+
+[[hypothesis]]
+id = "busy-workflow"
+stage = "retries"
+layer = "history"
+title = "Tasks contending for busy Workflows"
+question = "Workflows too busy?"
+statement = "Tasks wait for Workflows whose lock other work holds, such as a stream of Signals or Updates to the same Workflow, and fail with BusyWorkflow until they get it."
+
+[[hypothesis]]
+id = "task-errors"
+stage = "retries"
+layer = "history"
+title = "Tasks failing unexpectedly"
+question = "Tasks failing?"
+statement = "Tasks fail with unexpected errors and are retried with backoff."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "task-load-latency"
+stage = "load"
+title = "History task load latency, before and during the incident"
+why = "Every History task is persisted first and loaded by a queue reader. Load latency is how long after its creation, or a timer's fire time, a task reached memory; a reader that falls behind delays every task in its queue."
+signals = ["task_load_latency"]
+distinguishes = ["load-lag"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["task_type"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p99 History task load latency, by task type (include at least 15 minutes before the incident)"
+body = "histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_load_bucket{namespace=\"{namespace}\"}[1m])))"
+unit = "seconds"
+claims = ["server.task_latency_load", "behaviour.history-task-latencies"]
+note = "with the OpenTelemetry metrics framework the histogram is task_latency_load_milliseconds_bucket, in milliseconds"
+
+[[request]]
+id = "task-schedule-latency"
+stage = "schedule"
+title = "Time History tasks wait for a scheduler worker"
+why = "A loaded task waits for one of the workers of a scheduler that every shard on the host shares. A long wait means the host has more tasks than its workers get through, from a burst of tasks or from attempts that each take long."
+signals = ["task_schedule_latency"]
+distinguishes = ["scheduler-backlog"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["task_type"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p99 scheduler wait, by task type (include at least 15 minutes before the incident)"
+body = "histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_schedule_bucket{namespace=\"{namespace}\"}[1m])))"
+unit = "seconds"
+claims = ["server.task_latency_schedule", "behaviour.history-task-pipeline"]
+note = "with the OpenTelemetry metrics framework the histogram is task_latency_schedule_milliseconds_bucket, in milliseconds"
+
+[[request]]
+id = "task-processing-latency"
+stage = "processing"
+title = "How long each History task attempt takes"
+why = "An attempt that takes long holds a scheduler worker the whole time, so the tasks behind it wait and the queues behind them fill. The time per attempt separates a burst of ordinary tasks from tasks that are each slow."
+signals = ["task_processing_latency"]
+distinguishes = ["slow-processing"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["task_type"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p99 attempt latency, by task type (include at least 15 minutes before the incident)"
+body = "histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_processing_bucket{namespace=\"{namespace}\"}[1m])))"
+unit = "seconds"
+claims = ["server.task_latency_processing", "behaviour.history-task-latencies"]
+note = "with the OpenTelemetry metrics framework the histogram is task_latency_processing_milliseconds_bucket, in milliseconds"
+
+[[request]]
+id = "task-errors"
+stage = "retries"
+title = "History task attempts that failed, by cause"
+why = "A task attempt refused by a persistence limit or blocked by a busy Workflow fails with ResourceExhausted, which History counts by cause; other failures it counts as unexpected errors. Either way the task waits before its next attempt, from the second onwards for seconds to minutes. Causes missing from the breakdown did not occur."
+signals = ["persistence_throttled_retries", "busy_workflow_retries", "task_error_rate"]
+distinguishes = ["persistence-throttled", "busy-workflow", "task-errors"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["resource_exhausted_cause"]
+
+[[request.collect]]
+method = "promql"
+label = "Throttled History task attempts per second, by cause"
+body = "sum by (resource_exhausted_cause) (rate(task_errors_throttled{namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.task_errors_throttled", "behaviour.history-task-retries"]
+note = "with the OpenTelemetry metrics framework the counter is named task_errors_throttled_total"
+
+[[request.collect]]
+method = "promql"
+label = "History task attempts failing unexpectedly, per second"
+body = "sum(rate(task_errors{namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.task_errors", "behaviour.history-task-retries"]
+note = "with the OpenTelemetry metrics framework the counter is named task_errors_total"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "load-delayed"
+hypothesis = "load-lag"
+effect = "establishes"
+statement = "Tasks reached memory up to {task_load_latency.max} after they were created or due, against about {task_load_latency.baseline} before the incident."
+claims = ["heuristic.task-stage-delay", "behaviour.history-task-latencies"]
+when = { signal = "task_load_latency", stat = "max", op = "ge", value = 1 }
+
+[[rule]]
+id = "load-prompt"
+hypothesis = "load-lag"
+effect = "eliminates"
+statement = "Tasks were loaded promptly: at most {task_load_latency.max} at any sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.task-stage-delay"]
+when = { all = [
+  { signal = "task_load_latency", stat = "max", op = "lt", value = 0.2 },
+  { signal = "task_load_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "schedule-delayed"
+hypothesis = "scheduler-backlog"
+effect = "establishes"
+statement = "Loaded tasks waited up to {task_schedule_latency.max} for a scheduler worker, against about {task_schedule_latency.baseline} before the incident."
+claims = ["heuristic.task-stage-delay", "behaviour.history-task-pipeline"]
+when = { signal = "task_schedule_latency", stat = "max", op = "ge", value = 1 }
+
+[[rule]]
+id = "schedule-prompt"
+hypothesis = "scheduler-backlog"
+effect = "eliminates"
+statement = "Loaded tasks got a scheduler worker promptly: at most {task_schedule_latency.max} at any sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.task-stage-delay"]
+when = { all = [
+  { signal = "task_schedule_latency", stat = "max", op = "lt", value = 0.2 },
+  { signal = "task_schedule_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "attempts-slow"
+hypothesis = "slow-processing"
+effect = "establishes"
+statement = "Task attempts took up to {task_processing_latency.max} each, against about {task_processing_latency.baseline} before the incident."
+claims = ["heuristic.task-stage-delay", "server.task_latency_processing"]
+when = { signal = "task_processing_latency", stat = "max", op = "ge", value = 1 }
+
+[[rule]]
+id = "attempts-fast"
+hypothesis = "slow-processing"
+effect = "eliminates"
+statement = "Task attempts stayed fast: at most {task_processing_latency.max} at any sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.task-stage-delay"]
+when = { all = [
+  { signal = "task_processing_latency", stat = "max", op = "lt", value = 0.2 },
+  { signal = "task_processing_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "persistence-refusing"
+hypothesis = "persistence-throttled"
+effect = "establishes"
+statement = "Persistence limits refused History task attempts at {persistence_throttled_retries.mean} on average, peaking at {persistence_throttled_retries.max}; each refused task waits before its next attempt."
+claims = ["heuristic.task-retries-significant", "behaviour.history-task-retries"]
+when = { signal = "persistence_throttled_retries", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-persistence-refusals"
+hypothesis = "persistence-throttled"
+effect = "eliminates"
+statement = "No persistence limit refused a History task attempt during the window (at most {persistence_throttled_retries.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.task-retries-significant"]
+when = { all = [
+  { signal = "persistence_throttled_retries", stat = "max", op = "le", value = 0.01 },
+  { signal = "persistence_throttled_retries", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "workflows-busy"
+hypothesis = "busy-workflow"
+effect = "establishes"
+statement = "History task attempts failed against busy Workflows at {busy_workflow_retries.mean} on average, peaking at {busy_workflow_retries.max}: other work held their lock."
+claims = ["heuristic.task-retries-significant", "behaviour.history-task-retries"]
+when = { signal = "busy_workflow_retries", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-busy-workflows"
+hypothesis = "busy-workflow"
+effect = "eliminates"
+statement = "No History task attempt failed against a busy Workflow during the window (at most {busy_workflow_retries.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.task-retries-significant"]
+when = { all = [
+  { signal = "busy_workflow_retries", stat = "max", op = "le", value = 0.01 },
+  { signal = "busy_workflow_retries", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "errors-failing"
+hypothesis = "task-errors"
+effect = "establishes"
+statement = "History task attempts failed unexpectedly at {task_error_rate.mean} on average, peaking at {task_error_rate.max}."
+claims = ["heuristic.task-retries-significant", "server.task_errors"]
+when = { signal = "task_error_rate", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-errors"
+hypothesis = "task-errors"
+effect = "eliminates"
+statement = "No History task attempt failed unexpectedly during the window (at most {task_error_rate.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.task-retries-significant"]
+when = { all = [
+  { signal = "task_error_rate", stat = "max", op = "le", value = 0.01 },
+  { signal = "task_error_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis. The deepest
+# delayed stage comes first: slow or failing attempts back up the stages
+# before them.
+
+[[conclusion]]
+id = "persistence-throttled"
+title = "Persistence limits refusing History's tasks"
+statement = "History's tasks run late because persistence limits refuse their calls: attempts were refused at {persistence_throttled_retries.mean} on average, peaking at {persistence_throttled_retries.max}. Each refused task waits seconds to minutes before it is tried again, and the tasks pile up behind it."
+when = { hypothesis = "persistence-throttled", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "load-lag", state = ["established"] }
+text = "The queues filled while tasks waited, so their readers fell behind too: tasks were loaded up to {task_load_latency.max} late."
+
+[[conclusion.recommendation]]
+text = "Find which persistence limit refuses the calls, the host's history.persistenceMaxQPS (9,000 per second by default) or a namespace or shard limit, and whether History's hosts or load changed: the ResourceExhausted diagnostic separates them."
+caution = "Raise a persistence limit only if the database has headroom: the limit is what protects it."
+claims = ["behaviour.history-task-retries", "limit.persistence-host-qps", "dc.history.persistenceMaxQPS"]
+
+[[conclusion]]
+id = "busy-workflow"
+title = "History tasks contending for busy Workflows"
+statement = "History's tasks run late because they wait for Workflows whose lock other work holds: attempts failed against busy Workflows at {busy_workflow_retries.mean} on average, peaking at {busy_workflow_retries.max}. Each attempt waits up to 500 ms for the lock, then fails and is retried."
+when = { hypothesis = "busy-workflow", state = ["established"] }
+
+[[conclusion.clause]]
+when = { signal = "task_processing_latency", stat = "max", op = "ge", value = 0.2 }
+text = "Attempts took up to {task_processing_latency.max} each, much of it waiting for the lock."
+
+[[conclusion.recommendation]]
+text = "Find the Workflows that receive most of the work, such as a stream of Signals or Updates to one Workflow, a Workflow scheduling thousands of Activities at once, or many Workflows signalling one: spread the work over more Workflows or batch it."
+claims = ["behaviour.history-task-retries", "dc.history.cacheNonUserContextLockTimeout"]
+
+[[conclusion]]
+id = "task-errors"
+title = "History tasks failing"
+statement = "History's tasks run late because their attempts fail with unexpected errors, at {task_error_rate.mean} on average, peaking at {task_error_rate.max}, and each failed task waits before it is tried again."
+when = { hypothesis = "task-errors", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Read History's logs over the window for \"Fail to process task\": the error, task type and Workflow are logged with each failure."
+claims = ["server.task_errors", "behaviour.history-task-retries"]
+
+[[conclusion]]
+id = "slow-processing"
+title = "History task attempts slow"
+statement = "History's tasks run late because each attempt is slow, up to {task_processing_latency.max} against about {task_processing_latency.baseline} before the incident: the scheduler's workers stay busy and the tasks behind them wait."
+when = { hypothesis = "slow-processing", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "scheduler-backlog", state = ["established"] }
+text = "Loaded tasks waited up to {task_schedule_latency.max} for a worker as a result."
+
+[[conclusion.recommendation]]
+text = "Check History's persistence latency over the window: an attempt spends most of its time in persistence calls, and the persistence latency diagnostic finds why they slowed."
+claims = ["server.task_latency_processing", "server.persistence_latency"]
+
+[[conclusion]]
+id = "scheduler-saturated"
+title = "History's task scheduler saturated"
+statement = "History's tasks run late because they wait for a worker of the host's scheduler, up to {task_schedule_latency.max} against about {task_schedule_latency.baseline} before the incident, while each attempt stays fast: the hosts have more tasks to run than their workers get through."
+when = { all = [
+  { hypothesis = "scheduler-backlog", state = ["established"] },
+  { hypothesis = "slow-processing", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { hypothesis = "load-lag", state = ["established"] }
+text = "The queues filled while tasks waited, so their readers fell behind too: tasks were loaded up to {task_load_latency.max} late."
+
+[[conclusion.recommendation]]
+text = "Find what created the tasks: a burst, such as many timers set to fire at the same moment or a batch starting many Workflows, is best spread over time, for example with jitter on the timers."
+claims = ["behaviour.history-task-pipeline", "behaviour.history-task-latencies"]
+
+[[conclusion.recommendation]]
+text = "If the load is lasting, raise history.timerProcessorSchedulerWorkerCount or history.transferProcessorSchedulerWorkerCount (512 by default), or add History hosts, which shares out the shards and their tasks."
+caution = "More workers run more tasks at once against persistence; check the database's headroom first."
+claims = ["behaviour.history-task-pipeline", "dc.history.timerProcessorSchedulerWorkerCount", "dc.history.transferProcessorSchedulerWorkerCount"]
+
+[[conclusion]]
+id = "load-lag"
+title = "History tasks loaded late"
+statement = "History's tasks run late because they reach memory late, up to {task_load_latency.max} after they were created or due, while scheduling and execution keep up."
+when = { all = [
+  { hypothesis = "load-lag", state = ["established"] },
+  { hypothesis = "scheduler-backlog", state = ["eliminated"] },
+  { hypothesis = "slow-processing", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Check History's persistence latency for the task reads, and whether the queues hold history.queuePendingTasksMaxCount (10,000) tasks, at which their readers pause."
+claims = ["behaviour.history-task-pipeline", "dc.history.queuePendingTasksMaxCount"]
+
+[[conclusion]]
+id = "tasks-late"
+title = "History tasks delayed"
+statement = "History's tasks run late: they were loaded up to {task_load_latency.max} after they were created or due."
+when = { hypothesis = "load-lag", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Follow the remaining requests to find which stage delays them: the scheduler, each attempt, or retries."
+claims = ["behaviour.history-task-latencies"]

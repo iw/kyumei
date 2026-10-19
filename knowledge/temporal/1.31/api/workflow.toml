@@ -1,0 +1,143 @@
+# Workflow API fields (DescribeWorkflowExecution). These are API response fields,
+# not metrics: they are read from `DescribeWorkflowExecution` output, never scraped.
+
+[[api_field]]
+id = "api.pending_workflow_task.attempt"
+message = "temporal.api.workflow.v1.PendingWorkflowTaskInfo"
+field = "attempt"
+json_name = "attempt"
+json_path = "pendingWorkflowTask.attempt"
+field_type = "int32"
+unit = "count"
+purpose = "The attempt of the Workflow's pending Workflow Task: 1 for a first attempt, higher after each failure or timeout. History writes no events for retries, so this is where they show."
+returned_by = ["DescribeWorkflowExecution"]
+notes = ["Absent when the Workflow has no pending Workflow Task."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "workflowservice/v1/request_response.pb.go", line = 6284, excerpt = "PendingWorkflowTask    *v17.PendingWorkflowTaskInfo       `protobuf:\"bytes,5,opt,name=pending_workflow_task,json=pendingWorkflowTask,proto3\" json:\"pending_workflow_task,omitempty\"`" },
+  { source = "temporal-api-go-v1.62.8", path = "workflow/v1/message.pb.go", line = 1304, excerpt = "Attempt               int32                  `protobuf:\"varint,5,opt,name=attempt,proto3\" json:\"attempt,omitempty\"`" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/describeworkflow/api.go", line = 222, excerpt = "if pendingWorkflowTask := mutableState.GetPendingWorkflowTask(); pendingWorkflowTask != nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/describeworkflow/api.go", line = 227, excerpt = "Attempt:               pendingWorkflowTask.Attempt," },
+]
+
+[[statement]]
+id = "cli.workflow-describe"
+category = "cli-command"
+title = "temporal workflow describe"
+statement = "Temporal CLI 1.7.0 to 1.9.1 describe a Workflow Execution with DescribeWorkflowExecution and, with `-o json`, print the response as the API's own JSON: lowerCamelCase field names, enums by name and 64-bit integers as strings. For a Workflow that is no longer running they add `closeEvent`, its close event, and for one that completed, `result`."
+notes = [
+  "`workflowExecutionInfo` carries `status`, `historyLength` and `historySizeBytes`, and a running Workflow's `pendingWorkflowTask` its `attempt`.",
+  "The CLI fetches the close event alone, with the close-event history filter, so for a terminated Workflow `closeEvent` holds the WorkflowExecutionTerminated event and its reason without the rest of the history.",
+  "The JSON encoder is go.temporal.io/api's, as in 1.62.8.",
+]
+verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+provenance = [
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 29, excerpt = "resp, err := cl.DescribeWorkflowExecution(cctx, c.WorkflowId, c.RunId)" },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 27, excerpt = "resp, err := cl.DescribeWorkflowExecution(cctx, c.WorkflowId, c.RunId)" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 78, excerpt = "var toPrint any = resp" },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 76, excerpt = "var toPrint any = resp" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 102, excerpt = "return cctx.Printer.PrintStructured(toPrint, printer.StructuredOptions{})" },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 100, excerpt = "return cctx.Printer.PrintStructured(toPrint, printer.StructuredOptions{})" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/printer/printer.go", line = 271, excerpt = "if protoMessage, ok := v.(proto.Message); ok {" },
+  { source = "temporal-api-go-v1.62.8", path = "internal/protojson/json_marshal.go", line = 216, excerpt = "name := fd.JSONName()" },
+  { source = "temporal-api-go-v1.62.8", path = "internal/protojson/json_marshal.go", line = 269, excerpt = "// 64-bit integers are written out as JSON string." },
+  { source = "temporal-api-go-v1.62.8", path = "internal/protojson/json_marshal.go", line = 291, excerpt = "e.WriteString(string(desc.Name()))" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 64, excerpt = "enums.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT," },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 62, excerpt = "enums.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT," },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 92, excerpt = 'respObj["closeEvent"] = json.RawMessage(b)' },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 90, excerpt = 'respObj["closeEvent"] = json.RawMessage(b)' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 94, excerpt = 'respObj["result"], err = cctx.MarshalFriendlyJSONPayloads(' },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 92, excerpt = 'respObj["result"], err = cctx.MarshalFriendlyJSONPayloads(' },
+]
+
+[[api_field]]
+id = "api.workflow_execution_info.history_length"
+message = "temporal.api.workflow.v1.WorkflowExecutionInfo"
+field = "history_length"
+json_name = "historyLength"
+json_path = "workflowExecutionInfo.historyLength"
+field_type = "int64"
+unit = "count"
+purpose = "The number of events in the Workflow's history."
+returned_by = ["DescribeWorkflowExecution"]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "workflowservice/v1/request_response.pb.go", line = 6281, excerpt = "WorkflowExecutionInfo  *v17.WorkflowExecutionInfo         `protobuf:\"bytes,2,opt,name=workflow_execution_info,json=workflowExecutionInfo,proto3\" json:\"workflow_execution_info,omitempty\"`" },
+  { source = "temporal-api-go-v1.62.8", path = "workflow/v1/message.pb.go", line = 102, excerpt = "HistoryLength        int64                       `protobuf:\"varint,6,opt,name=history_length,json=historyLength,proto3\" json:\"history_length,omitempty\"`" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/describeworkflow/api.go", line = 120, excerpt = "HistoryLength: mutableState.GetNextEventID() - common.FirstEventID," },
+]
+
+[[api_field]]
+id = "api.workflow_execution_info.status"
+message = "temporal.api.workflow.v1.WorkflowExecutionInfo"
+field = "status"
+json_name = "status"
+json_path = "workflowExecutionInfo.status"
+field_type = "enum temporal.api.enums.v1.WorkflowExecutionStatus"
+purpose = "Whether the Workflow is running, or how it closed: WORKFLOW_EXECUTION_STATUS_RUNNING, WORKFLOW_EXECUTION_STATUS_TERMINATED and so on."
+returned_by = ["DescribeWorkflowExecution"]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "workflow/v1/message.pb.go", line = 101, excerpt = "Status               v11.WorkflowExecutionStatus `protobuf:\"varint,5,opt,name=status,proto3,enum=temporal.api.enums.v1.WorkflowExecutionStatus\" json:\"status,omitempty\"`" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/workflow.pb.go", line = 340, excerpt = "1: \"WORKFLOW_EXECUTION_STATUS_RUNNING\"," },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/workflow.pb.go", line = 344, excerpt = "5: \"WORKFLOW_EXECUTION_STATUS_TERMINATED\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/describeworkflow/api.go", line = 119, excerpt = "Status:        executionState.Status," },
+]
+
+[[api_field]]
+id = "api.workflow_execution_info.history_size_bytes"
+message = "temporal.api.workflow.v1.WorkflowExecutionInfo"
+field = "history_size_bytes"
+json_name = "historySizeBytes"
+json_path = "workflowExecutionInfo.historySizeBytes"
+field_type = "int64"
+unit = "bytes"
+purpose = "The size of the Workflow's history, the figure limit.historySize.error is compared with."
+returned_by = ["DescribeWorkflowExecution"]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "workflow/v1/message.pb.go", line = 111, excerpt = "HistorySizeBytes     int64                       `protobuf:\"varint,15,opt,name=history_size_bytes,json=historySizeBytes,proto3\" json:\"history_size_bytes,omitempty\"`" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/describeworkflow/api.go", line = 126, excerpt = "HistorySizeBytes:     executionInfo.GetExecutionStats().GetHistorySize()," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1023, excerpt = "historySize := int(c.MutableState.GetExecutionInfo().ExecutionStats.HistorySize)" },
+]
+
+[[api_field]]
+id = "api.workflow_execution_terminated.reason"
+message = "temporal.api.history.v1.WorkflowExecutionTerminatedEventAttributes"
+field = "reason"
+json_name = "reason"
+json_path = "workflowExecutionTerminatedEventAttributes.reason"
+field_type = "string"
+purpose = "Why the Workflow was terminated, as given by whoever terminated it; History's own reasons name the limit that was exceeded."
+returned_by = ["GetWorkflowExecutionHistory"]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "history/v1/message.pb.go", line = 6559, excerpt = "WorkflowExecutionTerminatedEventAttributes *WorkflowExecutionTerminatedEventAttributes `protobuf:\"bytes,27,opt,name=workflow_execution_terminated_event_attributes,json=workflowExecutionTerminatedEventAttributes,proto3,oneof\"`" },
+  { source = "temporal-api-go-v1.62.8", path = "history/v1/message.pb.go", line = 2690, excerpt = "Reason  string       `protobuf:\"bytes,1,opt,name=reason,proto3\" json:\"reason,omitempty\"`" },
+]
+
+[[statement]]
+id = "cli.workflow-show"
+category = "cli-command"
+title = "temporal workflow show"
+statement = "Temporal CLI 1.7.0 to 1.9.1 print a Workflow Execution's event history with `temporal workflow show --output json` as the API's History JSON, `{\"events\": [...]}`, oldest event first, with payload shorthand turned off so that the SDKs' replayers read it."
+notes = [
+  "The CLI fetches every page of the history before printing, so the JSON is as large as the history; `jq '.events[-1]'` keeps the last event.",
+]
+verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+provenance = [
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 590, excerpt = "e, err := iter.NextRawEvent()" },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 569, excerpt = "e, err := iter.NextRawEvent()" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_exec.go", line = 811, excerpt = "s.iter = s.client.GetWorkflowHistory(" },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_exec.go", line = 892, excerpt = "s.iter = s.client.GetWorkflowHistory(" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 599, excerpt = "outStruct := history.History{}" },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 578, excerpt = "outStruct := history.History{}" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3"], path = "internal/temporalcli/commands.workflow_view.go", line = 603, excerpt = "jsonPayloadShorthand := false" },
+  { source = ["temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.workflow_view.go", line = 582, excerpt = "jsonPayloadShorthand := false" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/printer/printer.go", line = 276, excerpt = "return opts.Marshal(protoMessage)" },
+]

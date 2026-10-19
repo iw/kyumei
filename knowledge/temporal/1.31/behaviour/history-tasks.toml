@@ -1,0 +1,95 @@
+# How History processes its own tasks (timers, transfer and visibility tasks)
+# in Temporal Server 1.31.0: loading, scheduling, retrying, and what each
+# latency metric measures.
+
+[[statement]]
+id = "behaviour.history-task-pipeline"
+category = "behaviour"
+title = "History tasks are loaded, then wait for a host-wide scheduler"
+statement = "Each History shard keeps a queue per task category: timers in a scheduled queue, and transfer and visibility tasks in immediate queues. A queue's readers load tasks from the database, and pause while the queue holds history.queuePendingTasksMaxCount (10,000) tasks not yet completed. Loaded tasks then wait for one of the workers of a scheduler that every shard on the host shares: history.timerProcessorSchedulerWorkerCount and history.transferProcessorSchedulerWorkerCount, 512 each by default."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_factory.go", line = 177, excerpt = "return queues.NewScheduledQueue(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/transfer_queue_factory.go", line = 174, excerpt = "return queues.NewImmediateQueue(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/reader.go", line = 439, excerpt = "if !r.verifyPendingTaskSize() {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/reader.go", line = 530, excerpt = "return r.monitor.GetTotalPendingTaskCount() < r.options.MaxPendingTasksCount()" },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1788, excerpt = "\"history.queuePendingTasksMaxCount\"," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1800, excerpt = "\"history.queuePendingTasksMaxCount\"," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1805, excerpt = "\"history.queuePendingTasksMaxCount\"," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1819, excerpt = "\"history.queuePendingTasksMaxCount\"," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1789, excerpt = "10000," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1801, excerpt = "10000," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1806, excerpt = "10000," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1820, excerpt = "10000," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_factory.go", line = 45, excerpt = "HostScheduler: queues.NewScheduler(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/transfer_queue_factory.go", line = 50, excerpt = "HostScheduler: queues.NewScheduler(" },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1895, excerpt = "\"history.timerProcessorSchedulerWorkerCount\"," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1907, excerpt = "\"history.timerProcessorSchedulerWorkerCount\"," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1912, excerpt = "\"history.timerProcessorSchedulerWorkerCount\"," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1926, excerpt = "\"history.timerProcessorSchedulerWorkerCount\"," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1896, excerpt = "512," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1908, excerpt = "512," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1913, excerpt = "512," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1927, excerpt = "512," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1982, excerpt = "\"history.transferProcessorSchedulerWorkerCount\"," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1994, excerpt = "\"history.transferProcessorSchedulerWorkerCount\"," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1999, excerpt = "\"history.transferProcessorSchedulerWorkerCount\"," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 2013, excerpt = "\"history.transferProcessorSchedulerWorkerCount\"," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1983, excerpt = "512," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1995, excerpt = "512," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 2000, excerpt = "512," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 2014, excerpt = "512," },
+]
+
+[[statement]]
+id = "behaviour.history-task-latencies"
+category = "behaviour"
+title = "What each History task latency measures"
+statement = "task_latency_load runs from a task's creation, or for a timer from its fire time, to its loading into memory; task_latency_schedule, from loading or a retry to an attempt starting on a scheduler worker; task_latency_processing, one attempt's execution; and task_latency_queue, from creation or fire time to completion, across every attempt. For a timer, task_latency_queue is how late it completed after it was due to fire."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 221, excerpt = "loadTime := util.MaxTime(timeSource.Now(), task.GetKey().FireTime)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 223, excerpt = "loadTime.Sub(task.GetVisibilityTime())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/task_key_generator.go", line = 76, excerpt = "taskScheduledTime = task.GetVisibilityTime()." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 232, excerpt = "e.scheduleLatency = startTime.Sub(e.scheduledTime)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 318, excerpt = "metrics.TaskScheduleLatency.With(priorityTaggedProvider).Record(e.scheduleLatency)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 306, excerpt = "attemptLatency := e.timeSource.Now().Sub(startTime)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 309, excerpt = "metrics.TaskProcessingLatency.With(e.chasmMetricsHandler).Record(attemptLatency)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 661, excerpt = "Record(time.Since(e.GetVisibilityTime()))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 817, excerpt = "WithDescription(\"Latency from history task generation to loading into memory (persistence schedule to start latency).\")," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 842, excerpt = "WithDescription(\"End-to-end latency for processing and completing a history task, from task generation to completion.\")," },
+]
+
+[[statement]]
+id = "behaviour.history-task-retries"
+category = "behaviour"
+title = "Throttled History tasks are retried with backoff"
+statement = "A History task that fails with ResourceExhausted is counted in task_errors_throttled by cause and retried. A persistence limit refusing its calls gives cause PersistenceLimit; another caller holding the Workflow's lock for longer than history.cacheNonUserContextLockTimeout (500 ms) gives BusyWorkflow. After the first, each further consecutive ResourceExhausted other than BusyWorkflow makes the task wait at least 3 seconds before its next attempt, growing by half each time up to 5 minutes. Other unexpected errors are counted in task_errors and retried with backoff."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 449, excerpt = "metrics.TaskThrottledCounter.With(e.chasmMetricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 450, excerpt = "1, metrics.ResourceExhaustedCauseTag(resourceExhaustedErr.Cause))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 25, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_PERSISTENCE_LIMIT," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 328, excerpt = "newDeadline := time.Now().Add(c.nonUserContextLockTimeout)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 345, excerpt = "return consts.ErrResourceExhaustedBusyWorkflow" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/consts/const.go", line = 104, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_BUSY_WORKFLOW," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1606, excerpt = "\"history.cacheNonUserContextLockTimeout\"," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1612, excerpt = "\"history.cacheNonUserContextLockTimeout\"," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1617, excerpt = "\"history.cacheNonUserContextLockTimeout\"," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1631, excerpt = "\"history.cacheNonUserContextLockTimeout\"," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1607, excerpt = "500*time.Millisecond," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1613, excerpt = "500*time.Millisecond," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1618, excerpt = "500*time.Millisecond," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1632, excerpt = "500*time.Millisecond," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 446, excerpt = "e.resourceExhaustedCount++" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 96, excerpt = "resourceExhaustedResubmitMaxAttempts = 1" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 757, excerpt = "if !errors.Is(err, consts.ErrResourceExhaustedBusyWorkflow) &&" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 800, excerpt = "taskResourceExhuastedReschedulePolicy.ComputeNextDelay(0, e.resourceExhaustedCount, err)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 84, excerpt = "taskResourceExhaustedRescheduleInitialInterval    = 3 * time.Second" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 85, excerpt = "taskResourceExhaustedRescheduleBackoffCoefficient = 1.5" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 86, excerpt = "taskResourceExhaustedRescheduleMaxInterval        = 5 * time.Minute" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 540, excerpt = "metrics.TaskFailures.With(e.chasmMetricsHandler).Record(1)" },
+]

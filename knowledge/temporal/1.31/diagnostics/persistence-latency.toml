@@ -1,0 +1,429 @@
+# Diagnostic: elevated persistence latency on History.
+#
+# persistence_latency times a call from History's persistence client down to
+# the datastore, so it includes any wait for a free SQL connection. The
+# investigation separates that wait from slower database calls: first the
+# connection pools, then errors, then whether the call rate rose, and only
+# then the database's own latency, measured against its baseline.
+
+[diagnostic]
+id = "persistence-latency"
+title = "Elevated persistence latency"
+summary = "History's persistence calls take far longer than usual."
+precedence = 20
+
+[diagnostic.path]
+description = "The path of a persistence call: from the requests and tasks History serves, through its persistence client and connection pool, to the database."
+layers = ["clients", "history", "persistence"]
+labels = { clients = "Callers" }
+
+[[symptom]]
+id = "persistence-latency-elevated"
+title = "Persistence latency is elevated"
+patterns = [
+  "persistence[_ ]latency",
+  "\\b(persistence|database|db|postgres(ql)?|mysql)\\b.{0,60}\\b(latency|slow|slower|delays?)\\b",
+]
+signal = "persistence_latency"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "pool"
+order = 1
+title = "Connection pool"
+question = "Are persistence calls waiting for a database connection?"
+
+[[stage]]
+id = "errors"
+order = 2
+title = "Persistence errors"
+question = "Is the database failing calls?"
+
+[[stage]]
+id = "load"
+order = 3
+title = "Persistence load"
+question = "Did History's persistence calls rise?"
+
+[[stage]]
+id = "database"
+order = 4
+title = "Database latency"
+question = "Are the database calls themselves slower?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "persistence_latency"
+title = "History persistence latency"
+unit = "seconds"
+description = "Time History's persistence calls take, including any wait for a connection (a high quantile over the window)."
+source = [{ claim = "server.persistence_latency", labels = { service_name = "history" } }]
+
+[[signal]]
+id = "pool_in_use"
+title = "SQL connections in use (busiest History host)"
+unit = "count"
+description = "Connections of History's main datastore pool in use, on the busiest History host."
+source = [{ claim = "server.persistence_sql_in_use", labels = { service_name = "history", db_kind = "main" } }]
+
+[[signal]]
+id = "pool_max_open"
+title = "SQL connection pool maximum (per History host)"
+unit = "count"
+description = "The cap on each History host's main datastore pool (maxConns), 0 when there is none."
+source = [{ claim = "server.persistence_sql_max_open_conn", labels = { service_name = "history", db_kind = "main" } }]
+
+[[signal]]
+id = "persistence_error_rate"
+title = "History persistence errors"
+unit = "per_second"
+description = "History's persistence calls that failed with an unexpected error, per second."
+combine = "sum"
+source = [{ claim = "server.persistence_errors", labels = { service_name = "history" }, transform = "rate" }]
+
+[[signal]]
+id = "persistence_request_rate"
+title = "History persistence calls"
+unit = "per_second"
+description = "History's persistence calls per second, across operations and hosts."
+combine = "sum"
+source = [{ claim = "server.persistence_requests", labels = { service_name = "history" }, transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "pool-saturated"
+stage = "pool"
+primary = true
+layer = "persistence"
+title = "History's connection pools full"
+question = "Calls waiting for a connection?"
+statement = "History's SQL connection pools have every connection in use, so persistence calls wait for a free one and the wait counts in persistence latency."
+
+[[hypothesis]]
+id = "persistence-errors"
+stage = "errors"
+primary = true
+layer = "persistence"
+title = "Database failing calls"
+question = "Database failing calls?"
+statement = "The database fails a sustained share of History's persistence calls, for example during a failover or when it refuses connections."
+
+[[hypothesis]]
+id = "load-rise"
+stage = "load"
+primary = true
+layer = "history"
+title = "History's persistence calls rose"
+question = "Persistence load up?"
+statement = "History made far more persistence calls than before the incident, from more requests, Workflows or tasks."
+
+[[hypothesis]]
+id = "database-slow"
+stage = "database"
+primary = true
+layer = "persistence"
+title = "Database calls slower"
+question = "Database itself slower?"
+statement = "The database takes longer to serve each call, from its own load, locks, storage or maintenance, or from the network to it."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "sql-pool"
+stage = "pool"
+title = "History's SQL connection pool use"
+why = "persistence_latency includes any wait for a free database connection. Connections in use against the pool's maximum show whether calls had to wait, the one cause a larger pool would fix."
+signals = ["pool_in_use", "pool_max_open"]
+distinguishes = ["pool-saturated", "database-slow"]
+cost = 1
+requires = ["server-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Connections in use on the busiest History host (include at least 15 minutes before the incident)"
+body = "max(persistence_sql_in_use{service_name=\"history\", db_kind=\"main\"})"
+unit = "count"
+claims = ["server.persistence_sql_in_use", "limit.sql-connection-pool", "behaviour.sql-pool-wait"]
+note = "the gauge is sampled once a minute; use a step of 1m or more"
+
+[[request.collect]]
+method = "promql"
+label = "The pool's maximum on History hosts"
+body = "max(persistence_sql_max_open_conn{service_name=\"history\", db_kind=\"main\"})"
+unit = "count"
+claims = ["server.persistence_sql_max_open_conn", "limit.sql-connection-pool"]
+note = "0 means the pool has no maximum; only MySQL and PostgreSQL report the pool"
+
+[[request]]
+id = "persistence-errors"
+stage = "errors"
+title = "History's persistence errors"
+why = "A database that fails calls, during a failover say, also slows the calls that succeed. persistence_errors counts only unexpected failures, so a healthy cluster records almost none."
+signals = ["persistence_error_rate"]
+distinguishes = ["persistence-errors"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["operation"]
+
+[[request.collect]]
+method = "promql"
+label = "History's persistence errors per second"
+body = "sum(rate(persistence_errors{service_name=\"history\"}[1m]))"
+unit = "per_second"
+claims = ["server.persistence_errors", "behaviour.persistence-throttle-metrics"]
+note = "if the query returns no series, say so; an empty result is not the same as zero. With the OpenTelemetry metrics framework the counter is named persistence_errors_total"
+
+[[request]]
+id = "persistence-requests"
+stage = "load"
+title = "History's persistence calls, before and during the incident"
+why = "A connection pool's use grows with the call rate. The rate before and during the incident tells a pool filled by more calls from one filled by calls that each take longer."
+signals = ["persistence_request_rate"]
+distinguishes = ["load-rise", "database-slow"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["operation"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "History's persistence calls per second, by operation (include at least 15 minutes before the incident)"
+body = "sum by (operation) (rate(persistence_requests{service_name=\"history\"}[1m]))"
+unit = "per_second"
+claims = ["server.persistence_requests", "server.metrics-framework"]
+note = "with the OpenTelemetry metrics framework the counter is named persistence_requests_total"
+
+[[request]]
+id = "persistence-latency"
+stage = "database"
+title = "History's persistence latency, before and during the incident"
+why = "With the pools' use known, the latency against its own baseline shows whether the database calls themselves slowed."
+signals = ["persistence_latency"]
+distinguishes = ["database-slow"]
+cost = 1
+requires = ["server-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p99 of History's persistence latency (include at least 15 minutes before the incident)"
+body = "histogram_quantile(0.99, sum by (le) (rate(persistence_latency_bucket{service_name=\"history\"}[1m])))"
+unit = "seconds"
+claims = ["server.persistence_latency", "server.metrics-framework"]
+note = "with the OpenTelemetry metrics framework the histogram is persistence_latency_milliseconds_bucket, in milliseconds"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "pool-full"
+hypothesis = "pool-saturated"
+effect = "establishes"
+statement = "History's connection pools were full: up to {pool_in_use.max} connections in use of a maximum of {pool_max_open.last}, while persistence latency reached {persistence_latency.max}."
+claims = ["heuristic.pool-saturated", "behaviour.sql-pool-wait", "heuristic.persistence-latency-elevated"]
+when = { all = [
+  { signal = "pool_max_open", stat = "last", op = "ge", value = 1 },
+  { ratio = { numerator = "pool_in_use.max", denominator = "pool_max_open.last" }, op = "ge", value = 0.95 },
+  { signal = "persistence_latency", stat = "max", op = "ge", value = 0.05 },
+] }
+
+[[rule]]
+id = "pool-headroom"
+hypothesis = "pool-saturated"
+effect = "eliminates"
+statement = "History's connection pools had connections to spare: at most {pool_in_use.max} in use of a maximum of {pool_max_open.last} at every sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.pool-saturated"]
+when = { all = [
+  { signal = "pool_max_open", stat = "last", op = "ge", value = 1 },
+  { ratio = { numerator = "pool_in_use.max", denominator = "pool_max_open.last" }, op = "le", value = 0.7 },
+  { signal = "pool_in_use", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "pool-uncapped"
+hypothesis = "pool-saturated"
+effect = "eliminates"
+statement = "History's pools have no maximum (persistence_sql_max_open_conn is {pool_max_open.max}), so calls never wait for a connection."
+claims = ["heuristic.sustained-needs-samples", "limit.sql-connection-pool"]
+when = { all = [
+  { signal = "pool_max_open", stat = "max", op = "lt", value = 1 },
+  { signal = "pool_max_open", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "errors-sustained"
+hypothesis = "persistence-errors"
+effect = "establishes"
+statement = "The database failed History's persistence calls at {persistence_error_rate.mean} on average, peaking at {persistence_error_rate.max}."
+claims = ["heuristic.persistence-errors-significant", "server.persistence_errors"]
+when = { signal = "persistence_error_rate", stat = "mean", op = "gt", value = 1 }
+
+[[rule]]
+id = "no-errors"
+hypothesis = "persistence-errors"
+effect = "eliminates"
+statement = "History's persistence calls did not fail: at most {persistence_error_rate.max} at any sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.persistence-errors-significant"]
+when = { all = [
+  { signal = "persistence_error_rate", stat = "max", op = "le", value = 0.1 },
+  { signal = "persistence_error_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "load-rose"
+hypothesis = "load-rise"
+effect = "establishes"
+statement = "History's persistence calls rose from about {persistence_request_rate.baseline} before the incident to {persistence_request_rate.max}."
+claims = ["heuristic.persistence-load-rise"]
+when = { ratio = { numerator = "persistence_request_rate.max", denominator = "persistence_request_rate.baseline" }, op = "ge", value = 1.5 }
+
+[[rule]]
+id = "load-steady"
+hypothesis = "load-rise"
+effect = "eliminates"
+statement = "History's persistence calls held steady: at most {persistence_request_rate.max} against about {persistence_request_rate.baseline} before the incident."
+claims = ["heuristic.sustained-needs-samples", "heuristic.persistence-load-rise"]
+when = { all = [
+  { ratio = { numerator = "persistence_request_rate.max", denominator = "persistence_request_rate.baseline" }, op = "lt", value = 1.2 },
+  { signal = "persistence_request_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "slow-with-headroom"
+hypothesis = "database-slow"
+effect = "establishes"
+statement = "Persistence latency rose from about {persistence_latency.baseline} to {persistence_latency.max} while the pools had connections to spare (at most {pool_in_use.max} of {pool_max_open.last} in use): the time was spent in the database calls themselves."
+claims = ["heuristic.persistence-latency-elevated", "heuristic.pool-saturated", "behaviour.sql-pool-wait"]
+when = { all = [
+  { ratio = { numerator = "persistence_latency.max", denominator = "persistence_latency.baseline" }, op = "ge", value = 3 },
+  { signal = "persistence_latency", stat = "max", op = "ge", value = 0.05 },
+  { signal = "pool_max_open", stat = "last", op = "ge", value = 1 },
+  { ratio = { numerator = "pool_in_use.max", denominator = "pool_max_open.last" }, op = "le", value = 0.7 },
+] }
+
+[[rule]]
+id = "slow-uncapped"
+hypothesis = "database-slow"
+effect = "establishes"
+statement = "Persistence latency rose from about {persistence_latency.baseline} to {persistence_latency.max} while the pools had no maximum ({pool_max_open.max}), so no call waited for a connection: the time was spent in the database calls themselves."
+claims = ["heuristic.persistence-latency-elevated", "limit.sql-connection-pool", "behaviour.sql-pool-wait"]
+when = { all = [
+  { ratio = { numerator = "persistence_latency.max", denominator = "persistence_latency.baseline" }, op = "ge", value = 3 },
+  { signal = "persistence_latency", stat = "max", op = "ge", value = 0.05 },
+  { signal = "pool_max_open", stat = "max", op = "lt", value = 1 },
+  { signal = "pool_max_open", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "pool-filled-at-steady-load"
+hypothesis = "database-slow"
+effect = "establishes"
+statement = "The pools went from about {pool_in_use.baseline} connections in use before the incident to {pool_in_use.max} of {pool_max_open.last}, while History's persistence calls held steady ({persistence_request_rate.max} against about {persistence_request_rate.baseline}): each call held its connection longer, so the database calls themselves slowed."
+claims = ["heuristic.pool-saturated", "heuristic.persistence-load-rise", "behaviour.sql-pool-wait"]
+when = { all = [
+  { signal = "pool_max_open", stat = "last", op = "ge", value = 1 },
+  { ratio = { numerator = "pool_in_use.max", denominator = "pool_max_open.last" }, op = "ge", value = 0.95 },
+  { ratio = { numerator = "pool_in_use.baseline", denominator = "pool_max_open.last" }, op = "le", value = 0.7 },
+  { ratio = { numerator = "persistence_request_rate.max", denominator = "persistence_request_rate.baseline" }, op = "lt", value = 1.2 },
+  { signal = "persistence_request_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "pool-filled-by-load"
+hypothesis = "database-slow"
+effect = "weakens"
+statement = "The pools filled ({pool_in_use.max} of {pool_max_open.last}) as History's persistence calls rose from about {persistence_request_rate.baseline} to {persistence_request_rate.max}, which accounts for the latency without slower database calls."
+claims = ["heuristic.pool-saturated", "heuristic.persistence-load-rise"]
+when = { all = [
+  { signal = "pool_max_open", stat = "last", op = "ge", value = 1 },
+  { ratio = { numerator = "pool_in_use.max", denominator = "pool_max_open.last" }, op = "ge", value = 0.95 },
+  { ratio = { numerator = "persistence_request_rate.max", denominator = "persistence_request_rate.baseline" }, op = "ge", value = 1.5 },
+] }
+
+[[rule]]
+id = "latency-near-baseline"
+hypothesis = "database-slow"
+effect = "eliminates"
+statement = "Persistence latency stayed near its baseline: at most {persistence_latency.max} against about {persistence_latency.baseline} before the incident."
+claims = ["heuristic.sustained-needs-samples", "heuristic.persistence-latency-elevated"]
+when = { all = [
+  { ratio = { numerator = "persistence_latency.max", denominator = "persistence_latency.baseline" }, op = "lt", value = 1.5 },
+  { signal = "persistence_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "database-errors"
+title = "Database failing History's calls"
+statement = "Persistence latency rose while the database failed History's persistence calls at {persistence_error_rate.mean} on average, peaking at {persistence_error_rate.max}."
+when = { hypothesis = "persistence-errors", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Check the database's health over the window: failovers, restarts, refused connections, and the errors History logged for these calls."
+claims = ["server.persistence_errors", "heuristic.persistence-errors-significant"]
+
+[[conclusion]]
+id = "pool-saturated-under-load"
+title = "Connection pools full under a rise in persistence calls"
+statement = "Persistence latency rose because History's database connection pools were full ({pool_in_use.max} of {pool_max_open.last} connections in use) after its persistence calls rose from about {persistence_request_rate.baseline} to {persistence_request_rate.max}. Calls waited for a free connection, and the wait counts in persistence latency, which reached {persistence_latency.max}."
+when = { all = [
+  { hypothesis = "pool-saturated", state = ["established"] },
+  { hypothesis = "load-rise", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Raise the datastore's maxConns in the server's persistence configuration, so each History host can open more connections."
+caution = "Every History host opens up to maxConns connections, as do the other services' hosts, so the database must accept that many in total; check its connection limit and CPU first."
+claims = ["limit.sql-connection-pool", "behaviour.sql-pool-wait"]
+
+[[conclusion.recommendation]]
+text = "Find what raised History's persistence calls in the breakdown by operation: more Workflow starts, Signals, Activities or timers each multiply them."
+claims = ["server.persistence_requests", "heuristic.persistence-load-rise"]
+
+[[conclusion]]
+id = "database-slow-pool-filled"
+title = "Database calls slower, filling the connection pools"
+statement = "Persistence latency rose because the database calls slowed: each held its connection longer, so History's pools filled ({pool_in_use.max} of {pool_max_open.last} in use) while the call rate held steady. Calls then also waited for a connection, and persistence latency reached {persistence_latency.max}."
+when = { all = [
+  { hypothesis = "pool-saturated", state = ["established"] },
+  { hypothesis = "database-slow", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Investigate the database itself over the window: its CPU, I/O, locks and slow queries, and any failover, backup or maintenance."
+caution = "A larger pool will not help: it adds concurrent load to a database that is already slower."
+claims = ["behaviour.sql-pool-wait", "heuristic.persistence-load-rise"]
+
+[[conclusion]]
+id = "database-slow"
+title = "Database calls slower"
+statement = "Persistence latency rose from about {persistence_latency.baseline} to {persistence_latency.max} because the database calls themselves slowed: History's connection pools had connections to spare, so calls did not wait for one."
+when = { all = [
+  { hypothesis = "database-slow", state = ["established"] },
+  { hypothesis = "pool-saturated", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "persistence_request_rate.max", denominator = "persistence_request_rate.baseline" }, op = "lt", value = 1.2 }
+text = "History's persistence calls held steady ({persistence_request_rate.max} against about {persistence_request_rate.baseline} before), so more calls did not cause it."
+
+[[conclusion.recommendation]]
+text = "Investigate the database itself over the window: its CPU, I/O, locks and slow queries, the network to it, and any failover, backup or maintenance."
+caution = "Neither a larger pool nor more History hosts will help while each call is slower."
+claims = ["behaviour.sql-pool-wait", "heuristic.persistence-latency-elevated"]
+
+[[conclusion]]
+id = "pool-saturated"
+title = "History's connection pools full"
+statement = "History's database connection pools were full ({pool_in_use.max} of {pool_max_open.last} in use), so persistence calls waited for a free connection and persistence latency reached {persistence_latency.max}."
+when = { hypothesis = "pool-saturated", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Compare History's persistence call rate before and during the incident: a rise means the pools are too small for the load; a steady rate means the database calls slowed."
+claims = ["heuristic.persistence-load-rise", "behaviour.sql-pool-wait"]

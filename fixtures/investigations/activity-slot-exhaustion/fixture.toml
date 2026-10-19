@@ -1,0 +1,37 @@
+# Branch: a batch of uploads fills every Activity slot on the transcoding
+# Workers. Each Activity runs for minutes, so the Workers stop polling and
+# new Activities wait for a slot. This is the one cause more Workers fix.
+
+[fixture]
+id = "activity-slot-exhaustion"
+title = "Activity slots exhausted: schedule-to-start ~4 min"
+description = "Branch fixture: one query shows no Activity slot free throughout the incident, which concludes the investigation."
+investigation = "inv-branch-activity-slots"
+
+[open]
+at = 2026-10-01T18:24:00Z
+description = "Activities on the transcode task queue (namespace media) have been queued for about 4 minutes since 18:05 UTC. Each transcode activity runs for several minutes and a large batch of uploads arrived."
+server_version = "1.31.0"
+sdks = [{ language = "python", version = "1.25.0" }]
+namespaces = ["media"]
+task_queues = ["transcode"]
+window_start = 2026-10-01T18:05:00Z
+window_end = 2026-10-01T18:25:00Z
+
+[open.expect]
+next_request = "activity-worker-slots"
+
+[[step]]
+at = 2026-10-01T18:31:00Z
+answers = "activity-worker-slots"
+file = "evidence/e1-activity-slots.json"
+query = 'sum by (task_queue) (temporal_worker_task_slots_available{worker_type="ActivityWorker", namespace="media", task_queue="transcode"})'
+
+[step.expect]
+next_request = "none"
+findings = ["F-slots-exhausted", "F-slots-ran-out"]
+conclusion = "activity-slot-exhaustion"
+concluded = true
+
+[step.expect.states]
+activity-slot-exhaustion = "established"

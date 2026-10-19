@@ -1,0 +1,12 @@
+# config/dynamicconfig/production.yaml (excerpt, via grep)
+# order-fulfillment was reduced to 2 partitions in June when its traffic was low.
+matching.numTaskqueueReadPartitions:
+  - value: 2
+    constraints:
+      namespace: "commerce-prod"
+      taskQueueName: "order-fulfillment"
+matching.numTaskqueueWritePartitions:
+  - value: 2
+    constraints:
+      namespace: "commerce-prod"
+      taskQueueName: "order-fulfillment"

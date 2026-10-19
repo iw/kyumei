@@ -1,0 +1,1271 @@
+# References to tsurdilo/temporal-server-operations: alert runbooks, playbook
+# sections and dashboard panels, linked to the conclusions, hypotheses and requests
+# they bear on.
+#
+# Every reference cites the repository at the commit its source pins, with the path
+# and the section heading or the dashboard uid and panel id. The repository has no
+# licence, so Kyumei links to it and reads an operator's own copy: none of its text
+# or dashboards is copied here. Titles and headings are quoted only to cite them, and
+# `why` is Kyumei's own account of the relevance.
+#
+# The repository has no tags or releases, so a reference records the version of
+# what it cites where the repository declares one: a dashboard's version as its
+# title gives it, and the dashboard version a playbook needs, from the playbooks
+# index. Runbooks carry none.
+#
+# `kyumei knowledge verify --source temporal-server-operations-5a71c36=<checkout>`
+# checks every title, section, panel and version at the pinned commit.
+
+[[reference]]
+id = "ops.runbook.sdk-19"
+kind = "runbook"
+title = "WFT Schedule-To-Start Latency Critical"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/19-wft-schedule-to-start-critical.md"
+why = "Alert 19 fires when Workflow Task schedule-to-start stays above 5 s for five minutes. Its triage looks at the Workers, their pollers and their slots, the stages Kyumei's diagnostic starts with."
+link = [
+  { diagnostic = "wft-schedule-to-start" },
+  { diagnostic = "wft-schedule-to-start", requests = ["wft-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-19b"
+kind = "runbook"
+title = "WFT Schedule-To-Start Latency Severely Elevated"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/19b-wft-schedule-to-start-severe.md"
+why = "Alert 19b fires when Workflow Task schedule-to-start passes 30 minutes and Workflows are effectively stalled. Its triage starts from the Workers and their pollers."
+link = [
+  { diagnostic = "wft-schedule-to-start" },
+  { diagnostic = "wft-schedule-to-start", requests = ["wft-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-14.workflow-worker"
+kind = "runbook"
+title = "Worker Task Slots Exhausted"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/14-worker-slots-exhausted.md"
+section = "WorkflowWorker"
+why = "Alert 14 fires when a Worker has no free slot. This section covers Workflow Task slots: what to check when Kyumei finds them exhausted."
+link = [
+  { diagnostic = "wft-schedule-to-start", conclusions = ["worker-slot-exhaustion"], hypotheses = ["worker-slot-exhaustion"], requests = ["workflow-worker-slots"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-14.activity-worker"
+kind = "runbook"
+title = "Worker Task Slots Exhausted"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/14-worker-slots-exhausted.md"
+section = "ActivityWorker"
+why = "Alert 14 fires when a Worker has no free slot. This section covers Activity slots: what to check when Kyumei finds them exhausted."
+link = [
+  { diagnostic = "activity-schedule-to-start", conclusions = ["activity-slot-exhaustion"], hypotheses = ["activity-slot-exhaustion"], requests = ["activity-worker-slots"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-15"
+kind = "runbook"
+title = "All Pollers Disconnected"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/15-all-pollers-disconnected.md"
+why = "Alert 15 fires when a Worker type has no pollers left. Its triage tells Workers that are down from Workers whose slots are all taken, which also stops their polls."
+link = [
+  { diagnostic = "wft-schedule-to-start", hypotheses = ["pollers-absent"], requests = ["workflow-pollers"] },
+  { diagnostic = "activity-schedule-to-start", conclusions = ["activity-pollers-absent"], hypotheses = ["activity-pollers-absent"], requests = ["activity-pollers"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-57"
+kind = "runbook"
+title = "All Pollers Disconnected"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/57-all-pollers-disconnected.md"
+why = "Alert 57 watches the Frontend's long polls: none for a namespace means no Worker is polling it, the server-side view of missing pollers."
+link = [
+  { diagnostic = "wft-schedule-to-start", hypotheses = ["pollers-absent"] },
+  { diagnostic = "activity-schedule-to-start", hypotheses = ["activity-pollers-absent"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-queue-partitions.when-to-increase"
+kind = "playbook"
+title = "Changing Task Queue Partitions Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/change-task-queue-partitions.md"
+section = "When to Increase Partitions"
+version = { version = "v1.4.0", of = "needs-dashboard", dashboard = "Task Queue Partitions", path = "playbooks/README.md", line = 46, excerpt = "[Task Queue Partitions](../observability/dashboards/server/task-queue-partitions-readme.md) v1.4.0" }
+why = "How a partition's dispatch rate caps a Task Queue, and when more partitions help: the change a dispatch ceiling points to, and the checks to make before it."
+link = [
+  { diagnostic = "wft-schedule-to-start", conclusions = ["dispatch-ceiling", "dispatch-ceiling-under-signal-flood"], hypotheses = ["dispatch-rate-ceiling"], requests = ["partition-config"] },
+  { diagnostic = "activity-schedule-to-start", conclusions = ["system-rate-limit"], hypotheses = ["system-rate-limit"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-queue-partitions.backlog"
+kind = "playbook"
+title = "Changing Task Queue Partitions Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/change-task-queue-partitions.md"
+section = "Adding Partitions Won't Drain an Existing Backlog"
+version = { version = "v1.4.0", of = "needs-dashboard", dashboard = "Task Queue Partitions", path = "playbooks/README.md", line = 46, excerpt = "[Task Queue Partitions](../observability/dashboards/server/task-queue-partitions-readme.md) v1.4.0" }
+why = "Why more partitions do not drain a backlog that is already in Matching, and what does."
+link = [
+  { diagnostic = "wft-schedule-to-start", conclusions = ["dispatch-ceiling", "dispatch-ceiling-under-signal-flood"], hypotheses = ["matching-backlog"] },
+  { diagnostic = "activity-schedule-to-start", hypotheses = ["activity-matching-backlog"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-queue-partitions.write-read"
+kind = "playbook"
+title = "Changing Task Queue Partitions Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/change-task-queue-partitions.md"
+section = "Detecting and Fixing an Existing `Write > Read` Misconfiguration"
+version = { version = "v1.4.0", of = "needs-dashboard", dashboard = "Task Queue Partitions", path = "playbooks/README.md", line = 46, excerpt = "[Task Queue Partitions](../observability/dashboards/server/task-queue-partitions-readme.md) v1.4.0" }
+why = "How to confirm and fix a Task Queue with more write partitions than read partitions, the misconfiguration Kyumei tests for."
+link = [
+  { diagnostic = "wft-schedule-to-start", hypotheses = ["partition-write-read-mismatch"], requests = ["partition-config"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-queue-partitions.exact-limit"
+kind = "playbook"
+title = "Changing Task Queue Partitions Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/change-task-queue-partitions.md"
+section = "You want a per-task-queue rate limit to be exact"
+version = { version = "v1.4.0", of = "needs-dashboard", dashboard = "Task Queue Partitions", path = "playbooks/README.md", line = 46, excerpt = "[Task Queue Partitions](../observability/dashboards/server/task-queue-partitions-readme.md) v1.4.0" }
+why = "A rate limit the Workers set for the Task Queue is split across its read partitions, so with several partitions dispatch can burst past it."
+link = [
+  { diagnostic = "activity-schedule-to-start", conclusions = ["worker-rate-limit", "worker-rate-limit-under-fanout"], hypotheses = ["worker-rate-limit"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-queue-partitions.eager"
+kind = "playbook"
+title = "Changing Task Queue Partitions Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/change-task-queue-partitions.md"
+section = "Activity queues can look empty: eager dispatch"
+version = { version = "v1.4.0", of = "needs-dashboard", dashboard = "Task Queue Partitions", path = "playbooks/README.md", line = 46, excerpt = "[Task Queue Partitions](../observability/dashboards/server/task-queue-partitions-readme.md) v1.4.0" }
+why = "Activities dispatched eagerly to the Worker that scheduled them never reach Matching, so a Task Queue's backlog and rates can look empty while Activities run."
+link = [
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-queue-stats", "scheduled-activities"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-20b"
+kind = "runbook"
+title = "Activity Schedule-To-Start Latency Severely Elevated"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/20b-activity-schedule-to-start-severe.md"
+why = "Alert 20b fires when Activity schedule-to-start passes 30 minutes. Its triage starts from the Activity Workers, their pollers and their slots."
+link = [
+  { diagnostic = "activity-schedule-to-start" },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-02a"
+kind = "runbook"
+title = "RESOURCE_EXHAUSTED on Critical User-Facing Operations"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/02a-resource-exhausted-critical-ops.md"
+why = "Alert 2a fires when clients get ResourceExhausted on starts, signals and updates, the calls the server throttles last."
+link = [
+  { diagnostic = "resource-exhausted" },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-02b"
+kind = "runbook"
+title = "RESOURCE_EXHAUSTED on Respond Operations"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/02b-resource-exhausted-respond-ops.md"
+why = "Alert 2b fires when Workers get ResourceExhausted completing tasks; sustained, it delays completions until tasks time out."
+link = [
+  { diagnostic = "resource-exhausted" },
+]
+
+[[reference]]
+id = "ops.runbook.server-30"
+kind = "runbook"
+title = "System Overload Throttling"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/30-system-overload-throttling.md"
+why = "Alert 30 fires on the SystemOverloaded and CircuitBreakerOpen causes, which Kyumei recognises in the breakdown by cause but does not diagnose."
+link = [
+  { diagnostic = "resource-exhausted", requests = ["rejections-by-cause"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-86"
+kind = "runbook"
+title = "History Database Calls Rejected"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/86-history-database-calls-rejected.md"
+why = "Alert 86 counts History's database calls refused by the persistence limits, most of which never fail a client's request."
+link = [
+  { diagnostic = "resource-exhausted", conclusions = ["persistence-namespace-limit", "persistence-host-limit"], hypotheses = ["persistence-namespace-limit", "persistence-host-limit"] },
+]
+
+[[reference]]
+id = "ops.playbook.persistence-qps.scope"
+kind = "playbook"
+title = "History Persistence QPS Limits — Rejected Database Calls Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/history-persistence-qps-limits.md"
+section = "2.3 Which check rejects the call, and which scope you see"
+version = { version = "v2.16.0+", of = "needs-dashboard", dashboard = "Temporal Server", path = "playbooks/README.md", line = 36, excerpt = "[Temporal Server](../observability/dashboards/server/temporal-server-readme.md#3-persistence-requests-latencies-and-errors) v2.16.0+" }
+why = "Which persistence limit refused a call, read from the scope it reports, as Kyumei's persistence limit conclusions read it."
+link = [
+  { diagnostic = "resource-exhausted", conclusions = ["persistence-namespace-limit", "persistence-host-limit"], hypotheses = ["persistence-namespace-limit", "persistence-host-limit"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-12"
+kind = "runbook"
+title = "Persistence Latency Critical"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/12-persistence-latency-critical.md"
+why = "Alert 12 fires when critical-path persistence calls take over a second at p99. Its first checks are the latency by operation and the errors."
+link = [
+  { diagnostic = "persistence-latency" },
+  { diagnostic = "persistence-latency", requests = ["persistence-latency"] },
+]
+
+[[reference]]
+id = "ops.playbook.hot-shard.causes"
+kind = "playbook"
+title = "Hot Shard — Detection & Remediation Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/hot-shard-detection-remediation.md"
+section = "1. What causes a hot shard, and what doesn't"
+version = { version = "v2.14.0+", of = "needs-dashboard", dashboard = "Temporal Server", path = "playbooks/README.md", line = 37, excerpt = "[Temporal Server](../observability/dashboards/server/temporal-server-readme.md#3-persistence-requests-latencies-and-errors) v2.14.0+" }
+why = "A hot shard slows the database calls of the Workflows on one shard. Its causes, and how they differ from a database that is slow for everyone."
+link = [
+  { diagnostic = "persistence-latency", conclusions = ["database-slow"], hypotheses = ["database-slow"] },
+]
+
+[[reference]]
+id = "ops.playbook.shard-io-concurrency"
+kind = "playbook"
+title = "Playbook: Should I Raise `history.shardIOConcurrency` on My SQL Cluster?"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/shard-io-concurrency.md"
+version = { version = "v1.1.0", of = "needs-dashboard", dashboard = "Shard IO Concurrency", path = "playbooks/README.md", line = 39, excerpt = "[Shard IO Concurrency](../observability/dashboards/server/shard-io-concurrency-readme.md) v1.1.0" }
+why = "Whether raising history.shardIOConcurrency is safe, judged from persistence latency and the connection pool, which more concurrent writes per shard fill faster."
+link = [
+  { diagnostic = "persistence-latency", conclusions = ["pool-saturated", "pool-saturated-under-load", "database-slow-pool-filled"], hypotheses = ["pool-saturated"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-21"
+kind = "runbook"
+title = "WFT Execution Failed: NonDeterminismError"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/21-nde.md"
+why = "Alert 21 fires on nondeterminism. Its triage finds the affected Workflows and the deploy that changed their code."
+link = [
+  { diagnostic = "workflow-task-failures", conclusions = ["nondeterminism", "nondeterminism-stuck"], hypotheses = ["nondeterminism"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-22"
+kind = "runbook"
+title = "WFT Execution Failed: GrpcMessageTooLarge"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/22-grpc-message-too-large.md"
+why = "Alert 22 fires when a Workflow Task's completion is too large to send, which terminates the Workflow."
+link = [
+  { diagnostic = "workflow-task-failures", conclusions = ["completion-too-large"], hypotheses = ["completion-too-large"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-23"
+kind = "runbook"
+title = "WFT Execution Failed: WorkflowError"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/23-wft-execution-failed-workflowerror.md"
+why = "Alert 23 fires when Workflow code keeps failing its Workflow Tasks, which are retried until the code is fixed."
+link = [
+  { diagnostic = "workflow-task-failures", conclusions = ["code-error", "code-error-stuck"], hypotheses = ["workflow-code-error"] },
+]
+
+[[reference]]
+id = "ops.runbook.sdk-34"
+kind = "runbook"
+title = "Sticky Cache Disabled"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/sdk/runbooks/34-sticky-cache-disabled.md"
+why = "Alert 34 fires when a Worker's Workflow cache is empty for five minutes, so every Workflow Task replays the whole history."
+link = [
+  { diagnostic = "sticky-cache", conclusions = ["sticky-disabled"], hypotheses = ["sticky-disabled"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-34b"
+kind = "runbook"
+title = "Immediate Queue Lag Critical"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/34b-immediate-queue-lag-critical.md"
+why = "Alert 34b fires when one History host's immediate queue falls far behind; a stuck shard delays every task category it owns."
+link = [
+  { diagnostic = "history-task-lag" },
+]
+
+[[reference]]
+id = "ops.runbook.server-38"
+kind = "runbook"
+title = "Timer Task Scheduling Lag Critical"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/38-timer-scheduling-lag-critical.md"
+why = "Alert 38 watches how far the timer queue's acknowledged position trails its reads. Its triage tells tasks failing and retrying from a backlog draining too slowly."
+link = [
+  { diagnostic = "history-task-lag" },
+  { diagnostic = "history-task-lag", hypotheses = ["task-errors", "load-lag"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-87"
+kind = "runbook"
+title = "History Write-Reject Loop"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/87-history-write-reject-loop.md"
+why = "Alert 87 detects the loop where the persistence limits refuse task writes and History reloads the Workflows it threw away."
+link = [
+  { diagnostic = "history-task-lag", conclusions = ["persistence-throttled"], hypotheses = ["persistence-throttled"] },
+  { diagnostic = "mutable-state-cache", hypotheses = ["cache-misses"], requests = ["cache-hits"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-80"
+kind = "runbook"
+title = "History Task DLQ Stranding"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/80-history-task-dlq-stranding.md"
+why = "Alert 80 fires when tasks that dispatch Activities and Workflow Tasks stop being retried after repeated unexpected errors and are dead-lettered, stranding their Workflows."
+link = [
+  { diagnostic = "history-task-lag", conclusions = ["task-errors"], hypotheses = ["task-errors"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-processing.loading"
+kind = "playbook"
+title = "History Task Processing — Tuning and Troubleshooting Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/history-task-processing-tuning.md"
+section = "2.1 Loading — the queue readers"
+version = { version = "v2.17.0+", of = "needs-dashboard", dashboard = "Temporal Server", path = "playbooks/README.md", line = 34, excerpt = "[Temporal Server](../observability/dashboards/server/temporal-server-readme.md#9-shard-queue-health) v2.17.0+" }
+why = "How History's queue readers load tasks from the database, and what paces them."
+link = [
+  { diagnostic = "history-task-lag", conclusions = ["load-lag"], hypotheses = ["load-lag"], requests = ["task-load-latency"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-processing.scheduling"
+kind = "playbook"
+title = "History Task Processing — Tuning and Troubleshooting Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/history-task-processing-tuning.md"
+section = "2.2 Scheduling — the task scheduler"
+version = { version = "v2.17.0+", of = "needs-dashboard", dashboard = "Temporal Server", path = "playbooks/README.md", line = 34, excerpt = "[Temporal Server](../observability/dashboards/server/temporal-server-readme.md#9-shard-queue-health) v2.17.0+" }
+why = "How History's task scheduler decides which loaded tasks start, per namespace and priority."
+link = [
+  { diagnostic = "history-task-lag", conclusions = ["scheduler-saturated"], hypotheses = ["scheduler-backlog"], requests = ["task-schedule-latency"] },
+  { diagnostic = "visibility", conclusions = ["queue-backlog"], hypotheses = ["queue-backlog"], requests = ["visibility-schedule-latency"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-processing.refused-writes"
+kind = "playbook"
+title = "History Task Processing — Tuning and Troubleshooting Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/history-task-processing-tuning.md"
+section = "3. What happens when the persistence limit refuses a task's write"
+version = { version = "v2.17.0+", of = "needs-dashboard", dashboard = "Temporal Server", path = "playbooks/README.md", line = 34, excerpt = "[Temporal Server](../observability/dashboards/server/temporal-server-readme.md#9-shard-queue-health) v2.17.0+" }
+why = "Why a persistence limit refusing task writes makes History busier rather than slower, and what to check before changing a limit."
+link = [
+  { diagnostic = "history-task-lag", conclusions = ["persistence-throttled"], hypotheses = ["persistence-throttled"] },
+]
+
+[[reference]]
+id = "ops.playbook.task-processing.loop-ratio"
+kind = "playbook"
+title = "History Task Processing — Tuning and Troubleshooting Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/history-task-processing-tuning.md"
+section = "3.3 The one number that identifies the loop"
+version = { version = "v2.17.0+", of = "needs-dashboard", dashboard = "Temporal Server", path = "playbooks/README.md", line = 34, excerpt = "[Temporal Server](../observability/dashboards/server/temporal-server-readme.md#9-shard-queue-health) v2.17.0+" }
+why = "The ratio of Workflow contexts thrown away to genuine cache misses, which tells misses caused by refused writes from a cache that is too small."
+link = [
+  { diagnostic = "mutable-state-cache", conclusions = ["cache-misses"], hypotheses = ["cache-misses"], requests = ["cache-hits"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-34"
+kind = "runbook"
+title = "Unexpected Shard Movement"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/34-unexpected-shard-movement.md"
+why = "Alert 34 fires when shards are created, removed or closed without a History restart: shards changing owner with no deploy to explain it."
+link = [
+  { diagnostic = "shard-churn" },
+  { diagnostic = "shard-churn", conclusions = ["ownership-without-membership"], requests = ["membership-changes"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-78"
+kind = "runbook"
+title = "Shard Fleet Deficit"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/78-shard-fleet-deficit.md"
+why = "Alert 78 fires when fewer shards are owned than the cluster has, a shard stuck without an owner long after a deploy would have settled."
+link = [
+  { diagnostic = "shard-churn", conclusions = ["churn-slow-acquisition"], hypotheses = ["slow-acquisition"], requests = ["shard-acquisition"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-79"
+kind = "runbook"
+title = "Shard Ownership Loss Persisting"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/79-shard-ownership-loss-persisting.md"
+why = "Alert 79 fires when a shard's ownership renewal keeps failing for ten minutes: a shard not just moving but stuck."
+link = [
+  { diagnostic = "shard-churn", hypotheses = ["ownership-errors", "slow-acquisition"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-59a"
+kind = "runbook"
+title = "Runbook: Visibility Store Write Errors"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/59a-visibility-store-write-errors.md"
+why = "Alerts 59a cover visibility writes failing or slow, per store: what Kyumei's store failing and slow writes conclusions point to."
+link = [
+  { diagnostic = "visibility", conclusions = ["store-errors", "slow-writes"], hypotheses = ["store-errors", "slow-writes"], requests = ["visibility-persistence-errors", "visibility-persistence-latency"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-83"
+kind = "runbook"
+title = "Visibility Tasks Dead-Lettered"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/83-visibility-tasks-dead-lettered.md"
+why = "Alert 83 fires when visibility tasks are dead-lettered after about seventy failed attempts; their records are not written until replayed."
+link = [
+  { diagnostic = "visibility", conclusions = ["store-errors"], hypotheses = ["store-errors"], requests = ["visibility-persistence-errors"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-84"
+kind = "runbook"
+title = "Visibility Store Not Acknowledging Writes"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/84-visibility-store-not-acknowledging-writes.md"
+why = "Alert 84 fires when Elasticsearch accepts visibility writes but does not confirm them within the acknowledgement timeout: the store slow to write."
+link = [
+  { diagnostic = "visibility", conclusions = ["slow-writes"], hypotheses = ["slow-writes"], requests = ["visibility-persistence-latency"] },
+]
+
+[[reference]]
+id = "ops.runbook.server-85"
+kind = "runbook"
+title = "Visibility Read Errors"
+source = "temporal-server-operations-5a71c36"
+path = "observability/alerts/server/runbooks/85-visibility-read-errors.md"
+why = "Alert 85 fires when listing and counting calls fail at the store, which the write-side alerts cannot see."
+link = [
+  { diagnostic = "visibility" },
+  { diagnostic = "visibility", hypotheses = ["store-errors", "slow-queries"] },
+]
+
+[[reference]]
+id = "ops.playbook.dual-visibility.which-store"
+kind = "playbook"
+title = "Dual Visibility Operations Playbook"
+source = "temporal-server-operations-5a71c36"
+path = "playbooks/dual-visibility.md"
+section = "2. Finding out which store failed"
+version = { version = "v2.15.0+", of = "needs-dashboard", dashboard = "Temporal Server", path = "playbooks/README.md", line = 65, excerpt = "[Temporal Server](../observability/dashboards/server/temporal-server-readme.md#16-visibility) v2.15.0+" }
+why = "With two visibility stores, which one failed: the visibility_index_name label is the only thing that tells them apart."
+link = [
+  { diagnostic = "visibility", conclusions = ["store-errors", "slow-writes"], hypotheses = ["store-errors", "slow-writes"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.22"
+kind = "panel"
+title = "Workflow Task Schedule To Start Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 22, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "The Workers' Workflow Task schedule-to-start latency, the symptom itself."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["wft-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.22"
+kind = "panel"
+title = "Workflow Task Schedule To Start Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 22, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "The Workers' Workflow Task schedule-to-start latency, the symptom itself."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["wft-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.22"
+kind = "panel"
+title = "Workflow Task Schedule To Start Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 22, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "The Workers' Workflow Task schedule-to-start latency, the symptom itself."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["wft-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.23"
+kind = "panel"
+title = "Activity Schedule To Start Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 23, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "The Workers' Activity schedule-to-start latency, the symptom itself."
+link = [
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.23"
+kind = "panel"
+title = "Activity Schedule To Start Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 23, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "The Workers' Activity schedule-to-start latency, the symptom itself."
+link = [
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.23"
+kind = "panel"
+title = "Activity Schedule To Start Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 23, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "The Workers' Activity schedule-to-start latency, the symptom itself."
+link = [
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-schedule-to-start"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.34"
+kind = "panel"
+title = "Worker Task Slots Available"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 34, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "Free slots per Worker type and Task Queue: zero means the Workers cannot take more tasks."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["workflow-worker-slots"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-worker-slots"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.34"
+kind = "panel"
+title = "Worker Task Slots Available"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 34, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "Free slots per Worker type and Task Queue: zero means the Workers cannot take more tasks."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["workflow-worker-slots"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-worker-slots"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.34"
+kind = "panel"
+title = "Worker Task Slots Available"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 34, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "Free slots per Worker type and Task Queue: zero means the Workers cannot take more tasks."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["workflow-worker-slots"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-worker-slots"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.33"
+kind = "panel"
+title = "Number of Active Pollers"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 33, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "Pollers per poller type and Task Queue: none means no Worker is asking for tasks."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["workflow-pollers"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-pollers"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.36"
+kind = "panel"
+title = "Number of Active Pollers"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 36, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "Pollers per poller type and Task Queue: none means no Worker is asking for tasks."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["workflow-pollers"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-pollers"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.36"
+kind = "panel"
+title = "Number of Active Pollers"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 36, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "Pollers per poller type and Task Queue: none means no Worker is asking for tasks."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["workflow-pollers"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-pollers"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.6"
+kind = "panel"
+title = "Long-Poll Request Failures"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 6, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "Failed long polls by status code: polls refused or failing leave tasks waiting."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["poll-failures"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-poll-failures"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.6"
+kind = "panel"
+title = "Long-Poll Request Failures"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 6, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "Failed long polls by status code: polls refused or failing leave tasks waiting."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["poll-failures"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-poll-failures"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.6"
+kind = "panel"
+title = "Long-Poll Request Failures"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 6, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "Failed long polls by status code: polls refused or failing leave tasks waiting."
+link = [
+  { diagnostic = "wft-schedule-to-start", requests = ["poll-failures"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-poll-failures"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.46"
+kind = "panel"
+title = "Workflow Task Execution Failed"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 46, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "Workflow Task failures by reason, as the Workers count them."
+link = [
+  { diagnostic = "workflow-task-failures", requests = ["failures-by-reason"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.46"
+kind = "panel"
+title = "Workflow Task Execution Failed"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 46, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "Workflow Task failures by reason, as the Workers count them."
+link = [
+  { diagnostic = "workflow-task-failures", requests = ["failures-by-reason"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.47"
+kind = "panel"
+title = "Workflow Task Execution Failed"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 47, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "Workflow Task failures by reason, as the Workers count them."
+link = [
+  { diagnostic = "workflow-task-failures", requests = ["failures-by-reason"] },
+  { diagnostic = "java-workflow-threads", requests = ["java-workflow-task-failures"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.45"
+kind = "panel"
+title = "Workflow Task Replay Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 45, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "How long Workflow Tasks take to replay histories; it rises when the Workers' caches miss."
+link = [
+  { diagnostic = "sticky-cache", requests = ["replay-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.45"
+kind = "panel"
+title = "Workflow Task Replay Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 45, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "How long Workflow Tasks take to replay histories; it rises when the Workers' caches miss."
+link = [
+  { diagnostic = "sticky-cache", requests = ["replay-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.46"
+kind = "panel"
+title = "Workflow Task Replay Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 46, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "How long Workflow Tasks take to replay histories; it rises when the Workers' caches miss."
+link = [
+  { diagnostic = "sticky-cache", requests = ["replay-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.53"
+kind = "panel"
+title = "Sticky Cache Miss"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 53, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "Sticky Workflow Tasks that missed the Worker's cache and replayed."
+link = [
+  { diagnostic = "sticky-cache", requests = ["cache-hits"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.53"
+kind = "panel"
+title = "Sticky Cache Miss"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 53, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "Sticky Workflow Tasks that missed the Worker's cache and replayed."
+link = [
+  { diagnostic = "sticky-cache", requests = ["cache-hits"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.53"
+kind = "panel"
+title = "Sticky Cache Miss"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 53, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "Sticky Workflow Tasks that missed the Worker's cache and replayed."
+link = [
+  { diagnostic = "sticky-cache", requests = ["cache-hits"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-core.54"
+kind = "panel"
+title = "Sticky Cache Size"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-core.json"
+panel = { dashboard = "temporal-sdk-core-v1", dashboard_title = "Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0", id = 54, sdk_family = "core" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-core.json", line = 2713, excerpt = "\"title\": \"Temporal Core SDK Dashboard (TypeScript, Python, .NET, Ruby) v1.3.0\"" }
+why = "Workflows held in the Worker's cache; zero means the cache is off."
+link = [
+  { diagnostic = "sticky-cache", requests = ["cache-size"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-go.54"
+kind = "panel"
+title = "Sticky Cache Size"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-go.json"
+panel = { dashboard = "temporal-sdk-go-v1", dashboard_title = "Temporal Go SDK Dashboard v1.3.0", id = 54, sdk_family = "go" }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-go.json", line = 2918, excerpt = "\"title\": \"Temporal Go SDK Dashboard v1.3.0\"" }
+why = "Workflows held in the Worker's cache; zero means the cache is off."
+link = [
+  { diagnostic = "sticky-cache", requests = ["cache-size"] },
+]
+
+[[reference]]
+id = "ops.panel.sdk-java.54"
+kind = "panel"
+title = "Sticky Cache Size"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json"
+panel = { dashboard = "temporal-sdk-java-micrometer-v1", dashboard_title = "Temporal Java SDK Dashboard (Micrometer) v1.4.0", id = 54, sdk_family = "java" }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/sdk/temporal-sdk-java-micrometer.json", line = 2905, excerpt = "\"title\": \"Temporal Java SDK Dashboard (Micrometer) v1.4.0\"" }
+why = "Workflows held in the Worker's cache; zero means the cache is off."
+link = [
+  { diagnostic = "sticky-cache", requests = ["cache-size"] },
+  { diagnostic = "java-workflow-threads", requests = ["java-workflow-cache-size"] },
+]
+
+[[reference]]
+id = "ops.panel.server.121"
+kind = "panel"
+title = "Resource Exhausted with Cause"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 121 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "ResourceExhausted errors by operation, cause and scope: which limit is rejecting which calls."
+link = [
+  { diagnostic = "resource-exhausted", requests = ["rejections-by-cause"] },
+  { diagnostic = "wft-schedule-to-start", requests = ["poll-rejections"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-poll-rejections"] },
+  { diagnostic = "visibility", requests = ["visibility-api-rejections"] },
+]
+
+[[reference]]
+id = "ops.panel.server.93"
+kind = "panel"
+title = "Service Requests by Namespace and Operation"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 93 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Requests to the Frontend by namespace and operation, before and during the incident."
+link = [
+  { diagnostic = "resource-exhausted", requests = ["frontend-requests"] },
+  { diagnostic = "wft-schedule-to-start", requests = ["signal-rate"] },
+]
+
+[[reference]]
+id = "ops.panel.server.122"
+kind = "panel"
+title = "Actual RPS vs Host RPS Limit"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 122 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Requests each Frontend host serves against its host rate limit."
+link = [
+  { diagnostic = "resource-exhausted", conclusions = ["host-limit"], hypotheses = ["host-rate-limit"] },
+]
+
+[[reference]]
+id = "ops.panel.server.123"
+kind = "panel"
+title = "Actual RPS vs Namespace Host RPS Limit"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 123 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Requests per namespace against the namespace's limit on each Frontend host."
+link = [
+  { diagnostic = "resource-exhausted", conclusions = ["namespace-limit", "namespace-limit-under-surge"], hypotheses = ["namespace-rate-limit"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2405"
+kind = "panel"
+title = "History Rejected Database Calls Total by Scope"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2405 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "History's database calls refused by the persistence limits, by scope and cause."
+link = [
+  { diagnostic = "resource-exhausted", hypotheses = ["persistence-namespace-limit", "persistence-host-limit"] },
+  { diagnostic = "history-task-lag", hypotheses = ["persistence-throttled"] },
+]
+
+[[reference]]
+id = "ops.panel.server.71"
+kind = "panel"
+title = "Persistence Latencies"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 71 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Persistence latency by operation."
+link = [
+  { diagnostic = "persistence-latency", requests = ["persistence-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.server.74"
+kind = "panel"
+title = "SQL DB Connection Pool"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 74 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "The SQL connection pool: configured maximum, open, idle and in use."
+link = [
+  { diagnostic = "persistence-latency", requests = ["sql-pool"] },
+]
+
+[[reference]]
+id = "ops.panel.server.76"
+kind = "panel"
+title = "Persistence Requests Total per Operation"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 76 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Persistence calls by operation, before and during the incident."
+link = [
+  { diagnostic = "persistence-latency", requests = ["persistence-requests"] },
+  { diagnostic = "mutable-state-cache", requests = ["workflow-reads"] },
+]
+
+[[reference]]
+id = "ops.panel.server.77"
+kind = "panel"
+title = "Persistence Errors Total by Operation"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 77 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Persistence errors by operation and error type."
+link = [
+  { diagnostic = "persistence-latency", requests = ["persistence-errors"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2109"
+kind = "panel"
+title = "Immediate Queue Lag per Pod"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2109 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Each History host's immediate queue lag by task category: one line rising alone is a stuck shard."
+link = [
+  { diagnostic = "history-task-lag" },
+]
+
+[[reference]]
+id = "ops.panel.server.2408"
+kind = "panel"
+title = "Task Load Latency by Task Type"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2408 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "How long History takes to load its tasks, by task type."
+link = [
+  { diagnostic = "history-task-lag", requests = ["task-load-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2115"
+kind = "panel"
+title = "Task Scheduler Latency per Operation"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2115 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "How long History's tasks wait for a scheduler worker, by task type."
+link = [
+  { diagnostic = "history-task-lag", requests = ["task-schedule-latency"] },
+  { diagnostic = "visibility", requests = ["visibility-schedule-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2418"
+kind = "panel"
+title = "Throttled Tasks by Task Type and Namespace"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2418 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "History tasks throttled because their Workflow was busy, by task type and namespace."
+link = [
+  { diagnostic = "history-task-lag", conclusions = ["busy-workflow"], hypotheses = ["busy-workflow"], requests = ["task-errors"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2403"
+kind = "panel"
+title = "Write-Reject Loop Indicator (cleared / cache miss)"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2403 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Workflow contexts thrown away against genuine cache misses: the ratio that identifies the write-reject loop."
+link = [
+  { diagnostic = "mutable-state-cache", requests = ["cache-hits"] },
+  { diagnostic = "history-task-lag", hypotheses = ["persistence-throttled"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2121"
+kind = "panel"
+title = "Workflow Task Schedule-to-Start Timeouts (sticky fallback)"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2121 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Workflow Tasks that timed out on a sticky queue and went back to the normal one."
+link = [
+  { diagnostic = "sticky-cache", requests = ["sticky-timeouts"] },
+]
+
+[[reference]]
+id = "ops.panel.server.134"
+kind = "panel"
+title = "Workflow Task StartToClose Timeouts per Namespace (sticky tq)"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 134 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Workflow Task start-to-close timeouts by namespace."
+link = [
+  { diagnostic = "workflow-task-failures", requests = ["wft-timeouts"] },
+]
+
+[[reference]]
+id = "ops.panel.server.82"
+kind = "panel"
+title = "Visibility Task End-to-End Latencies"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 82 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "How long visibility tasks take from creation to completion, by task type: how late records are written."
+link = [
+  { diagnostic = "visibility", requests = ["visibility-lag"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2126"
+kind = "panel"
+title = "Visibility Rate Limit Rejections per Store"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2126 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Visibility store calls refused by the visibility persistence limits, per store."
+link = [
+  { diagnostic = "visibility", requests = ["visibility-persistence-refusals"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2118"
+kind = "panel"
+title = "Visibility Write Error Rate per Store"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2118 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Failed visibility writes, per store."
+link = [
+  { diagnostic = "visibility", requests = ["visibility-persistence-errors"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2128"
+kind = "panel"
+title = "Visibility Tasks Dead-Lettered by Task Type"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2128 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Visibility tasks moved to the dead letter queue, by task type."
+link = [
+  { diagnostic = "visibility", requests = ["visibility-persistence-errors"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2119"
+kind = "panel"
+title = "Visibility Write Latency per Store"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2119 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "How long visibility writes take, per store."
+link = [
+  { diagnostic = "visibility", requests = ["visibility-persistence-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2124"
+kind = "panel"
+title = "Visibility Read Latency per Store"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2124 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "How long visibility reads take, per store."
+link = [
+  { diagnostic = "visibility", requests = ["visibility-persistence-latency"] },
+]
+
+[[reference]]
+id = "ops.panel.server.2132"
+kind = "panel"
+title = "ES Write Confirm Latency vs Ack Timeout (Elasticsearch only)"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 2132 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Elasticsearch's write confirmation latency against the acknowledgement timeout."
+link = [
+  { diagnostic = "visibility", conclusions = ["slow-writes"], hypotheses = ["slow-writes"] },
+]
+
+[[reference]]
+id = "ops.panel.server.212"
+kind = "panel"
+title = "Workflow History Size"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 212 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "History sizes by namespace, against the limits."
+link = [
+  { diagnostic = "history-limits", conclusions = ["approaching-limits"], hypotheses = ["history-size-limit"] },
+]
+
+[[reference]]
+id = "ops.panel.server.213"
+kind = "panel"
+title = "Workflow History Event Count"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 213 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "History event counts by namespace, against the limits."
+link = [
+  { diagnostic = "history-limits", conclusions = ["approaching-limits"], hypotheses = ["history-count-limit"] },
+]
+
+[[reference]]
+id = "ops.panel.server.214"
+kind = "panel"
+title = "Mutable State Size"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/temporal-server.json"
+panel = { dashboard = "temporal-overview-v1", dashboard_title = "Temporal Server Dashboard v2.25.0", id = 214 }
+version = { version = "v2.25.0", of = "dashboard", path = "observability/dashboards/server/temporal-server.json", line = 9240, excerpt = "\"title\": \"Temporal Server Dashboard v2.25.0\"" }
+why = "Mutable state sizes by namespace."
+link = [
+  { diagnostic = "history-limits", hypotheses = ["mutable-state-limit"] },
+]
+
+[[reference]]
+id = "ops.panel.partitions.4"
+kind = "panel"
+title = "Approximate Backlog Age by Partition"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/task-queue-partitions.json"
+panel = { dashboard = "temporal-taskqueue-partitions", dashboard_title = "Temporal Task Queue Partitions v1.4.0", id = 4 }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/server/task-queue-partitions.json", line = 958, excerpt = "\"title\": \"Temporal Task Queue Partitions v1.4.0\"" }
+why = "Backlog age per partition: a backlog on a partition no Worker polls shows more write partitions than read."
+link = [
+  { diagnostic = "wft-schedule-to-start", hypotheses = ["partition-write-read-mismatch"], requests = ["matching-queue-stats"] },
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-queue-stats"] },
+]
+
+[[reference]]
+id = "ops.panel.partitions.37"
+kind = "panel"
+title = "Eager Activity Dispatch"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/task-queue-partitions.json"
+panel = { dashboard = "temporal-taskqueue-partitions", dashboard_title = "Temporal Task Queue Partitions v1.4.0", id = 37 }
+version = { version = "v1.4.0", of = "dashboard", path = "observability/dashboards/server/task-queue-partitions.json", line = 958, excerpt = "\"title\": \"Temporal Task Queue Partitions v1.4.0\"" }
+why = "Activities dispatched eagerly, which never reach Matching."
+link = [
+  { diagnostic = "activity-schedule-to-start", requests = ["activity-queue-stats", "scheduled-activities"] },
+]
+
+[[reference]]
+id = "ops.panel.history-health.44"
+kind = "panel"
+title = "Shard Ownership Lost"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/history-health-dashboard.json"
+panel = { dashboard = "temporal-history-health-v1", dashboard_title = "Temporal History Host Health Dashboard v1.3.0", id = 44 }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/server/history-health-dashboard.json", line = 2219, excerpt = "\"title\": \"Temporal History Host Health Dashboard v1.3.0\"" }
+why = "ShardOwnershipLost errors at History."
+link = [
+  { diagnostic = "shard-churn", requests = ["ownership-errors"] },
+]
+
+[[reference]]
+id = "ops.panel.history-health.45"
+kind = "panel"
+title = "Membership Changes (History)"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/history-health-dashboard.json"
+panel = { dashboard = "temporal-history-health-v1", dashboard_title = "Temporal History Host Health Dashboard v1.3.0", id = 45 }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/server/history-health-dashboard.json", line = 2219, excerpt = "\"title\": \"Temporal History Host Health Dashboard v1.3.0\"" }
+why = "History's membership changes."
+link = [
+  { diagnostic = "shard-churn", requests = ["membership-changes"] },
+]
+
+[[reference]]
+id = "ops.panel.history-health.53"
+kind = "panel"
+title = "Shard Acquisition Latency"
+source = "temporal-server-operations-5a71c36"
+path = "observability/dashboards/server/history-health-dashboard.json"
+panel = { dashboard = "temporal-history-health-v1", dashboard_title = "Temporal History Host Health Dashboard v1.3.0", id = 53 }
+version = { version = "v1.3.0", of = "dashboard", path = "observability/dashboards/server/history-health-dashboard.json", line = 2219, excerpt = "\"title\": \"Temporal History Host Health Dashboard v1.3.0\"" }
+why = "How long History hosts take to acquire their shards."
+link = [
+  { diagnostic = "shard-churn", requests = ["shard-acquisition"] },
+]

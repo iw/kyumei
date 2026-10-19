@@ -1,0 +1,100 @@
+# Elasticsearch slow to write, answered with kyumei-collect sample blocks.
+#
+# The investigation of visibility-es-slow-writes, where every answer is a
+# block pasted from kyumei-collect rather than query output: the operator
+# copies each request's command, saves the query output from Grafana's query
+# inspector, encodes it with `kyumei-collect encode FILE… --code CODE` and
+# pastes the block it prints. The blocks hold that fixture's samples exactly,
+# under each request's own queries, so the investigation reaches the same
+# diagnosis by the same path.
+#
+# The blocks are made by crates/kyumei/tests/collected_blocks.rs, from that
+# fixture's query output and, for the store errors and visibility DLQ writes
+# (a Grafana CSV export there), from sources/: the same values as Prometheus
+# returns them, one file per query.
+
+[fixture]
+id = "visibility-collected-blocks"
+title = "Elasticsearch slow to write, answered with sample blocks"
+description = "The visibility reference fixture with every answer pasted as a kyumei-collect sample block."
+investigation = "inv-golden-visibility-blocks"
+
+[open]
+at = 2026-10-16T10:38:00Z
+description = "Since about 10:00 UTC, Workflows in the orders namespace take minutes to appear in the Web UI and in temporal workflow list, and Workflows that have completed still show as Running. The Workflows themselves run normally. Our visibility store is Elasticsearch."
+server_version = "1.31.0"
+namespaces = ["orders"]
+window_start = 2026-10-16T10:00:00Z
+window_end = 2026-10-16T10:40:00Z
+
+[open.expect]
+next_request = "visibility-lag"
+conclusion = "none"
+concluded = false
+
+# E1 — Visibility record lag by task type.
+[[step]]
+at = 2026-10-16T10:40:00Z
+answers = "visibility-lag"
+file = "evidence/e1-record-lag.block"
+channel = "paste"
+
+[step.expect]
+next_request = "visibility-persistence-refusals"
+findings = ["F-records-late"]
+bound_signals = ["visibility_task_latency"]
+conclusion = "records-late"
+concluded = false
+
+[step.expect.states]
+records-late = "established"
+
+# E2 — Refusals by the visibility persistence limits, by call.
+[[step]]
+at = 2026-10-16T10:43:00Z
+answers = "visibility-persistence-refusals"
+file = "evidence/e2-refusals.block"
+channel = "paste"
+
+[step.expect]
+next_request = "visibility-persistence-errors"
+findings = ["F-records-late", "F-no-write-refusals"]
+bound_signals = ["write_refusals"]
+conclusion = "records-late"
+concluded = false
+
+# E3 — Store errors by call, and visibility tasks moved to the DLQ: one block
+# holding both of the request's queries.
+[[step]]
+at = 2026-10-16T10:46:00Z
+answers = "visibility-persistence-errors"
+file = "evidence/e3-errors.block"
+channel = "paste"
+
+[step.expect]
+next_request = "visibility-persistence-latency"
+findings = ["F-records-late", "F-no-write-refusals", "F-store-not-failing"]
+bound_signals = ["store_errors", "visibility_dlq_writes"]
+conclusion = "records-late"
+concluded = false
+
+# E4 — Store latency by call: writes wait up to the acknowledgement timeout.
+[[step]]
+at = 2026-10-16T10:49:00Z
+answers = "visibility-persistence-latency"
+file = "evidence/e4-store-latency.block"
+channel = "paste"
+
+[step.expect]
+next_request = "none"
+findings = ["F-records-late", "F-no-write-refusals", "F-store-not-failing", "F-writes-slow"]
+bound_signals = ["write_latency", "query_latency"]
+conclusion = "slow-writes"
+concluded = true
+
+[step.expect.states]
+records-late = "established"
+write-limit = "eliminated"
+store-errors = "eliminated"
+slow-writes = "established"
+queue-backlog = "candidate"

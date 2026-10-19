@@ -1,0 +1,20 @@
+[package]
+name = "kyumei-dashboards"
+description = "Reads Grafana dashboards: panels, their queries, units, thresholds and legends, so evidence can be drawn the way a panel draws it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+regex.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,99 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/kyumei-domain",
+    "crates/kyumei-knowledge",
+    "crates/kyumei-evidence",
+    "crates/kyumei-samples",
+    "crates/kyumei-collect",
+    "crates/kyumei-diagrams",
+    "crates/kyumei-dashboards",
+    "crates/kyumei-diagnostics",
+    "crates/kyumei-app",
+    "crates/kyumei-odori",
+    "crates/kyumei-sim",
+    "crates/kyumei-extract",
+    "crates/kyumei-web",
+    "crates/kyumei",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+repository = "https://github.com/iw/kyumei"
+homepage = "https://github.com/iw/kyumei"
+publish = false
+
+[workspace.dependencies]
+kyumei-domain = { path = "crates/kyumei-domain" }
+kyumei-knowledge = { path = "crates/kyumei-knowledge" }
+kyumei-evidence = { path = "crates/kyumei-evidence" }
+kyumei-samples = { path = "crates/kyumei-samples" }
+kyumei-collect = { path = "crates/kyumei-collect" }
+kyumei-diagrams = { path = "crates/kyumei-diagrams" }
+kyumei-dashboards = { path = "crates/kyumei-dashboards" }
+kyumei-diagnostics = { path = "crates/kyumei-diagnostics" }
+kyumei-app = { path = "crates/kyumei-app" }
+kyumei-odori = { path = "crates/kyumei-odori" }
+kyumei-sim = { path = "crates/kyumei-sim" }
+kyumei-web = { path = "crates/kyumei-web" }
+
+anyhow = "1"
+async-trait = "0.1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+crc32fast = "1"
+csv = "1"
+miniz_oxide = "0.9"
+getrandom = "0.2"
+hmac = "0.12"
+jiff = { version = "0.2", features = ["serde", "tzdb-bundle-always"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+toml = "0.9"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+pretty_assertions = "1"
+qrcode = { version = "0.14", default-features = false }
+# Rust TLS, with the system's certificate store and the webpki roots; no OpenSSL.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "rustls-tls-webpki-roots"] }
+
+# Odori: durable agent workflows on the embedded tokeira engine.
+odori = "0.3.0"
+temporalio-client = "1.0"
+temporalio-common = "1.0"
+temporalio-macros = "1.0"
+temporalio-sdk = "1.0"
+temporalio-workflow = "1.0"
+futures = "0.3"
+
+# tempdes: a discrete-event simulator of Temporal Server clusters, pinned to a
+# commit on its main branch. Only kyumei-sim uses it; kyumei_sim::TEMPDES_COMMIT
+# repeats the rev, and a test checks that the two agree.
+tempdes = { git = "https://github.com/iw/tempdes", rev = "22b8dc97f181c88f70ba723842b293668645f2a8", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+rust_2018_idioms = { level = "warn", priority = -1 }
+missing_debug_implementations = "warn"
+# macOS ld reports that the debug binary's __eh_frame is too large for compact
+# unwind tables. It is harmless, and would otherwise print on every build.
+linker_messages = "allow"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+# tempdes simulates a cluster request by request; unoptimised, a test's few
+# simulated minutes would take minutes rather than seconds.
+[profile.dev.package.tempdes]
+opt-level = 3

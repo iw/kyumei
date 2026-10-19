@@ -1,0 +1,102 @@
+# Branch fixture for Workflow Task failures: tasks that time out.
+#
+# A node-pool change at 22:10 UTC caps the Python Workers' CPU. ReportWorkflow
+# executions carry histories of tens of thousands of events, and replaying one
+# now takes longer than the 10-second Workflow Task timeout. History times the
+# task out and retries it; the retry replays the whole history again and times
+# out too. The Workers never fail a task, so they count no failures, and about
+# 120 reports stop progressing.
+#
+# The investigation must find no failure reason at all, turn to History's
+# timeouts, establish them, and show from one stuck report's pending task that
+# the retries time out too.
+
+[fixture]
+id = "workflow-task-timeouts"
+title = "CPU-capped Workers: reports stuck on Workflow Task timeouts"
+description = "Branch fixture for Workflow Task failures. The Workers count no failures; History's timeouts and a stuck Workflow's attempt explain the symptom."
+investigation = "inv-branch-wft-timeouts"
+
+[open]
+at = 2026-10-08T22:36:00Z
+description = "Since about 22:10 UTC, ReportWorkflow executions in namespace analytics have stopped progressing. The Python workers are up and their logs show no errors. Queries to the stuck workflows fail. Python SDK 1.25."
+server_version = "1.31.0"
+sdks = [{ language = "python", version = "1.25.0" }]
+namespaces = ["analytics"]
+task_queues = ["reports"]
+window_start = 2026-10-08T22:10:00Z
+window_end = 2026-10-08T22:50:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 2
+history_hosts = 4
+matching_hosts = 2
+worker_processes = 8
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "failures-by-reason"
+conclusion = "none"
+concluded = false
+
+# E1 — Failed Workflow Task attempts by failure reason: none.
+[[step]]
+at = 2026-10-08T22:39:00Z
+answers = "failures-by-reason"
+file = "evidence/e1-failures-by-reason.json"
+channel = "paste"
+query = 'sum by (failure_reason) (rate(temporal_workflow_task_execution_failed{namespace="analytics", task_queue="reports"}[1m]))'
+
+[step.expect]
+next_request = "wft-timeouts"
+findings = ["F-no-code-errors", "F-no-nondeterminism", "F-nothing-too-large"]
+bound_signals = ["workflow_error_failures", "nondeterminism_failures", "too_large_failures"]
+conclusion = "none"
+concluded = false
+
+[step.expect.states]
+nondeterminism = "eliminated"
+workflow-code-error = "eliminated"
+completion-too-large = "eliminated"
+wft-timeouts = "candidate"
+stuck-retrying = "candidate"
+
+# E2 — Workflow Task timeouts, from History.
+[[step]]
+at = 2026-10-08T22:44:00Z
+answers = "wft-timeouts"
+file = "evidence/e2-wft-timeouts.json"
+channel = "paste"
+query = 'sum(rate(start_to_close_timeout{operation="TimerActiveTaskWorkflowTaskTimeout", namespace="analytics"}[1m]))'
+
+[step.expect]
+next_request = "retry-attempts"
+findings = ["F-timeouts-occurring"]
+bound_signals = ["wft_timeouts"]
+conclusion = "timeouts"
+concluded = false
+
+[step.expect.states]
+wft-timeouts = "established"
+stuck-retrying = "candidate"
+
+# E3 — One report that stopped progressing, described with the CLI.
+[[step]]
+at = 2026-10-08T22:47:00Z
+answers = "retry-attempts"
+file = "evidence/e3-describe-workflow.json"
+channel = "paste"
+window_start = 2026-10-08T22:46:00Z
+note = "Captured at 22:46 UTC with temporal workflow describe --workflow-id report-weekly-acme-2026-40 -o json"
+
+[step.expect]
+next_request = "none"
+findings = ["F-pending-attempt-high"]
+bound_signals = ["pending_attempt"]
+conclusion = "timeouts-stuck"
+concluded = true
+
+[step.expect.states]
+wft-timeouts = "established"
+stuck-retrying = "established"

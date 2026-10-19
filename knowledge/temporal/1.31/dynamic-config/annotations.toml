@@ -1,0 +1,134 @@
+# Notes and extra provenance for generated dynamic configuration claims.
+#
+# The claims themselves are in ../generated/dynamic-config.toml, generated from the
+# Temporal source by gen-dc-claims and never edited. What a reader needs beyond the
+# source declaration goes here: why a setting matters, how its default is derived,
+# and further source lines that support the claim. Each annotation's notes and
+# provenance are merged into the claim with the same ID when the pack loads, and its
+# provenance is re-verified like any other.
+#
+# Keys are case-insensitive. Task Queue settings resolve by constraint precedence:
+# namespace+taskQueueName+taskType, namespace+taskQueueName, taskQueueName,
+# namespace, then global.
+
+[[annotation]]
+claim = "dc.admin.matchingNamespaceTaskqueueToPartitionDispatchRate"
+notes = [
+  "The per-partition system dispatch limit is the minimum of this and admin.matchingNamespaceToPartitionDispatchRate, so 1,000 tasks/s by default.",
+  "A partition enforces it only once its effective rate has changed since the partition loaded (limit.dispatch-applied-on-change).",
+]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 38, excerpt = "1000," },
+]
+
+[[annotation]]
+claim = "dc.frontend.namespaceCount"
+notes = ["Counted per namespace and per API on each Frontend host. A request over it fails with ResourceExhausted, cause ConcurrentLimit and scope Namespace (limit.frontend-concurrent-long-running)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/rpc/interceptor/concurrent_request_limit.go", line = 140, excerpt = "return namespace.String() + \"/\" + methodName" },
+]
+
+[[annotation]]
+claim = "dc.frontend.namespaceRPS"
+notes = ["Per Frontend host, for each namespace. frontend.globalNamespaceRPS replaces it when above 0 (limit.frontend-namespace-rps)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "service/frontend/fx.go", line = 508, excerpt = "PerInstanceQuota: serviceConfig.MaxNamespaceRPSPerInstance," },
+]
+
+[[annotation]]
+claim = "dc.history.maximumSignalsPerExecution"
+notes = ["A cap on the total signals a single execution accepts, not a rate limit. Excess signals are rejected with InvalidArgument."]
+
+[[annotation]]
+claim = "dc.matching.backlogNegligibleAge"
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1317, excerpt = "If the head of the backlog is older than this, then we stop sync match and forwarding to ensure" },
+]
+
+[[annotation]]
+claim = "dc.matching.numTaskqueueReadPartitions"
+notes = [
+  "The default of 4 comes from GlobalDefaultNumTaskQueuePartitions; some system queues default to 1.",
+  "Pollers are spread across read partitions.",
+]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/shared_constants.go", line = 9, excerpt = "const GlobalDefaultNumTaskQueuePartitions = 4" },
+]
+
+[[annotation]]
+claim = "dc.matching.numTaskqueueWritePartitions"
+notes = ["New tasks are added to a randomly chosen write partition."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "client/matching/loadbalancer.go", line = 89, excerpt = "return taskQueue.NormalPartition(rand.Intn(n))" },
+]
+
+[[annotation]]
+claim = "dc.matching.useNewMatcher"
+notes = ["On by default in 1.31.0. Matcher metrics are then also emitted with a `pri_` prefix."]
+
+# ---------------------------------------------------------------- Frontend limits
+
+[[annotation]]
+claim = "dc.frontend.globalNamespaceRPS"
+notes = ["At 0, the default, each Frontend host applies frontend.namespaceRPS. Above 0, it is divided among the Frontend hosts that are not draining (limit.frontend-namespace-rps)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/quotas/calculator/cluster_aware_quota_calculator.go", line = 37, excerpt = "return float64(clusterLimit) / float64(clusterSize)" },
+]
+
+[[annotation]]
+claim = "dc.frontend.rps"
+notes = ["Per Frontend host, for all namespaces together. frontend.globalRPS replaces it when above 0 (limit.frontend-host-rps)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "service/frontend/fx.go", line = 446, excerpt = "PerInstanceQuota: serviceConfig.RPS," },
+]
+
+[[annotation]]
+claim = "dc.frontend.globalRPS"
+notes = ["At 0, the default, each Frontend host applies frontend.rps. Above 0, it is divided among the Frontend hosts that are not draining (limit.frontend-host-rps)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "service/frontend/fx.go", line = 447, excerpt = "GlobalQuota:      serviceConfig.GlobalRPS," },
+]
+
+[[annotation]]
+claim = "dc.frontend.namespaceRPS.visibility"
+notes = ["Visibility APIs (listing, counting and scanning executions, schedules and others) use this instead of frontend.namespaceRPS (limit.frontend-visibility-rps)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "service/frontend/fx.go", line = 516, excerpt = "PerInstanceQuota: serviceConfig.MaxNamespaceVisibilityRPSPerInstance," },
+]
+
+[[annotation]]
+claim = "dc.frontend.pollWaitForNamespaceRateLimitToken"
+notes = ["When on, Task polls wait for a namespace rate-limit token instead of failing at once (behaviour.frontend-poll-wait-for-token)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/rpc/interceptor/namespace_rate_limit.go", line = 84, excerpt = "if ni.pollWaitForToken(ns.String()) {" },
+]
+
+# ---------------------------------------------------------------- Persistence limits
+
+[[annotation]]
+claim = "dc.history.persistenceMaxQPS"
+notes = ["If it is 0 when History starts, History's persistence calls are not limited at all (limit.persistence-host-qps)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/persistence/client/fx.go", line = 119, excerpt = "if params.PersistenceMaxQPS != nil && params.PersistenceMaxQPS() > 0 {" },
+]
+
+[[annotation]]
+claim = "dc.history.persistenceGlobalMaxQPS"
+notes = ["Above 0, it replaces history.persistenceMaxQPS on each History host, scaled by the share of shards the host owns."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "service/history/shard/ownership_based_quota_calculator.go", line = 73, excerpt = "return scaleFactor * float64(globalLimit), true" },
+]
+
+[[annotation]]
+claim = "dc.history.persistenceNamespaceMaxQPS"
+notes = ["At 0, the default, each namespace still gets its own bucket the size of the host limit (limit.persistence-namespace-qps)."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/persistence/client/quotas.go", line = 181, excerpt = "return float64(hostMaxQPS())" },
+]
+
+[[annotation]]
+claim = "dc.history.persistencePerShardNamespaceMaxQPS"
+notes = ["Limits one namespace on one shard. At 0, the default, the bucket is the size of the host limit."]
+provenance = [
+  { source = "temporal-server-v1.31.0", path = "common/persistence/client/quotas.go", line = 141, excerpt = "if perShardNamespaceMaxQPS == nil || perShardNamespaceMaxQPS(req.Caller) <= 0 {" },
+]

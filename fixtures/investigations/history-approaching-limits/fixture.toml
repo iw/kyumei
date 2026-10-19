@@ -1,0 +1,54 @@
+# Branch fixture for history limits: warnings before any termination.
+#
+# DocumentReviewWorkflow keeps the extracted text of every page it reviews in
+# its Activities' results. Large matters take its histories past the 10 MiB
+# warn limit, and History's logs fill with warnings, but no Workflow has been
+# terminated yet.
+#
+# The investigation must see from one running Workflow that no limit has
+# terminated it, and that it is heading for the size limit because payloads
+# fill a history that ran past the continue-as-new suggestion.
+
+[fixture]
+id = "history-approaching-limits"
+title = "Document reviews past the warn limit, heading for the history size limit"
+description = "Branch fixture for history limits. One running Workflow shows no termination yet, a history past the continue-as-new suggestion, and payloads filling it."
+investigation = "inv-branch-history-approaching"
+
+[open]
+at = 2026-10-11T09:40:00Z
+description = "History's logs keep warning 'history size exceeds warn limit.' for DocumentReviewWorkflow executions in namespace legal. None has been terminated yet. Python SDK 1.25."
+server_version = "1.31.0"
+sdks = [{ language = "python", version = "1.25.0" }]
+namespaces = ["legal"]
+task_queues = ["legal-review"]
+window_start = 2026-10-11T08:00:00Z
+window_end = 2026-10-11T09:50:00Z
+
+[open.expect]
+next_request = "workflow-size"
+conclusion = "none"
+concluded = false
+
+# E1 — One running review, described with the CLI.
+[[step]]
+at = 2026-10-11T09:44:00Z
+answers = "workflow-size"
+file = "evidence/e1-describe-workflow.json"
+channel = "paste"
+window_start = 2026-10-11T09:43:00Z
+note = "Captured at 09:43 UTC with temporal workflow describe --workflow-id review-matter-2026-0871 -o json"
+
+[step.expect]
+next_request = "none"
+findings = ["F-still-running", "F-still-running-count", "F-still-running-mutable-state", "F-past-suggestion", "F-payload-heavy"]
+bound_signals = ["workflow_status", "history_length", "history_size_bytes"]
+conclusion = "approaching-limits"
+concluded = true
+
+[step.expect.states]
+history-size-limit = "eliminated"
+history-count-limit = "eliminated"
+mutable-state-limit = "eliminated"
+continue-as-new-ignored = "established"
+large-payloads = "established"

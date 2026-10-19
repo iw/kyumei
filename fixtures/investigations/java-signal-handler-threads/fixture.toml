@@ -1,0 +1,91 @@
+# Reference fixture for Java Workflow thread exhaustion: Signal handlers that
+# wait.
+#
+# The fulfillment team's 13:00 UTC release makes each order Workflow's
+# itemScanned Signal handler wait, with Workflow.await, until inventory is
+# reserved. Every scanned item now holds a Workflow thread until then,
+# about eight per Workflow, so by 13:06 some 75 cached Workflows hold all
+# 600 threads of each Worker's pool. The Workers evict cached Workflows to
+# free threads, and tasks that find nothing to evict fail with
+# WorkflowRejectedExecutionError.
+#
+# The investigation must establish the exhausted pool from the evictions,
+# find the tasks failing, and find several threads per cached Workflow.
+
+[fixture]
+id = "java-signal-handler-threads"
+title = "Signal handlers that wait exhaust the Java Workflow threads"
+description = "Reference fixture for Java Workflow thread exhaustion. Waiting Signal handlers hold several threads per Workflow; the pool runs out with few Workflows cached."
+investigation = "inv-golden-java-threads"
+
+[open]
+at = 2026-10-20T13:38:00Z
+description = "Since our 13:00 release, the Java Workers for the fulfillment namespace log WorkflowRejectedExecutionError, and Workflow Tasks keep timing out and being retried."
+server_version = "1.31.0"
+namespaces = ["fulfillment"]
+task_queues = ["order-fulfillment"]
+window_start = 2026-10-20T13:00:00Z
+window_end = 2026-10-20T13:40:00Z
+
+[open.expect]
+next_request = "java-workflow-threads"
+conclusion = "none"
+concluded = false
+
+# E1 — Threads in use on the busiest Worker, and evictions to free a thread
+# (a Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-20T13:40:00Z
+answers = "java-workflow-threads"
+file = "evidence/e1-threads.csv"
+channel = "upload"
+query = 'max(temporal_workflow_active_thread_count{namespace="fulfillment"}) and sum(rate(temporal_sticky_cache_thread_forced_eviction_total{namespace="fulfillment"}[1m]))'
+
+[step.expect]
+next_request = "java-workflow-task-failures"
+findings = ["F-evicting-for-threads"]
+bound_signals = ["active_threads", "thread_evictions"]
+conclusion = "pool-exhausted"
+concluded = false
+
+[step.expect.states]
+pool-exhausted = "established"
+
+# E2 — Workflow Task failures by reason.
+[[step]]
+at = 2026-10-20T13:43:00Z
+answers = "java-workflow-task-failures"
+file = "evidence/e2-task-failures.json"
+channel = "paste"
+query = 'sum by (failure_reason) (rate(temporal_workflow_task_execution_failed_total{namespace="fulfillment"}[1m]))'
+
+[step.expect]
+next_request = "java-workflow-cache-size"
+findings = ["F-evicting-for-threads", "F-tasks-failing"]
+bound_signals = ["wft_errors"]
+conclusion = "pool-exhausted"
+concluded = false
+
+[step.expect.states]
+tasks-rejected = "supported"
+
+# E3 — Workflows in the busiest Worker's cache: far fewer than its threads.
+[[step]]
+at = 2026-10-20T13:45:00Z
+answers = "java-workflow-cache-size"
+file = "evidence/e3-cache-size.json"
+channel = "paste"
+query = 'max(temporal_sticky_cache_size{namespace="fulfillment"})'
+
+[step.expect]
+next_request = "none"
+findings = ["F-evicting-for-threads", "F-tasks-failing", "F-several-threads-each", "F-cache-below-threads"]
+bound_signals = ["cached_workflows"]
+conclusion = "many-threads"
+concluded = true
+
+[step.expect.states]
+pool-exhausted = "established"
+tasks-rejected = "supported"
+many-threads = "established"
+cache-fills-pool = "eliminated"

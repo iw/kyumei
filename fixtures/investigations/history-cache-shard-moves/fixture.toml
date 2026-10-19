@@ -1,0 +1,79 @@
+# Branch fixture for History Workflow cache pressure: shards moving.
+#
+# A rolling deploy of History starts at 11:00 UTC. Every shard moves twice in
+# twenty minutes, and each move leaves the shard's Workflows uncached, since
+# cached Workflows are keyed to the shard's owner. Lookups miss and reads
+# triple until the Workflows are read again, while the caches have plenty
+# of room.
+#
+# The investigation must establish the reads and the misses, find the cache
+# with room and no errors, and point at the shard moves.
+
+[fixture]
+id = "history-cache-shard-moves"
+title = "History deploy: shards move, cached Workflows dropped, reads triple"
+description = "Branch fixture for History Workflow cache pressure. The cache misses while it has room."
+investigation = "inv-branch-history-cache-moves"
+
+[open]
+at = 2026-10-17T11:25:00Z
+description = "Since the History deploy at 11:00 UTC, History is slower and the database shows far more reads: GetWorkflowExecution calls from History tripled for about twenty minutes."
+server_version = "1.31.0"
+window_start = 2026-10-17T11:00:00Z
+window_end = 2026-10-17T11:35:00Z
+
+[open.expect]
+next_request = "workflow-reads"
+conclusion = "none"
+concluded = false
+
+# E1 — History's GetWorkflowExecution calls, from 30 minutes before.
+[[step]]
+at = 2026-10-17T11:30:00Z
+answers = "workflow-reads"
+file = "evidence/e1-workflow-reads.json"
+channel = "paste"
+query = 'sum(rate(persistence_requests{service_name="history", operation="GetWorkflowExecution"}[1m]))'
+
+[step.expect]
+next_request = "cache-hits"
+findings = ["F-reads-rose"]
+bound_signals = ["workflow_reads"]
+conclusion = "read-load"
+concluded = false
+
+# E2 — Cache lookups and misses.
+[[step]]
+at = 2026-10-17T11:32:00Z
+answers = "cache-hits"
+file = "evidence/e2-cache-hits.csv"
+channel = "upload"
+query = 'sum(rate(cache_requests{cache_type="mutablestate", operation="HistoryCacheGetOrCreate"}[1m])) and sum(rate(cache_miss{cache_type="mutablestate", operation="HistoryCacheGetOrCreate"}[1m]))'
+
+[step.expect]
+next_request = "cache-capacity"
+findings = ["F-misses-share-high"]
+bound_signals = ["cache_lookups", "cache_misses"]
+conclusion = "cache-misses"
+concluded = false
+
+# E3 — How full the cache is.
+[[step]]
+at = 2026-10-17T11:34:00Z
+answers = "cache-capacity"
+file = "evidence/e3-cache-capacity.csv"
+channel = "upload"
+query = 'max(cache_usage{cache_type="mutablestate", service_name="history"}) and max(cache_size{cache_type="mutablestate", service_name="history"}) and max(cache_pinned_usage{cache_type="mutablestate", service_name="history"}) and sum(rate(cache_errors{cache_type="mutablestate", operation="HistoryCacheGetOrCreate"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-cache-has-room", "F-no-cache-errors"]
+bound_signals = ["cache_usage", "cache_capacity", "cache_pinned", "cache_errors"]
+conclusion = "misses-with-room"
+concluded = true
+
+[step.expect.states]
+read-load = "established"
+cache-misses = "established"
+cache-full = "eliminated"
+pinned-full = "eliminated"

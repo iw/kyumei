@@ -1,0 +1,99 @@
+# Reference fixture for History Workflow cache pressure.
+#
+# A large tenant onboarded at 10:30 UTC takes the Workflows active on the four
+# History hosts to about 900,000, far more than their caches hold at 128,000
+# entries each. By 10:38 every cache is full and evicts Workflows that are
+# needed again minutes later. Lookups miss, each miss reads the Workflow's
+# state from the database, and History's reads triple.
+#
+# The investigation must establish the extra reads and the misses, find the
+# caches full but not full of Workflows in use, and recommend a larger cache
+# or more hosts.
+
+[fixture]
+id = "history-cache-full"
+title = "Tenant onboarding outgrows History's Workflow caches: reads tripled"
+description = "Reference fixture for History Workflow cache pressure. Three evidence submissions take the investigation from symptom to a final diagnosis."
+investigation = "inv-golden-history-cache"
+
+[open]
+at = 2026-10-16T11:00:00Z
+description = "Since about 10:30 UTC History's latency is up and the database's read load has tripled: GetWorkflowExecution calls from History went from about 1,200 to 3,800 per second. We onboarded a large tenant this morning."
+server_version = "1.31.0"
+window_start = 2026-10-16T10:30:00Z
+window_end = 2026-10-16T11:10:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 3
+history_hosts = 4
+matching_hosts = 3
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "workflow-reads"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+read-load = "candidate"
+cache-misses = "candidate"
+cache-full = "candidate"
+pinned-full = "candidate"
+
+# E1 — History's GetWorkflowExecution calls, from 30 minutes before.
+[[step]]
+at = 2026-10-16T11:04:00Z
+answers = "workflow-reads"
+file = "evidence/e1-workflow-reads.json"
+channel = "paste"
+query = 'sum(rate(persistence_requests{service_name="history", operation="GetWorkflowExecution"}[1m]))'
+
+[step.expect]
+next_request = "cache-hits"
+findings = ["F-reads-rose"]
+bound_signals = ["workflow_reads"]
+conclusion = "read-load"
+concluded = false
+
+[step.expect.states]
+read-load = "established"
+
+# E2 — Cache lookups and misses (a Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-16T11:06:00Z
+answers = "cache-hits"
+file = "evidence/e2-cache-hits.csv"
+channel = "upload"
+query = 'sum(rate(cache_requests{cache_type="mutablestate", operation="HistoryCacheGetOrCreate"}[1m])) and sum(rate(cache_miss{cache_type="mutablestate", operation="HistoryCacheGetOrCreate"}[1m]))'
+
+[step.expect]
+next_request = "cache-capacity"
+findings = ["F-misses-share-high"]
+bound_signals = ["cache_lookups", "cache_misses"]
+conclusion = "cache-misses"
+concluded = false
+
+[step.expect.states]
+cache-misses = "established"
+
+# E3 — How full the cache is (a Grafana CSV export with the four queries).
+[[step]]
+at = 2026-10-16T11:08:00Z
+answers = "cache-capacity"
+file = "evidence/e3-cache-capacity.csv"
+channel = "upload"
+query = 'max(cache_usage{cache_type="mutablestate", service_name="history"}) and max(cache_size{cache_type="mutablestate", service_name="history"}) and max(cache_pinned_usage{cache_type="mutablestate", service_name="history"}) and sum(rate(cache_errors{cache_type="mutablestate", operation="HistoryCacheGetOrCreate"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-cache-at-size", "F-no-cache-errors"]
+bound_signals = ["cache_usage", "cache_capacity", "cache_pinned", "cache_errors"]
+conclusion = "cache-too-small"
+concluded = true
+
+[step.expect.states]
+read-load = "established"
+cache-misses = "established"
+cache-full = "established"
+pinned-full = "eliminated"

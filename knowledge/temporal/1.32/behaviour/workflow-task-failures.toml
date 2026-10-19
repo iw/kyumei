@@ -1,0 +1,145 @@
+# How Workflow Tasks fail, how History retries them, and what the SDKs report,
+# in Temporal Server 1.32, Core, Go SDK v1.44.0 and Java SDK v1.40.0.
+
+[[statement]]
+id = "behaviour.wft-retried-without-limit"
+category = "behaviour"
+title = "A failing Workflow Task is retried without limit"
+statement = "History retries a Workflow Task that fails or times out until an attempt completes or the Workflow closes, and schedules each next attempt at once. Each failure or start-to-close timeout raises the attempt by one, except for a task that ran on a Worker's sticky queue: History clears the sticky queue, and the next attempt, on the normal queue, is attempt 1 again. From the fourth attempt, the attempt's start-to-close timeout is the Workflow Task timeout plus a backoff that starts at 5 seconds and doubles each attempt, up to history.workflowTaskRetryMaxInterval (10 minutes by default)."
+notes = [
+  "history.workflowTaskCriticalAttempt (10 by default) only logs a throttled warning; no setting stops the retries.",
+  "A schedule-to-start timeout, which only a sticky queue or a speculative task for a Workflow Update has, does not count as an attempt.",
+]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 121, excerpt = "// When workflow task fails/timeout it gets removed from mutable state, but attempt count is incremented." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 262, excerpt = "incrementAttempt := timeoutType != enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1061, excerpt = "newAttempt = m.ms.executionInfo.WorkflowTaskAttempt + 1" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/timer_queue_active_task_executor.go", line = 442, excerpt = "scheduleWorkflowTask = true" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/timer_queue_active_task_executor.go", line = 1010, excerpt = "err = workflow.ScheduleWorkflowTask(mutableState)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 47, excerpt = "workflowTaskRetryBackoffMinAttempts = 3" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 48, excerpt = "workflowTaskRetryInitialInterval    = 5 * time.Second" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1480, excerpt = "if attempt <= workflowTaskRetryBackoffMinAttempts {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1485, excerpt = "WithMaximumInterval(m.ms.shard.GetConfig().WorkflowTaskRetryMaxInterval())." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1487, excerpt = "startToCloseTimeout := defaultTimeout.AsDuration() + policy.ComputeNextDelay(0, int(attempt)-workflowTaskRetryBackoffMinAttempts, nil)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1456, excerpt = "m.ms.shard.GetThrottledLogger().Warn(\"Critical attempts processing workflow task\"," },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 1325, excerpt = "// attempts which will cause WorkflowTaskTimeout and server will retry forever until issue got fixed or" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1050, excerpt = "if m.ms.IsStickyTaskQueueSet() {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1051, excerpt = "incrementAttempt = false" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1052, excerpt = "m.ms.ClearStickyTaskQueue()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/mutable_state_impl.go", line = 1487, excerpt = "return normalTq, durationpb.New(tasks.SpeculativeWorkflowTaskScheduleToStartTimeout)" },
+]
+
+[[statement]]
+id = "sdk.wft-failure-reported-once"
+category = "behaviour"
+title = "SDKs report only a Workflow Task's first failed attempt"
+statement = "Core, the Go SDK and the Java SDK send RespondWorkflowTaskFailed only for a Workflow Task's first attempt. When a later attempt fails, the Worker sends nothing and History learns of it when the attempt's start-to-close timeout fires. During a run of failures, History's failed_workflow_tasks therefore rises about once per Workflow, while start_to_close_timeout with operation TimerActiveTaskWorkflowTaskTimeout counts the retries."
+scope = { server = ["1.32.0", "1.32.1"], sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 638, excerpt = "| EvictionRequestResult::EvictionAlreadyRequested(Some(attempt)) => *attempt <= 1," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 684, excerpt = "ActivationCompleteOutcome::WFTFailedDontReport" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/mod.rs", line = 1256, excerpt = "/// The workflow task failed, but we shouldn't report it. EX: We have failed 2 or more attempts" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 717, excerpt = "// Only fail workflow task on first attempt, subsequent failure on the same workflow task will timeout." },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 719, excerpt = "if task.GetAttempt() == 1 {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 313, excerpt = "// Only fail workflow task on the first attempt, subsequent failures of the same workflow task" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 316, excerpt = "if (workflowTask.getAttempt() > 1) {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/timer_queue_active_task_executor.go", line = 424, excerpt = "operationMetricsTag = metrics.TimerActiveTaskWorkflowTaskTimeoutScope" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/timer_queue_active_task_executor.go", line = 1041, excerpt = "metrics.StartToCloseTimeoutCounter.With(metricsScope).Record(1)" },
+]
+
+[[statement]]
+id = "sdk.wft-failures-counted-every-attempt"
+category = "behaviour"
+title = "SDKs count every failed Workflow Task attempt"
+statement = "Core, the Go SDK and the Java SDK increment workflow_task_execution_failed for every failed Workflow Task attempt, whether or not they report it, tagged failure_reason: NonDeterminismError when the cause is a nondeterminism error, and WorkflowError for other failures of Workflow code."
+notes = ["A completion too large to send is counted as GrpcMessageTooLarge, RequestTooLarge or PayloadsTooLarge, depending on the SDK."]
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 688, excerpt = ".with_new_attrs([metrics::failure_reason(cause.into())])" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 689, excerpt = ".wf_task_failed();" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 790, excerpt = "WorkflowTaskFailedCause::NonDeterministicError => FailureReason::Nondeterminism," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 791, excerpt = "_ => FailureReason::Workflow," },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 592, excerpt = "failureReason = \"WorkflowError\"" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 594, excerpt = "failureReason = \"NonDeterminismError\"" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 694, excerpt = "incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 772, excerpt = "taskFailureType = MetricsTag.TASK_FAILURE_VALUE_NON_DETERMINISM_ERROR;" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 788, excerpt = ".counter(MetricsType.WORKFLOW_TASK_EXECUTION_FAILURE_COUNTER)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 847, excerpt = "if (e instanceof NonDeterministicException) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 855, excerpt = "ImmutableMap.of(TASK_FAILURE_TYPE, MetricsTag.TASK_FAILURE_VALUE_WORKFLOW_ERROR));" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 859, excerpt = ".counter(MetricsType.WORKFLOW_TASK_EXECUTION_FAILURE_COUNTER)" },
+]
+
+[[statement]]
+id = "sdk.nondeterminism-cause"
+category = "behaviour"
+title = "A replay that does not match history fails as nondeterministic"
+statement = "When replaying a Workflow's history produces commands that do not match the events it records, Core, the Go SDK and the Java SDK fail the Workflow Task with cause NonDeterministicError and a message that begins [TMPRL1100]. Other failures of Workflow code fail it with cause WorkflowWorkerUnhandledFailure."
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 1105, excerpt = "let fail_cause = if matches!(&fail.source, WFMachinesError::Nondeterminism(_)) {" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 1106, excerpt = "WorkflowTaskFailedCause::NonDeterministicError" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 1108, excerpt = "WorkflowTaskFailedCause::WorkflowWorkerUnhandledFailure" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/mod.rs", line = 1665, excerpt = "#[error(\"[TMPRL1100] Nondeterminism error: {0}\")]" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 830, excerpt = "cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 837, excerpt = "} else if _, mismatch := err.(historyMismatchError); mismatch {" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 838, excerpt = "cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 1601, excerpt = "return historyMismatchErrorf(\"[TMPRL1100] nondeterministic workflow: missing replay command for %s\", util.HistoryEventToString(e))" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 334, excerpt = "if (e instanceof NonDeterministicException) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 336, excerpt = "WorkflowTaskFailedCause.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 340, excerpt = "WorkflowTaskFailedCause.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/NonDeterministicException.java", line = 15, excerpt = "super(\"[TMPRL1100] \" + message, cause);" },
+]
+
+[[statement]]
+id = "behaviour.wft-retries-leave-no-events"
+category = "behaviour"
+title = "Retries of a failed Workflow Task leave no history events"
+statement = "History writes a Workflow Task's failed attempt to the Workflow's history, as WorkflowTaskFailed or WorkflowTaskTimedOut, only while its attempt is 1, and writes no events for later attempts until one completes. A task that fails on a Worker's sticky queue stays at attempt 1 and is retried on the normal queue, so that retry's failure is written too. A Workflow stuck in retries therefore shows one failure in its history, or two when the first failure was on a sticky queue; DescribeWorkflowExecution reports the current attempt as pendingWorkflowTask.attempt."
+notes = ["A new event, such as a Signal, ends the run: the next attempt is numbered 1 again and its failure is written to history."]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 122, excerpt = "// If attempt count was incremented and now is greater than 1, then next workflow task should be created as transient." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 324, excerpt = "createWorkflowTaskScheduledEvent := !m.ms.IsTransientWorkflowTask() && workflowTaskType != enumsspb.WORKFLOW_TASK_TYPE_SPECULATIVE" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 931, excerpt = "// Only emit WorkflowTaskFailedEvent if workflow task is not transient." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1004, excerpt = "// Avoid creating WorkflowTaskTimedOut history event when workflow task is transient." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 326, excerpt = "// If while scheduling a workflow task and new events has come, then this workflow task cannot be a transient/speculative." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 330, excerpt = "m.ms.executionInfo.WorkflowTaskAttempt = 1" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/describeworkflow/api.go", line = 231, excerpt = "Attempt:               pendingWorkflowTask.Attempt," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1050, excerpt = "if m.ms.IsStickyTaskQueueSet() {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1051, excerpt = "incrementAttempt = false" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1052, excerpt = "m.ms.ClearStickyTaskQueue()" },
+]
+
+[[statement]]
+id = "behaviour.failing-wft-rejects-queries"
+category = "behaviour"
+title = "Queries and Updates fail while a Workflow Task keeps failing"
+statement = "From a Workflow Task's third attempt, History rejects queries and Updates to the Workflow with WorkflowNotReady, \"Workflow Task in failed state\", instead of dispatching them."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/queryworkflow/api.go", line = 31, excerpt = "const failQueryWorkflowTaskAttemptCount = 3" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/queryworkflow/api.go", line = 134, excerpt = "if mutableState.GetExecutionInfo().WorkflowTaskAttempt >= failQueryWorkflowTaskAttemptCount {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/queryworkflow/api.go", line = 142, excerpt = "return nil, serviceerror.NewWorkflowNotReady(\"Unable to query workflow due to Workflow Task in failed state.\")" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/updateworkflow/api.go", line = 34, excerpt = "failUpdateWorkflowTaskAttemptCount = 3" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/updateworkflow/api.go", line = 132, excerpt = "if ms.GetExecutionInfo().WorkflowTaskAttempt >= failUpdateWorkflowTaskAttemptCount {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/updateworkflow/api.go", line = 142, excerpt = "return nil, serviceerror.NewWorkflowNotReady(\"Unable to perform workflow execution update due to Workflow Task in failed state.\")" },
+]
+
+[[statement]]
+id = "behaviour.grpc-too-large-terminates"
+category = "behaviour"
+title = "A completion too large for gRPC terminates the Workflow"
+statement = "When a Worker fails a Workflow Task with cause GrpcMessageTooLarge, History terminates the Workflow instead of retrying the task."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/respondworkflowtaskfailed/api.go", line = 88, excerpt = "if request.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/api/respondworkflowtaskfailed/api.go", line = 89, excerpt = "if err := workflow.TerminateWorkflow(" },
+]

@@ -1,0 +1,86 @@
+# Branch fixture for Workflow cache misses and replays: Workers that crash.
+#
+# A lower heap limit rolled out at 15:20 UTC gets the Java Workers OOM-killed
+# every few minutes. A killed Worker never shuts down, so for about 10 seconds
+# Matching still accepts tasks on its sticky queue: they wait out the 5-second
+# sticky timeout, then go to the normal queue, where another Worker replays
+# the whole history. The Workers that stay up keep their caches, so sticky
+# tasks that reach them hit.
+#
+# The investigation must establish the replays, rule out cache misses and so
+# the cache's size, and find the sticky timeouts.
+
+[fixture]
+id = "sticky-worker-crashes"
+title = "OOM-killed Java Workers: sticky tasks time out and replay elsewhere"
+description = "Branch fixture for Workflow cache misses and replays. The caches work; tasks stop reaching the Worker that caches the Workflow."
+investigation = "inv-branch-sticky-crashes"
+
+[open]
+at = 2026-10-09T15:58:00Z
+description = "Since about 15:20 UTC our Java workers keep restarting (OOMKilled), and workflow tasks on the ledger task queue take seconds instead of tens of milliseconds; the logs show workflows being replayed. Namespace accounts, Java SDK 1.40."
+server_version = "1.31.0"
+sdks = [{ language = "java", version = "1.40.0" }]
+namespaces = ["accounts"]
+task_queues = ["ledger"]
+window_start = 2026-10-09T15:20:00Z
+window_end = 2026-10-09T16:10:00Z
+
+[open.expect]
+next_request = "replay-latency"
+conclusion = "none"
+concluded = false
+
+# E1 — Replay latency.
+[[step]]
+at = 2026-10-09T16:04:00Z
+answers = "replay-latency"
+file = "evidence/e1-replay-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_replay_latency_seconds_bucket{namespace="accounts", task_queue="ledger"}[1m])))'
+
+[step.expect]
+next_request = "cache-hits"
+findings = ["F-replay-elevated"]
+bound_signals = ["wft_replay_latency"]
+conclusion = "replay-pressure"
+concluded = false
+
+# E2 — Sticky cache hits and misses (a Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-09T16:06:00Z
+answers = "cache-hits"
+file = "evidence/e2-cache-hits.csv"
+channel = "upload"
+query = 'sum(rate(temporal_sticky_cache_hit_total{namespace="accounts", task_queue="ledger"}[1m])) and sum(rate(temporal_sticky_cache_miss_total{namespace="accounts", task_queue="ledger"}[1m]))'
+
+[step.expect]
+next_request = "sticky-timeouts"
+findings = ["F-misses-low", "F-no-misses-to-explain"]
+bound_signals = ["cache_hits", "cache_misses"]
+conclusion = "replay-pressure"
+concluded = false
+
+[step.expect.states]
+replay-pressure = "established"
+cache-misses = "eliminated"
+cache-full = "eliminated"
+
+# E3 — Sticky Workflow Task timeouts, from History.
+[[step]]
+at = 2026-10-09T16:08:00Z
+answers = "sticky-timeouts"
+file = "evidence/e3-sticky-timeouts.json"
+channel = "paste"
+query = 'sum(rate(schedule_to_start_timeout{operation="TimerActiveTaskWorkflowTaskTimeout", namespace="accounts"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-sticky-timeouts-occurring"]
+bound_signals = ["sticky_timeouts"]
+conclusion = "sticky-timeouts"
+concluded = true
+
+[step.expect.states]
+replay-pressure = "established"
+sticky-timeouts = "established"

@@ -1,0 +1,98 @@
+# Branch fixture for History task processing lag: a busy Workflow.
+#
+# Every chat message is a Signal to the room's RoomWorkflow. From 18:30 UTC
+# one viral room gets about 400 messages a second. The Signals keep its
+# Workflow's lock taken, so its timers and Activities wait up to 500 ms for
+# the lock, fail with ResourceExhausted (BusyWorkflow) and are retried. The
+# rest of the namespace is unaffected: loading and scheduling keep up.
+#
+# The investigation must rule out loading and the scheduler, leave the
+# attempt latency undecided, and find the busy Workflow retries.
+
+[fixture]
+id = "history-tasks-busy-workflow"
+title = "A viral chat room: tasks contend for one busy Workflow"
+description = "Branch fixture for History task processing lag. One Workflow's lock is held by a stream of Signals; its tasks fail and retry."
+investigation = "inv-branch-history-tasks-busy"
+
+[open]
+at = 2026-10-15T18:48:00Z
+description = "Since 18:30 UTC timers in our chat namespace fire late, by up to a minute. Each chat room is a RoomWorkflow that receives every message as a Signal; one viral room is getting about 400 messages a second."
+server_version = "1.31.0"
+namespaces = ["chat"]
+window_start = 2026-10-15T18:30:00Z
+window_end = 2026-10-15T19:00:00Z
+
+[open.expect]
+next_request = "task-load-latency"
+conclusion = "none"
+concluded = false
+
+# E1 — Load latency by task type.
+[[step]]
+at = 2026-10-15T18:52:00Z
+answers = "task-load-latency"
+file = "evidence/e1-load-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_load_bucket{namespace="chat"}[1m])))'
+
+[step.expect]
+next_request = "task-schedule-latency"
+findings = ["F-load-prompt"]
+bound_signals = ["task_load_latency"]
+conclusion = "none"
+concluded = false
+
+# E2 — Scheduler wait by task type.
+[[step]]
+at = 2026-10-15T18:54:00Z
+answers = "task-schedule-latency"
+file = "evidence/e2-schedule-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_schedule_bucket{namespace="chat"}[1m])))'
+
+[step.expect]
+next_request = "task-processing-latency"
+findings = ["F-schedule-prompt"]
+bound_signals = ["task_schedule_latency"]
+conclusion = "none"
+concluded = false
+
+# E3 — Attempt latency by task type: half a second, neither fast nor slow.
+[[step]]
+at = 2026-10-15T18:56:00Z
+answers = "task-processing-latency"
+file = "evidence/e3-processing-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_processing_bucket{namespace="chat"}[1m])))'
+
+[step.expect]
+next_request = "task-errors"
+bound_signals = ["task_processing_latency"]
+conclusion = "none"
+concluded = false
+
+[step.expect.states]
+slow-processing = "candidate"
+
+# E4 — Failed attempts by cause (a Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-15T18:59:00Z
+answers = "task-errors"
+file = "evidence/e4-task-errors.csv"
+channel = "upload"
+query = 'sum by (resource_exhausted_cause) (rate(task_errors_throttled{namespace="chat"}[1m])) and sum(rate(task_errors{namespace="chat"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-workflows-busy", "F-no-persistence-refusals", "F-no-errors"]
+bound_signals = ["busy_workflow_retries", "persistence_throttled_retries", "task_error_rate"]
+conclusion = "busy-workflow"
+concluded = true
+
+[step.expect.states]
+load-lag = "eliminated"
+scheduler-backlog = "eliminated"
+persistence-throttled = "eliminated"
+busy-workflow = "established"
+task-errors = "eliminated"

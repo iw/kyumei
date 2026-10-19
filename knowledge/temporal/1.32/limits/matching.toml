@@ -1,0 +1,123 @@
+# How Matching limits the rate it dispatches tasks in 1.32, read from source.
+#
+# A partition's dispatch rate comes from three sources: the system default (dynamic
+# configuration), a rate an Activity Worker sends with each poll, and a rate set through the
+# UpdateTaskQueueConfig API. The settings named here are generated dynamic configuration claims.
+
+[[statement]]
+id = "limit.task-queue-dispatch"
+category = "limit"
+title = "A Task Queue's dispatch ceiling"
+statement = "Without an API or Worker rate limit, Matching computes a partition's dispatch limit as the minimum of `admin.matchingNamespaceToPartitionDispatchRate` and `admin.matchingNamespaceTaskqueueToPartitionDispatchRate` (1,000 tasks/s by default). DescribeTaskQueue reports the Task Queue's limit as that times its read partitions, with source System. The partition enforces it only once its effective rate has changed since the partition loaded (limit.dispatch-applied-on-change)."
+notes = ["The same system default applies to Workflow and Activity Task Queues; each type of a partition has its own limiter."]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 146, excerpt = "systemRPS := min(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 206, excerpt = "return r.effectiveRPS * float64(r.numReadPartitions), r.rateLimitSource" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 166, excerpt = "r.rateLimitSource = enumspb.RATE_LIMIT_SOURCE_SYSTEM" },
+]
+
+[[statement]]
+id = "limit.dispatch-applied-on-change"
+category = "limit"
+title = "A partition applies its dispatch limit only when it changes"
+statement = "Matching configures a partition's dispatch limiters only when the partition's effective rate changes after it loads. The rate computed at load is not applied: until something changes it, the default matcher dispatches without a limit (the classic matcher allows 100,000 tasks/s). So the system default is not enforced on a partition that has known no other rate since it loaded, while DescribeTaskQueue still reports it as the effective limit. It takes effect once the rate has changed, for example after a Worker or API limit below it is set and later removed, or after one of its dynamic configuration settings changes."
+notes = [
+  "An Activity Worker's rate takes effect at once when it is below the system default, because it changes the effective rate.",
+  "The code's own comment says the effective rate is the minimum of the sources, so this looks unintended.",
+  "Confirmed on 3 October 2026 by a probe test against the v1.31.0 source: a partition built with default configuration dispatched 5,000 tasks in one instant without waiting, and was limited to 1,000 tasks/s only after a Worker rate of 400/s was set and removed. In 1.32 the partition's Start computes the effective rate in the same way without applying it.",
+]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 104, excerpt = "r.computeEffectiveRPSAndSourceLocked()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 175, excerpt = "if oldRPS != newRPS {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 177, excerpt = "r.updateSimpleRateLimitWithBurstLocked(defaultBurstDuration)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 276, excerpt = "r.wholeQueueLimit = makeSimpleLimiterParams(newRPS, burstDuration)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matcher_data.go", line = 686, excerpt = "interval time.Duration // ideal task spacing interval, or 0 for no limit (infinite), or -1 for zero limit" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 81, excerpt = "defaultTaskDispatchRPS," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/task_queue_partition_manager.go", line = 59, excerpt = "defaultTaskDispatchRPS    = 100000.0" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 136, excerpt = "// - If an API-level RPS is configured, effectiveRPS = min(system default RPS, API-configured RPS)" },
+]
+
+[[statement]]
+id = "limit.activity-worker-rate"
+category = "limit"
+title = "An Activity Worker's rate limit"
+statement = "An Activity Worker sends its Task Queue rate (TaskQueueActivitiesPerSecond in Go) with every poll, and the latest poll on a partition replaces the partition's Worker rate; a poll without one clears it. The rate is divided by the read partitions and applies when it is below the system default, and DescribeTaskQueue then reports it with source Worker. Workflow Task Queues take no Worker rate."
+notes = [
+  "The Go SDK sends 100,000/s when the option is unset, which is above the default system limit.",
+  "Workers polling the same Task Queue with different rates overwrite each other's.",
+  "In 1.32 the rate is also multiplied by the queue's rate-limit fraction, which is 1 unless the server is built with another provider.",
+]
+scope = { server = ["1.32.0", "1.32.1"], sdk = [{ family = "go", revision = "sdk-go v1.44.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matching_engine.go", line = 982, excerpt = "taskQueueMetadata:         request.TaskQueueMetadata," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/task_queue_partition_manager.go", line = 841, excerpt = "// Last poller wins if different pollers provide different values" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/task_queue_partition_manager.go", line = 846, excerpt = "pm.rateLimitManager.InjectWorkerRPS(pollMetadata)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 157, excerpt = "effectiveRPS = *r.workerRPS * fraction / float64(r.numReadPartitions)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 151, excerpt = "fraction := r.config.RateLimitFraction()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/rate_limit_fraction_provider.go", line = 17, excerpt = "defaultRateLimitFraction = maxRateLimitFraction" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/rate_limit_fraction_provider.go", line = 40, excerpt = "var defaultTaskQueueRateLimitFractionProvider = NewTaskQueueRateLimitFractionProvider(&unitRateLimitFractionProvider{})" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 161, excerpt = "if effectiveRPS < r.systemRPS {" },
+  { source = "temporal-api-go-v1.63.5", path = "taskqueue/v1/message.pb.go", line = 95, excerpt = "// Only applies to activity task queues" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 1406, excerpt = "TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: wrapperspb.Double(atp.activitiesPerSecond)}," },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_worker.go", line = 61, excerpt = "defaultTaskQueueActivitiesPerSecond = 100000.0 // Large activity executions/sec (unlimited)" },
+]
+
+[[statement]]
+id = "limit.task-queue-api-rate"
+category = "limit"
+title = "A rate limit set through the API"
+statement = "A queue rate limit set with UpdateTaskQueueConfig is stored in the Task Queue's user data and overrides any Worker rate, even a lower one. Divided by the read partitions, it applies when it is below the system default, and DescribeTaskQueue then reports it with source API. The Frontend refuses rate limits on Workflow Task Queues."
+notes = ["In 1.32 the rate is also multiplied by the queue's rate-limit fraction, which is 1 unless the server is built with another provider."]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = "temporal-server-v1.32.0", path = "service/matching/matching_engine.go", line = 3741, excerpt = "cfg.QueueRateLimit = buildRateLimitConfig(qrl, protoTs, updateIdentity)" },
+  { source = "temporal-server-v1.32.1", path = "service/matching/matching_engine.go", line = 3761, excerpt = "cfg.QueueRateLimit = buildRateLimitConfig(qrl, protoTs, updateIdentity)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 153, excerpt = "case r.apiConfigRPS != nil:" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 154, excerpt = "effectiveRPS = *r.apiConfigRPS * fraction / float64(r.numReadPartitions)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 151, excerpt = "fraction := r.config.RateLimitFraction()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/rate_limit_fraction_provider.go", line = 17, excerpt = "defaultRateLimitFraction = maxRateLimitFraction" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/rate_limit_fraction_provider.go", line = 40, excerpt = "var defaultTaskQueueRateLimitFractionProvider = NewTaskQueueRateLimitFractionProvider(&unitRateLimitFractionProvider{})" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 155, excerpt = "rateLimitSource = enumspb.RATE_LIMIT_SOURCE_API" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/workflow_handler.go", line = 7453, excerpt = "return nil, serviceerror.NewInvalidArgument(\"Setting rate limit on workflow task queues is not allowed.\")" },
+]
+
+[[statement]]
+id = "behaviour.describe-task-queue-rate-limit"
+category = "behaviour"
+title = "What DescribeTaskQueue reports as the rate limit"
+statement = "DescribeTaskQueue's effectiveRateLimit is the described partition's effective rate times its read partitions. Its rateLimitSource is API or Worker only when that rate is below the system default, and System otherwise. The request describes a Workflow Task Queue unless it names another type, and the enhanced mode does not report the rate limit."
+notes = ["To see an Activity Task Queue's limit, describe it with type TASK_QUEUE_TYPE_ACTIVITY in the default mode. The Temporal CLI prints neither the limit nor its source (cli.task-queue-describe)."]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matching_engine.go", line = 1715, excerpt = "effectiveRPS, sourceForEffectiveRPS := pm.GetRateLimitManager().GetEffectiveRPSAndSource()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matching_engine.go", line = 1718, excerpt = "RateLimitSource:   sourceForEffectiveRPS," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/ratelimit_manager.go", line = 161, excerpt = "if effectiveRPS < r.systemRPS {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/workflow_handler.go", line = 3374, excerpt = "request.TaskQueueType = enumspb.TASK_QUEUE_TYPE_WORKFLOW" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matching_engine.go", line = 1438, excerpt = "if req.ApiMode == enumspb.DESCRIBE_TASK_QUEUE_MODE_ENHANCED {" },
+]
+
+[[statement]]
+id = "behaviour.dispatch-throttle-visibility"
+category = "behaviour"
+title = "Throttled dispatch shows in DescribeTaskQueue, not in a metric"
+statement = "When the dispatch rate limit delays a task in the default matcher, Matching retries the match on a timer and records no metric for the delay. It does remember that it did: DescribeTaskQueue's statistics report rateLimitingActive while rate limiting has blocked a dispatch within about the last 30 seconds. Otherwise the tasks wait in the backlog, so the delay shows as backlog age and task_dispatch_latency. sync_throttle_count and buffer_throttle_count count rate-limited dispatch only in the classic matcher."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matcher_data.go", line = 541, excerpt = "d.rateLimitTimer.set(d.timeSource, d.rematchAfterTimer, minDelay)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matcher_data.go", line = 542, excerpt = "d.onRateLimited()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/physical_task_queue_manager.go", line = 553, excerpt = "c.tasksRateLimited.inc(1)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/physical_task_queue_manager.go", line = 695, excerpt = "rateLimitingActive := c.tasksRateLimited.rate() > 0" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/physical_task_queue_manager.go", line = 699, excerpt = "s.RateLimitingActive = rateLimitingActive" },
+  { source = "temporal-api-go-v1.63.5", path = "taskqueue/v1/message.pb.go", line = 482, excerpt = "RateLimitingActive bool" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/matcher.go", line = 120, excerpt = "metrics.SyncThrottlePerTaskQueueCounter.With(tm.metricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/task_reader.go", line = 111, excerpt = "metrics.BufferThrottlePerTaskQueueCounter.With(tr.taggedMetricsHandler()).Record(1)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/metric_defs.go", line = 1290, excerpt = "TaskDispatchLatencyPerTaskQueue        = NewTimerDef(\"task_dispatch_latency\")" },
+]

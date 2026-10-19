@@ -1,0 +1,112 @@
+# Branch fixture for visibility lag and errors: slow queries.
+#
+# From 16:00 UTC the billing team's new dashboard lists and counts Workflows
+# by a customer search attribute, over all time. On the PostgreSQL
+# visibility store those queries take tens of seconds, so the Web UI's list
+# and temporal workflow list are slow too. Records are written on time, and
+# nothing is refused or fails.
+#
+# The investigation must find the records on time, rule out the Frontend's
+# limit, the read limit and store errors, and find the slow queries.
+
+[fixture]
+id = "visibility-slow-queries"
+title = "A dashboard's queries slow down every list"
+description = "Branch fixture for visibility lag and errors. Heavy list and count queries take tens of seconds on a PostgreSQL visibility store."
+investigation = "inv-branch-visibility-slow-queries"
+
+[open]
+at = 2026-10-19T16:28:00Z
+description = "Since 16:00 UTC listing Workflows in the billing namespace is very slow: the Web UI's Workflow list takes 20 seconds to load or times out, and temporal workflow list with a query takes as long. Our visibility store is PostgreSQL."
+server_version = "1.31.0"
+namespaces = ["billing"]
+window_start = 2026-10-19T16:00:00Z
+window_end = 2026-10-19T16:30:00Z
+
+[open.expect]
+next_request = "visibility-lag"
+conclusion = "none"
+concluded = false
+
+# "takes 20 seconds" is asserted for the query latency: supported, not
+# established, until it is observed.
+[open.expect.states]
+slow-queries = "supported"
+
+# E1 — Visibility record lag by task type: on time throughout.
+[[step]]
+at = 2026-10-19T16:30:00Z
+answers = "visibility-lag"
+file = "evidence/e1-record-lag.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_queue_bucket{namespace="billing", task_type=~"VisibilityTask.*"}[1m])))'
+
+[step.expect]
+next_request = "visibility-api-rejections"
+findings = ["F-records-on-time"]
+bound_signals = ["visibility_task_latency"]
+
+[step.expect.states]
+records-late = "eliminated"
+
+# E2 — Visibility calls rejected at the Frontend: none. The counter exists
+# from an earlier rejection, so the series is flat zero.
+[[step]]
+at = 2026-10-19T16:32:00Z
+answers = "visibility-api-rejections"
+file = "evidence/e2-api-rejections.json"
+channel = "paste"
+query = 'sum by (operation, resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name="frontend", namespace="billing", operation=~"ListWorkflowExecutions|CountWorkflowExecutions"}[1m]))'
+
+[step.expect]
+next_request = "visibility-persistence-refusals"
+findings = ["F-records-on-time", "F-no-api-rejections"]
+bound_signals = ["api_rejections"]
+
+# E3 — Refusals by the visibility persistence limits: none.
+[[step]]
+at = 2026-10-19T16:34:00Z
+answers = "visibility-persistence-refusals"
+file = "evidence/e3-refusals.json"
+channel = "paste"
+query = 'sum by (operation) (rate(visibility_persistence_resource_exhausted[1m]))'
+
+[step.expect]
+next_request = "visibility-persistence-errors"
+findings = ["F-records-on-time", "F-no-api-rejections", "F-no-read-refusals"]
+bound_signals = ["read_refusals"]
+
+# E4 — Store errors by call, and visibility tasks moved to the DLQ: none.
+[[step]]
+at = 2026-10-19T16:36:00Z
+answers = "visibility-persistence-errors"
+file = "evidence/e4-errors.csv"
+channel = "upload"
+query = 'sum by (operation) (rate(visibility_persistence_errors[1m])) and sum(rate(dlq_writes{task_category="visibility"}[1m]))'
+
+[step.expect]
+next_request = "visibility-persistence-latency"
+findings = ["F-records-on-time", "F-no-api-rejections", "F-no-read-refusals", "F-store-not-failing"]
+bound_signals = ["store_errors", "visibility_dlq_writes"]
+
+# E5 — Store latency by call: list and count queries take tens of seconds.
+[[step]]
+at = 2026-10-19T16:38:00Z
+answers = "visibility-persistence-latency"
+file = "evidence/e5-store-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, operation) (rate(visibility_persistence_latency_bucket[1m])))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-records-on-time", "F-no-api-rejections", "F-no-read-refusals", "F-store-not-failing", "F-queries-slow"]
+bound_signals = ["write_latency", "query_latency"]
+conclusion = "slow-queries"
+concluded = true
+
+[step.expect.states]
+records-late = "eliminated"
+api-rate-limit = "eliminated"
+read-limit = "eliminated"
+store-errors = "eliminated"
+slow-queries = "established"

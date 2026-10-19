@@ -1,0 +1,165 @@
+# Signal flood on Temporal 1.32, with the Task Queue part-way through shrinking.
+#
+# A batch job signals every open order workflow, and the Workflow Task add
+# rate on `order-fulfillment` jumps to ~3,600/s. The team is reducing the
+# Task Queue from four partitions to three: write partitions are already
+# three, and the fourth read partition stays until it drains. Matching's
+# dispatch limit is 1,000/s on each read partition, 4,000/s in all, but only
+# three partitions receive tasks, so dispatch tops out near 3,000/s, three
+# quarters of the limit DescribeTaskQueue reports. On 1.31 the rates alone
+# could not tell whether the limit was binding. On 1.32 DescribeTaskQueue
+# also reports that the rate limiter held dispatch back.
+#
+# The investigation must establish the dispatch limit from that report, say
+# why dispatch ran below the reported limit, and attribute the add rate to
+# the Signal flood, without recommending more Workers.
+
+[fixture]
+id = "signal-flood-uneven-partitions"
+title = "Signal flood on 1.32: dispatch held at three of four partitions' share of the limit"
+description = "On Temporal 1.32, DescribeTaskQueue reports rate limiting while dispatch runs below the reported limit. Six evidence submissions take the investigation to a diagnosis."
+investigation = "inv-signal-flood-uneven-partitions"
+
+[open]
+at = 2026-09-30T13:52:00Z
+description = "Since about 13:35 UTC, workflow tasks on the order-fulfillment task queue (namespace commerce-prod) are waiting about 30 seconds before a worker picks them up. Schedule-to-start is normally under 50ms. A batch job started signalling every open order workflow at around the same time. Worker CPU and memory look normal."
+server_version = "1.32.1"
+sdks = [{ language = "python", version = "1.25.0" }]
+namespaces = ["commerce-prod"]
+task_queues = ["order-fulfillment"]
+window_start = 2026-09-30T13:35:00Z
+window_end = 2026-09-30T13:50:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 4
+history_hosts = 6
+matching_hosts = 4
+worker_processes = 12
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "workflow-worker-slots"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+worker-slot-exhaustion = "candidate"
+poller-starvation = "candidate"
+poll-throttling = "candidate"
+matching-backlog = "candidate"
+dispatch-rate-ceiling = "candidate"
+signal-flood = "candidate"
+
+# E1 — Worker execution capacity.
+[[step]]
+at = 2026-09-30T13:58:00Z
+answers = "workflow-worker-slots"
+file = "evidence/e1-worker-slots.json"
+channel = "paste"
+query = 'sum by (task_queue) (temporal_worker_task_slots_available{worker_type="WorkflowWorker", namespace="commerce-prod", task_queue="order-fulfillment"})'
+
+[step.expect]
+next_request = "workflow-pollers"
+findings = ["F-slots-headroom"]
+bound_signals = ["workflow_slots_available"]
+
+[step.expect.states]
+worker-slot-exhaustion = "eliminated"
+
+# E2 — Workflow Task polling (a Grafana CSV export).
+[[step]]
+at = 2026-09-30T14:03:00Z
+answers = "workflow-pollers"
+file = "evidence/e2-pollers.csv"
+channel = "upload"
+query = 'sum(temporal_num_pollers{poller_type="workflow_task", namespace="commerce-prod", task_queue="order-fulfillment"}) and sum(rate(temporal_workflow_task_queue_poll_succeed{namespace="commerce-prod", task_queue="order-fulfillment"}[1m]))'
+
+[step.expect]
+next_request = "poll-failures"
+findings = ["F-pollers-present", "F-pollers-busy"]
+bound_signals = ["wft_pollers", "wft_poll_succeed_rate"]
+
+[step.expect.states]
+pollers-absent = "eliminated"
+poller-starvation = "supported"
+
+# E3 — Poll failures seen by the Workers.
+[[step]]
+at = 2026-09-30T14:06:00Z
+answers = "poll-failures"
+file = "evidence/e3-poll-failures.json"
+channel = "paste"
+query = 'sum by (status_code) (rate(temporal_long_request_failure{operation="PollWorkflowTaskQueue", namespace="commerce-prod"}[1m]))'
+
+[step.expect]
+next_request = "matching-queue-stats"
+findings = ["F-no-poll-failures"]
+bound_signals = ["poll_failures_rate"]
+
+[step.expect.states]
+poll-throttling = "eliminated"
+poller-starvation = "supported"
+
+# E4 — DescribeTaskQueue captured during the incident.
+[[step]]
+at = 2026-09-30T14:10:00Z
+answers = "matching-queue-stats"
+file = "evidence/e4-describe-task-queue.json"
+channel = "paste"
+window_start = 2026-09-30T13:48:30Z
+note = "Captured at 13:48:30 UTC with DescribeTaskQueue (report_stats) through the API, as JSON"
+
+[step.expect]
+next_request = "partition-config"
+findings = ["F-backlog-carries-latency", "F-matching-accounts-for-latency", "F-rate-limiting-active", "F-rate-limited-backlog"]
+bound_signals = ["backlog_age", "backlog_count", "tasks_add_rate", "tasks_dispatch_rate", "dispatch_rate_limit", "rate_limiting_active"]
+conclusion = "dispatch-ceiling"
+concluded = false
+
+[step.expect.states]
+matching-backlog = "established"
+history-dispatch-delay = "eliminated"
+dispatch-rate-ceiling = "established"
+poller-starvation = "supported"
+
+# E5 — Partition configuration.
+[[step]]
+at = 2026-09-30T14:14:00Z
+answers = "partition-config"
+file = "evidence/e5-dynamic-config.yaml"
+channel = "paste"
+
+[step.expect]
+next_request = "signal-rate"
+findings = ["F-write-within-read"]
+bound_signals = ["read_partitions", "write_partitions"]
+conclusion = "dispatch-ceiling"
+concluded = false
+
+[step.expect.states]
+partition-write-read-mismatch = "eliminated"
+dispatch-rate-ceiling = "established"
+
+# E6 — The Signal rate before and during the incident.
+[[step]]
+at = 2026-09-30T14:19:00Z
+answers = "signal-rate"
+file = "evidence/e6-signal-rate.json"
+channel = "paste"
+query = 'sum(rate(service_requests{service_name="frontend", operation="SignalWorkflowExecution", namespace="commerce-prod"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-signal-surge", "F-signals-drive-adds"]
+bound_signals = ["signal_request_rate"]
+conclusion = "dispatch-ceiling-under-signal-flood"
+concluded = true
+
+[step.expect.states]
+signal-flood = "established"
+worker-slot-exhaustion = "eliminated"
+poller-starvation = "supported"
+poll-throttling = "eliminated"
+matching-backlog = "established"
+dispatch-rate-ceiling = "established"

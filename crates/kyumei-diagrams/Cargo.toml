@@ -1,0 +1,20 @@
+[package]
+name = "kyumei-diagrams"
+description = "Typed diagnostic diagram IR for Kyumei, with validation and deterministic SVG and text renderers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+kyumei-domain.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

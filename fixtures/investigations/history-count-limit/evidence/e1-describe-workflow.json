@@ -1,0 +1,34 @@
+{
+ "executionConfig": {
+  "taskQueue": {
+   "name": "logistics-watch",
+   "kind": "TASK_QUEUE_KIND_NORMAL"
+  },
+  "workflowExecutionTimeout": "0s",
+  "workflowRunTimeout": "0s",
+  "defaultWorkflowTaskTimeout": "10s"
+ },
+ "workflowExecutionInfo": {
+  "execution": {
+   "workflowId": "shipment-watch-SH-77120934",
+   "runId": "0199a2f0-77c1-7a09-9d3e-5be6f1a40c28"
+  },
+  "type": {
+   "name": "ShipmentWatchWorkflow"
+  },
+  "startTime": "2026-09-23T08:01:17.540Z",
+  "status": "WORKFLOW_EXECUTION_STATUS_TERMINATED",
+  "historyLength": "51203",
+  "executionTime": "2026-09-23T08:01:17.540Z",
+  "memo": {},
+  "taskQueue": "logistics-watch",
+  "stateTransitionCount": "51192",
+  "historySizeBytes": "15003412",
+  "rootExecution": {
+   "workflowId": "shipment-watch-SH-77120934",
+   "runId": "0199a2f0-77c1-7a09-9d3e-5be6f1a40c28"
+  },
+  "firstRunId": "0199a2f0-77c1-7a09-9d3e-5be6f1a40c28",
+  "closeTime": "2026-10-10T15:40:31.882Z"
+ }
+}

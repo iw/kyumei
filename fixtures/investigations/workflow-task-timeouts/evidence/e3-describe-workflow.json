@@ -1,0 +1,40 @@
+{
+ "executionConfig": {
+  "taskQueue": {
+   "name": "reports",
+   "kind": "TASK_QUEUE_KIND_NORMAL"
+  },
+  "workflowExecutionTimeout": "0s",
+  "workflowRunTimeout": "0s",
+  "defaultWorkflowTaskTimeout": "10s"
+ },
+ "workflowExecutionInfo": {
+  "execution": {
+   "workflowId": "report-weekly-acme-2026-40",
+   "runId": "0199c1e7-0b3a-7e55-8d2c-61f4a9e3b7c0"
+  },
+  "type": {
+   "name": "ReportWorkflow"
+  },
+  "startTime": "2026-10-01T06:00:03.911Z",
+  "status": "WORKFLOW_EXECUTION_STATUS_RUNNING",
+  "historyLength": "48213",
+  "executionTime": "2026-10-01T06:00:03.911Z",
+  "memo": {},
+  "taskQueue": "reports",
+  "stateTransitionCount": "48207",
+  "historySizeBytes": "31877410",
+  "rootExecution": {
+   "workflowId": "report-weekly-acme-2026-40",
+   "runId": "0199c1e7-0b3a-7e55-8d2c-61f4a9e3b7c0"
+  },
+  "firstRunId": "0199c1e7-0b3a-7e55-8d2c-61f4a9e3b7c0"
+ },
+ "pendingWorkflowTask": {
+  "state": "PENDING_WORKFLOW_TASK_STATE_STARTED",
+  "scheduledTime": "2026-10-08T22:43:26.207Z",
+  "originalScheduledTime": "2026-10-08T22:43:26.207Z",
+  "startedTime": "2026-10-08T22:43:26.233Z",
+  "attempt": 13
+ }
+}

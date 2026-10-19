@@ -1,0 +1,91 @@
+# Reference fixture for history limits.
+#
+# ImportBatchWorkflow parses a customer's CSV file in chunks and returns each
+# chunk from an Activity, about 5 KiB an event, and loops until the file is
+# done without ever continuing-as-new. Large files now take one run past
+# 50 MiB of history, and History terminates the Workflow mid-import.
+#
+# The investigation must find, from one terminated import, that it ran far
+# past the continue-as-new suggestion and that payloads filled its history,
+# then confirm from its last event that the size limit terminated it.
+
+[fixture]
+id = "history-size-limit"
+title = "Imports terminated at the 50 MiB history size limit, filled by Activity results"
+description = "Reference fixture for history limits. Two evidence submissions, a DescribeWorkflowExecution and the terminated Workflow's last event, take the investigation from symptom to a final diagnosis."
+investigation = "inv-golden-history-size"
+
+[open]
+at = 2026-10-09T11:20:00Z
+description = "Since this morning some ImportBatchWorkflow executions in namespace ingest are terminated partway through; the Web UI shows them terminated by history-service. They import large CSV files. Go SDK 1.44."
+server_version = "1.31.0"
+sdks = [{ language = "go", version = "1.44.0" }]
+namespaces = ["ingest"]
+task_queues = ["ingest"]
+window_start = 2026-10-09T04:00:00Z
+window_end = 2026-10-09T11:30:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 2
+history_hosts = 4
+matching_hosts = 2
+worker_processes = 4
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "workflow-size"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+history-size-limit = "candidate"
+history-count-limit = "candidate"
+mutable-state-limit = "candidate"
+continue-as-new-ignored = "candidate"
+large-payloads = "candidate"
+
+# E1 — One terminated import, described with the CLI.
+[[step]]
+at = 2026-10-09T11:24:00Z
+answers = "workflow-size"
+file = "evidence/e1-describe-workflow.json"
+channel = "paste"
+window_start = 2026-10-09T11:23:00Z
+note = "Captured at 11:23 UTC with temporal workflow describe --workflow-id import-batch-20261009-0412 -o json"
+
+[step.expect]
+next_request = "termination-event"
+findings = ["F-size-past-default-limit", "F-past-suggestion", "F-payload-heavy"]
+bound_signals = ["workflow_status", "history_length", "history_size_bytes"]
+conclusion = "past-continue-as-new"
+concluded = false
+
+[step.expect.states]
+history-size-limit = "supported"
+history-count-limit = "candidate"
+mutable-state-limit = "candidate"
+continue-as-new-ignored = "established"
+large-payloads = "established"
+
+# E2 — The terminated import's last event.
+[[step]]
+at = 2026-10-09T11:27:00Z
+answers = "termination-event"
+file = "evidence/e2-terminated-event.json"
+channel = "paste"
+note = "temporal workflow show --workflow-id import-batch-20261009-0412 --output json | jq '.events[-1]'"
+
+[step.expect]
+next_request = "none"
+findings = ["F-reason-size", "F-reason-not-count", "F-reason-not-mutable-state"]
+bound_signals = ["termination_reason"]
+conclusion = "size-limit-payloads"
+concluded = true
+
+[step.expect.states]
+history-size-limit = "established"
+history-count-limit = "eliminated"
+mutable-state-limit = "eliminated"
+continue-as-new-ignored = "established"
+large-payloads = "established"

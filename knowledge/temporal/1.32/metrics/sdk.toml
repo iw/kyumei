@@ -1,0 +1,187 @@
+# Statements about SDK (Worker-side) metrics and SDK configuration.
+#
+# The metrics themselves are generated from the Core, Go and Java SDK sources
+# (generated/sdk-metrics.toml); the label sets and notes a diagnostic relies on are reviewed
+# annotations (sdk-annotations.toml). The statements below say how each SDK's names reach
+# Prometheus, which the generated expositions follow.
+
+[[statement]]
+id = "sdk.core-metric-prefix"
+category = "sdk-configuration"
+title = "Core SDK metric prefix"
+statement = "Core-based SDKs prefix metric names with `temporal_` unless a different prefix is configured."
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry.rs", line = 45, excerpt = "pub static METRIC_PREFIX: &str = \"temporal_\";" },
+]
+
+[[statement]]
+id = "sdk.core-duration-unit"
+category = "sdk-configuration"
+title = "Core SDK duration unit"
+statement = "Core-based SDKs export durations as milliseconds unless configured to use seconds (`use_seconds_for_durations`; `durations_as_seconds` in Python)."
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry.rs", line = 147, excerpt = "/// If set to true, use f64 seconds for durations instead of u64 milliseconds" },
+  { source = "sdk-python-1.25.0", path = "temporalio/runtime.py", line = 346, excerpt = "durations_as_seconds: bool = False" },
+]
+
+[[statement]]
+id = "sdk.core-prometheus-naming"
+category = "sdk-configuration"
+title = "Core SDK Prometheus metric names"
+statement = "Core's Prometheus exporter exports each metric under its name with the metric prefix (`temporal_` by default). Counters gain `_total` only with `counters_total_suffix`, and histograms gain their unit (`_milliseconds`, or `_seconds` with `use_seconds_for_durations`) only with `unit_suffix`. All three options are off by default."
+notes = [
+  "`counters_total_suffix` appends `_total` even to a name that already ends with it, so `local_activity_total` becomes `temporal_local_activity_total_total`.",
+  "Kyumei does not cover Core's OTLP exporter: the names it reaches Prometheus under depend on the collector.",
+]
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry.rs", line = 344, excerpt = "Arc::new(PrefixedMetricsMeter::new(self.metric_prefix.clone(), m))" },
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry.rs", line = 167, excerpt = "/// If set true, all counters will include a \"_total\" suffix" },
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry.rs", line = 170, excerpt = "/// If set true, all histograms will include the unit in their name as a suffix." },
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry.rs", line = 174, excerpt = "/// If set to true, use f64 seconds for durations instead of u64 milliseconds" },
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry/prometheus_meter.rs", line = 566, excerpt = "metric_name.push_str(\"_total\");" },
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry/prometheus_meter.rs", line = 590, excerpt = "params.unit = \"milliseconds\".into();" },
+  { source = "sdk-core-acac9e3f", path = "crates/common/src/telemetry/prometheus_meter.rs", line = 636, excerpt = "format!(\"{base_name}_{unit}\")" },
+]
+
+[[statement]]
+id = "sdk.go-metrics-naming"
+category = "sdk-configuration"
+title = "Go SDK Prometheus metric names"
+statement = "Go SDK metric names include the `temporal_` prefix. The tally handler exports them unchanged, with timers in seconds through tally's Prometheus reporter, unless the scope is wrapped in `NewPrometheusNamingScope`, which appends `_total` to counters and `_seconds` to timers. The OpenTelemetry handler records timers in seconds, which the OpenTelemetry Prometheus exporter suffixes `_seconds`, and counters as up-down counters, which the exporter writes as gauges without `_total`, unless `UseMonotonicCounters` is set."
+notes = ["Every Go timer is exported in seconds; only the name changes with the handler."]
+scope = { sdk = [{ family = "go", revision = "sdk-go v1.44.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = "sdk-go-contrib-tally-v0.2.0", path = "prometheus.go", line = 49, excerpt = "name += \"_total\"" },
+  { source = "sdk-go-contrib-tally-v0.2.0", path = "prometheus.go", line = 60, excerpt = "name += \"_seconds\"" },
+  { source = "sdk-go-contrib-tally-v0.2.0", path = "handler.go", line = 44, excerpt = "scope = contribtally.NewPrometheusNamingScope(scope)" },
+  { source = "tally-v4.1.17", path = "prometheus/reporter.go", line = 182, excerpt = "m.histogram.Observe(float64(interval) / float64(time.Second))" },
+  { source = "sdk-go-contrib-opentelemetry-v0.8.0", path = "handler.go", line = 117, excerpt = "c, err = m.meter.Int64UpDownCounter(name)" },
+  { source = "sdk-go-contrib-opentelemetry-v0.8.0", path = "handler.go", line = 38, excerpt = "// UseMonotonicCounters causes [MetricsHandler.Counter] to use OpenTelemetry's Int64Counter" },
+  { source = "sdk-go-contrib-opentelemetry-v0.8.0", path = "handler.go", line = 140, excerpt = "h, err := m.meter.Float64Histogram(name, metric.WithUnit(\"s\"))" },
+  { source = "sdk-go-contrib-opentelemetry-v0.8.0", path = "handler.go", line = 146, excerpt = "h.Record(context.Background(), t.Seconds(), metric.WithAttributeSet(m.attributes))" },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 443, excerpt = "return dto.MetricType_GAUGE.Enum()" },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 374, excerpt = "\"s\": \"_seconds\"," },
+]
+
+[[statement]]
+id = "sdk.go-tally-label-values"
+category = "sdk-configuration"
+title = "Go SDK tally label values"
+statement = "The Go SDK's `PrometheusSanitizeOptions`, which the tally handler's documentation passes to tally, write every character of a label value other than an ASCII letter, a digit or `_` as `_`, so a Task Queue named `order-fulfillment` is labelled `order_fulfillment`. The OpenTelemetry handler's exporter writes label values unchanged."
+scope = { sdk = [{ family = "go", revision = "sdk-go v1.44.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "sdk-go-contrib-tally-v0.2.0", path = "prometheus.go", line = 33, excerpt = "var PrometheusSanitizeOptions = tally.SanitizeOptions{" },
+  { source = "sdk-go-contrib-tally-v0.2.0", path = "prometheus.go", line = 36, excerpt = "ValueCharacters:      tally.ValidCharacters{Ranges: tally.AlphanumericRange, Characters: []rune{'_'}}," },
+  { source = "sdk-go-contrib-tally-v0.2.0", path = "handler.go", line = 40, excerpt = "// 		SanitizeOptions: &contribtally.PrometheusSanitizeOptions," },
+  { source = "tally-v4.1.17", path = "scope_registry.go", line = 205, excerpt = "tags = parent.copyAndSanitizeMap(tags)" },
+  { source = "tally-v4.1.17", path = "scope.go", line = 589, excerpt = "v = s.sanitizer.Value(v)" },
+  { source = "otel-exporter-prometheus-v0.56.0", path = "exporter.go", line = 327, excerpt = "values = append(values, kv.Value.Emit())" },
+]
+
+[[statement]]
+id = "sdk.java-metrics-naming"
+category = "sdk-configuration"
+title = "Java SDK Prometheus metric names"
+statement = "Java SDK metric names include the `temporal_` prefix. Through `MicrometerClientStatsReporter` and Micrometer's Prometheus registry, counters gain `_total`, timers are exported as histograms in seconds named with `_seconds` (`_bucket`, `_count` and `_sum`, plus a `_seconds_max` gauge), and gauges keep their names. Tally histograms are not reported."
+notes = ["Verified for Micrometer 1.9.9, which the SDK builds against, and 1.13.6, which its edge-dependency tests use. From 1.13 the Prometheus Java client, not Micrometer, appends `_total`; the names are the same."]
+scope = { sdk = [{ family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/common/reporter/MicrometerClientStatsReporter.java", line = 62, excerpt = "registry.counter(name, getTags(tags)).increment(value);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/common/reporter/MicrometerClientStatsReporter.java", line = 83, excerpt = ".publishPercentileHistogram(true)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/common/reporter/MicrometerClientStatsReporter.java", line = 85, excerpt = ".record(interval.getNanos(), TimeUnit.NANOSECONDS);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/common/reporter/MicrometerClientStatsReporter.java", line = 97, excerpt = "// NOOP" },
+  { source = "micrometer-v1.9.9", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheus/PrometheusNamingConvention.java", line = 68, excerpt = "conventionName += \"_total\";" },
+  { source = "micrometer-v1.9.9", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheus/PrometheusNamingConvention.java", line = 76, excerpt = "conventionName += timerSuffix + \"_seconds\";" },
+  { source = "micrometer-v1.9.9", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheus/PrometheusMeterRegistry.java", line = 436, excerpt = "return TimeUnit.SECONDS;" },
+  { source = "micrometer-v1.9.9", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheus/PrometheusMeterRegistry.java", line = 309, excerpt = "new MicrometerCollector.Family(Collector.Type.GAUGE, conventionName + \"_max\"," },
+  { source = "micrometer-v1.13.6", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheusmetrics/PrometheusNamingConvention.java", line = 63, excerpt = "// \"_total\" on its own and also validates and fails if it is already there:" },
+  { source = "micrometer-v1.13.6", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheusmetrics/PrometheusNamingConvention.java", line = 73, excerpt = "conventionName += timerSuffix + \"_seconds\";" },
+  { source = "micrometer-v1.13.6", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheusmetrics/PrometheusMeterRegistry.java", line = 447, excerpt = "return SECONDS;" },
+  { source = "micrometer-v1.13.6", path = "implementations/micrometer-registry-prometheus/src/main/java/io/micrometer/prometheusmetrics/PrometheusMeterRegistry.java", line = 294, excerpt = "families.add(new MicrometerCollector.Family<>(conventionName + \"_max\"," },
+  { source = "prometheus-client-java-v1.2.1", path = "prometheus-metrics-exposition-formats/src/main/java/io/prometheus/metrics/expositionformats/PrometheusTextFormatWriter.java", line = 118, excerpt = "writeNameAndLabels(writer, metadata.getPrometheusName(), \"_total\", data.getLabels());" },
+  { source = "prometheus-client-java-v1.2.1", path = "prometheus-metrics-model/src/main/java/io/prometheus/metrics/model/snapshots/PrometheusNaming.java", line = 116, excerpt = "sanitizedName = sanitizedName.substring(0, sanitizedName.length() - reservedSuffix.length());" },
+]
+
+[[statement]]
+id = "sdk.core-poll-needs-slot"
+category = "behaviour"
+title = "Core pollers reserve a slot before polling"
+statement = "A Core-based Worker acquires a Workflow Task slot permit before it issues each Workflow Task poll, so a Worker with no free slots stops polling."
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/pollers/poll_buffer.rs", line = 391, excerpt = "p = permit_dealer.acquire_owned() => p," },
+]
+
+[[statement]]
+id = "sdk.activity-poll-needs-slot"
+category = "behaviour"
+title = "Activity pollers reserve a slot before polling"
+statement = "Core-based, Go and Java Workers reserve an Activity slot before each Activity Task poll, so a Worker with no free Activity slots stops polling for Activities."
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/pollers/poll_buffer.rs", line = 203, excerpt = "permit_dealer: MeteredPermitDealer<ActivitySlotKind>," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/pollers/poll_buffer.rs", line = 391, excerpt = "p = permit_dealer.acquire_owned() => p," },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_worker.go", line = 598, excerpt = "base := newBaseWorker(bwo)" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_worker_base.go", line = 483, excerpt = "s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/ActivityPollTask.java", line = 105, excerpt = "permit = MultiThreadedPoller.getSlotPermitAndHandleInterrupts(future, slotSupplier);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/ActivityPollTask.java", line = 117, excerpt = ".pollActivityTaskQueue(pollRequest);" },
+]
+
+[[statement]]
+id = "sdk.core-reserved-slot-counts-free"
+category = "behaviour"
+title = "Core counts a slot held by a poll as free"
+statement = "A Core-based Worker counts a slot it has reserved for an outstanding poll as available in worker_task_slots_available until the poll returns a task. A Worker whose slots are all busy therefore reports a free slot while each poll that follows a finished task is in flight."
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/abstractions.rs", line = 23, excerpt = "/// The number of permit owners who have acquired a permit, but are not yet meaningfully using" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/abstractions.rs", line = 174, excerpt = "mets.available_task_slots(avail + unused + available_adjustment);" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/abstractions.rs", line = 406, excerpt = "pub(crate) fn into_used(mut self, info: SK::Info) -> UsedMeteredSemPermit<SK> {" },
+]
+
+[[statement]]
+id = "sdk.python-default-wft-pollers"
+category = "sdk-configuration"
+title = "Python SDK default Workflow Task pollers"
+statement = "The Python SDK's default Workflow Task poller behaviour is a simple maximum of 5 pollers, shared between sticky and normal queues."
+scope = { sdk = [{ family = "core", revision = "sdk-python 1.25.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "sdk-python-1.25.0", path = "temporalio/worker/_worker.py", line = 138, excerpt = "workflow_task_poller_behavior: PollerBehavior = PollerBehaviorSimpleMaximum(" },
+]
+
+[[statement]]
+id = "sdk.task-queue-activities-per-second"
+category = "sdk-configuration"
+title = "The Task Queue-wide Activity rate option"
+statement = "Each SDK has a Worker option that sets the rate at which the server dispatches Activity Tasks from the whole Task Queue, not from one Worker: TaskQueueActivitiesPerSecond in Go, setMaxTaskQueueActivitiesPerSecond in Java, and max_task_queue_activities_per_second in Core-based SDKs (the Python Worker's argument of the same name). The Worker sends it with every Activity poll (limit.activity-worker-rate)."
+notes = [
+  "Workers on the same Task Queue with different values overwrite each other's: the latest poll wins.",
+  "To limit one Worker instead, the SDKs have a per-Worker option, such as WorkerActivitiesPerSecond in Go and setMaxWorkerActivitiesPerSecond in Java.",
+]
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = "sdk-go-v1.44.0", path = "internal/worker.go", line = 136, excerpt = "// This is managed by the server and controls activities per second for your entire taskqueue" },
+  { source = "sdk-go-v1.44.0", path = "internal/worker.go", line = 146, excerpt = "TaskQueueActivitiesPerSecond float64" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerOptions.java", line = 224, excerpt = "* This is managed by the server and controls activities per second for the entire task queue" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerOptions.java", line = 232, excerpt = "public Builder setMaxTaskQueueActivitiesPerSecond(double maxTaskQueueActivitiesPerSecond) {" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/mod.rs", line = 203, excerpt = "/// workers on the same queue have different values set, they will thrash with the last poller" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/mod.rs", line = 207, excerpt = "pub max_task_queue_activities_per_second: Option<f64>," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/client.rs", line = 532, excerpt = "max_tasks_per_second: Some(tps)," },
+  { source = "sdk-python-1.25.0", path = "temporalio/worker/_worker.py", line = 128, excerpt = "max_task_queue_activities_per_second: float | None = None," },
+  { source = "sdk-go-v1.44.0", path = "internal/worker.go", line = 117, excerpt = "WorkerActivitiesPerSecond float64" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerOptions.java", line = 145, excerpt = "public Builder setMaxWorkerActivitiesPerSecond(double maxWorkerActivitiesPerSecond) {" },
+]

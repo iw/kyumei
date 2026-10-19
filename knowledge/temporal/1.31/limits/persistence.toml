@@ -1,0 +1,172 @@
+# How Temporal Server limits its own persistence (database) calls in 1.31.0, read from source.
+#
+# Every service host has its own limiters, built once when the service starts and shared by
+# all of its persistence managers. The settings named here are generated dynamic
+# configuration claims.
+
+[[statement]]
+id = "limit.persistence-host-qps"
+category = "limit"
+title = "A server host's limit on its persistence calls"
+statement = "Each server host limits its own persistence calls: History at `history.persistenceMaxQPS` (9,000/s by default), Matching at `matching.persistenceMaxQPS` (3,000/s), Frontend at `frontend.persistenceMaxQPS` (2,000/s) and the Worker service at `worker.persistenceMaxQPS` (500/s), with a burst of `system.persistenceQPSBurstRatio` (1) times that. A `*.persistenceGlobalMaxQPS` above 0 replaces it, divided among the service's hosts that are not draining or, for History, scaled by the share of shards the host owns. A call over the limit fails at once, without waiting, with ResourceExhausted, cause PersistenceLimit and scope System."
+notes = [
+  "The limiters exist only if the host limit is above 0 when the service starts. If it is 0 then, persistence calls are not limited at all.",
+  "Visibility persistence has its own per-host read and write limits, `system.visibilityPersistenceMaxReadQPS` and `system.visibilityPersistenceMaxWriteQPS` (9,000/s each), and refuses with the same error.",
+]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/fx.go", line = 119, excerpt = "if params.PersistenceMaxQPS != nil && params.PersistenceMaxQPS() > 0 {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/fx.go", line = 94, excerpt = "PerInstanceQuota: maxQps," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/fx.go", line = 95, excerpt = "GlobalQuota:      globalMaxQps," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/fx.go", line = 297, excerpt = "shard.NewOwnershipAwareQuotaCalculator(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/ownership_based_quota_calculator.go", line = 73, excerpt = "return scaleFactor * float64(globalLimit), true" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/ownership_based_quota_scaler.go", line = 98, excerpt = "return float64(shardCount) / float64(s.totalNumShards), true" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/dynamic.go", line = 88, excerpt = "burst := int(rate * ratio)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/multi_request_rate_limiter_impl.go", line = 34, excerpt = "if !reservation.OK() || reservation.DelayFrom(now) > 0 {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 25, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_PERSISTENCE_LIMIT," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 26, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_SYSTEM," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 74, excerpt = "return persistence.ErrPersistenceSystemLimitExceeded" },
+]
+
+[[statement]]
+id = "limit.persistence-namespace-qps"
+category = "limit"
+title = "Namespace limits on persistence calls"
+statement = "`*.persistenceNamespaceMaxQPS` limits one namespace's persistence calls on a host. At 0, the default, the namespace still gets its own bucket the size of the host limit. A `*.persistenceGlobalNamespaceMaxQPS` above 0 replaces it, divided like the host limit. History can also limit one namespace on one shard with `history.persistencePerShardNamespaceMaxQPS`, which at 0, the default, is the host limit. A call over a namespace or shard limit fails with ResourceExhausted, cause PersistenceLimit and scope Namespace."
+notes = ["Calls the server makes for itself, not for a namespace, skip the namespace and shard limits."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 180, excerpt = "if namespaceQPS <= 0 {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 181, excerpt = "return float64(hostMaxQPS())" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 141, excerpt = "if perShardNamespaceMaxQPS == nil || perShardNamespaceMaxQPS(req.Caller) <= 0 {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 295, excerpt = "return req.Caller != \"\" && req.Caller != headers.CallerNameSystem" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 31, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 36, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE," },
+]
+
+[[statement]]
+id = "behaviour.persistence-limit-order"
+category = "behaviour"
+title = "The order of persistence limits"
+statement = "A persistence call is checked against the shard limit, then the namespace limit, then the host limit, and the first to refuse decides the error. So scope Namespace means a namespace or shard limit refused the call, and scope System the host limit."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 1155, excerpt = "// namespace-level rate limits has to be applied before system-level rate limits." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 1165, excerpt = "if ok := shardRateLimiter.Allow(now, quotaRequest); !ok {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 1168, excerpt = "if ok := namespaceRateLimiter.Allow(now, quotaRequest); !ok {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 1171, excerpt = "if ok := systemRateLimiter.Allow(now, quotaRequest); !ok {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 1172, excerpt = "return ErrPersistenceSystemLimitExceeded" },
+]
+
+[[statement]]
+id = "behaviour.persistence-priorities"
+category = "behaviour"
+title = "Persistence calls are admitted by priority"
+statement = "The persistence limits admit calls by priority: operator calls first; then calls made for StartWorkflowExecution, SignalWorkflowExecution, SignalWithStartWorkflowExecution, RequestCancelWorkflowExecution, TerminateWorkflowExecution, UpdateWorkflowExecution and GetWorkflowExecutionHistory; then other API calls; then History's background tasks; and preemptable work last. As at the Frontend, an admitted call also takes a token from every lower priority, so heavy API traffic starves background work, never the reverse."
+scope = { server = ["1.29.0", "1.29.1", "1.29.2", "1.29.3", "1.29.4", "1.29.5", "1.29.6", "1.29.7", "1.30.0", "1.30.1", "1.30.2", "1.30.3", "1.30.4", "1.30.5", "1.30.6", "1.30.7", "1.30.8", "1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 21, excerpt = "headers.CallerTypeOperator:       0," },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 22, excerpt = "headers.CallerTypeAPI:            2," },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 23, excerpt = "headers.CallerTypeBackgroundHigh: 4," },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 25, excerpt = "headers.CallerTypePreemptable:    6," },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 29, excerpt = "\"StartWorkflowExecution\":           1," },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 31, excerpt = "\"SignalWorkflowExecution\":          1," },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/quotas.go", line = 271, excerpt = "if priority, ok := APITypeCallOriginPriorityOverride[req.Initiation]; ok {" },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/priority_rate_limiter_impl.go", line = 139, excerpt = "return p.rateLimiters[rateLimiterIndex], p.rateLimiters[rateLimiterIndex+1:]" },
+]
+
+[[statement]]
+id = "behaviour.persistence-throttle-retries"
+category = "behaviour"
+title = "Where throttled persistence calls are retried"
+statement = "The persistence layer does not retry a call a persistence limit refused. History's background tasks reschedule it, waiting at least 3 seconds and backing off by 1.5 times up to 5 minutes, and count it in task_errors_throttled. The Frontend's History client retries a System-scoped refusal once, after at least a second and only if the request's deadline allows, but not a Namespace-scoped one. Matching retries renewing a queue's task-ID lease and rewriting a task for up to 30 seconds, retries a refused backlog read every 3 seconds, and hands a refused write of a new task back to History, which retries it as above. Otherwise the API caller receives ResourceExhausted with cause PersistenceLimit."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/factory.go", line = 273, excerpt = "case *serviceerror.Unavailable, *serviceerror.DataLoss:" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 438, excerpt = "if errors.As(err, &resourceExhaustedErr) {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 449, excerpt = "metrics.TaskThrottledCounter.With(e.chasmMetricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 84, excerpt = "taskResourceExhaustedRescheduleInitialInterval    = 3 * time.Second" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 85, excerpt = "taskResourceExhaustedRescheduleBackoffCoefficient = 1.5" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 86, excerpt = "taskResourceExhaustedRescheduleMaxInterval        = 5 * time.Minute" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 800, excerpt = "taskResourceExhuastedReschedulePolicy.ComputeNextDelay(0, e.resourceExhaustedCount, err)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "client/history/retryable_client_gen.go", line = 25, excerpt = "err := backoff.ThrottleRetryContext(ctx, op, c.policy, c.isRetryable)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/backoff/retry.go", line = 81, excerpt = "next = max(next, t.NextBackOff(err))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/backoff/retry.go", line = 84, excerpt = "if hasDeadline && timeSrc.Now().Add(next).After(deadline) {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/resource/fx.go", line = 311, excerpt = "common.IsServiceClientTransientError," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 319, excerpt = "return err.Scope != enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 46, excerpt = "historyClientRetryMaxAttempts     = 2" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/backoff/retry.go", line = 15, excerpt = "throttleRetryInitialInterval    = time.Second" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/backlog_manager.go", line = 29, excerpt = "WithExpirationInterval(30 * time.Second)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/pri_task_writer.go", line = 217, excerpt = "state, err := w.renewLeaseWithRetry(persistenceOperationRetryPolicy, common.IsPersistenceTransientError)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/pri_backlog_manager.go", line = 364, excerpt = "}, persistenceOperationRetryPolicy, common.IsPersistenceTransientError)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/pri_task_reader.go", line = 178, excerpt = "tr.backoffSignal(taskReaderThrottleRetryDelay)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_reader.go", line = 24, excerpt = "taskReaderThrottleRetryDelay = 3 * time.Second" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/pri_backlog_manager.go", line = 245, excerpt = "err := c.taskWriter.appendTask(subqueue, taskInfo)" },
+]
+
+[[statement]]
+id = "behaviour.persistence-throttle-metrics"
+category = "behaviour"
+title = "How persistence calls and their failures are counted"
+statement = "Every persistence call, including one a limit refused, is counted in persistence_requests and timed in persistence_latency, tagged with the operation and the namespace it was made for. A refused call is counted in persistence_errors_resource_exhausted with its cause and scope, not in persistence_errors. persistence_errors also leaves out timeouts, condition failures, NotFound, lost shard ownership and cancelled calls; persistence_error_with_type counts every error by type."
+notes = ["When a refusal reaches an RPC, service_errors_resource_exhausted counts it again, with cause PersistenceLimit, on each service it passes through."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/factory.go", line = 212, excerpt = "result = persistence.NewExecutionPersistenceRateLimitedClient(result, f.systemRateLimiter, f.namespaceRateLimiter, f.shardRateLimiter, f.logger)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/factory.go", line = 215, excerpt = "result = persistence.NewExecutionPersistenceMetricsClient(result, f.metricsHandler, f.healthSignals, f.logger, f.enableDataLossMetrics)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1420, excerpt = "handler := p.metricsHandler.WithTags(metrics.OperationTag(operation), metrics.NamespaceTag(caller))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1438, excerpt = "metrics.PersistenceErrorWithType.With(handler).Record(1, metrics.ServiceErrorTypeTag(err))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1450, excerpt = "*TimeoutError," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1458, excerpt = "metrics.PersistenceErrResourceExhaustedCounter.With(handler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1462, excerpt = "metrics.PersistenceFailures.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/fx.go", line = 161, excerpt = "params.TelemetryInterceptor.UnaryIntercept," },
+]
+
+[[statement]]
+id = "limit.sql-connection-pool"
+category = "limit"
+title = "A SQL datastore's connection pool"
+statement = "With MySQL or PostgreSQL, each server host keeps a connection pool per datastore, capped by the datastore's `maxConns` setting; when that is not set, or 0, the pool has no cap. SQLite always uses one connection. For MySQL and PostgreSQL, every minute each host reports the pool: persistence_sql_max_open_conn (the cap, 0 when there is none), persistence_sql_open_conn, persistence_sql_in_use and persistence_sql_idle_conn, tagged db_kind `main` or `visibility`. SQLite's pool is not reported."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/postgresql/session/session.go", line = 76, excerpt = "if cfg.MaxConns > 0 {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/postgresql/session/session.go", line = 77, excerpt = "db.SetMaxOpenConns(cfg.MaxConns)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/mysql/session/session.go", line = 101, excerpt = "if cfg.MaxConns > 0 {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/sqlite/plugin.go", line = 95, excerpt = "db.SetMaxOpenConns(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 27, excerpt = "interval: time.Minute," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 29, excerpt = "metrics:  handle.metrics.WithTags(metrics.PersistenceDBKindTag(dbKind.String()))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 73, excerpt = "metrics.PersistenceSQLMaxOpenConn.With(r.metrics).Record(float64(s.MaxOpenConnections))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 76, excerpt = "metrics.PersistenceSQLInUse.With(r.metrics).Record(float64(s.InUse))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/interfaces.go", line = 136, excerpt = "return \"main\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/interfaces.go", line = 138, excerpt = "return \"visibility\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/sqlite/plugin.go", line = 61, excerpt = "_ metrics.Handler," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/mysql/plugin.go", line = 50, excerpt = "handle := sqlplugin.NewDatabaseHandle(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/postgresql/plugin.go", line = 68, excerpt = "handle := sqlplugin.NewDatabaseHandle(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_handle.go", line = 65, excerpt = "handle.reporter = newDBMetricReporter(dbKind, handle)" },
+]
+
+[[statement]]
+id = "behaviour.sql-pool-wait"
+category = "behaviour"
+title = "A full SQL connection pool makes persistence calls wait"
+statement = "When a SQL datastore's pool already has its `maxConns` connections open and none is free, a persistence call waits for one until its context ends. Go's database/sql counts these waits, but the server does not publish the count: a full pool shows only as persistence_sql_in_use reaching persistence_sql_max_open_conn, and in persistence_latency, whose timer spans the call down to the datastore."
+notes = ["The pool gauges are sampled once a minute, so a pool that fills briefly between samples can go unseen."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["go-1.26.2", "go-1.26.4", "go-1.26.8"], path = "src/database/sql/sql.go", line = 1356, excerpt = "// Out of free connections or we were asked not to use one. If we're not" },
+  { source = ["go-1.26.2", "go-1.26.4", "go-1.26.8"], path = "src/database/sql/sql.go", line = 1358, excerpt = "if db.maxOpen > 0 && db.numOpen >= db.maxOpen {" },
+  { source = ["go-1.26.2", "go-1.26.4", "go-1.26.8"], path = "src/database/sql/sql.go", line = 1207, excerpt = "WaitCount         int64         // The total number of connections waited for." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 73, excerpt = "metrics.PersistenceSQLMaxOpenConn.With(r.metrics).Record(float64(s.MaxOpenConnections))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 76, excerpt = "metrics.PersistenceSQLInUse.With(r.metrics).Record(float64(s.InUse))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/factory.go", line = 212, excerpt = "result = persistence.NewExecutionPersistenceRateLimitedClient(result, f.systemRateLimiter, f.namespaceRateLimiter, f.shardRateLimiter, f.logger)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/client/factory.go", line = 215, excerpt = "result = persistence.NewExecutionPersistenceMetricsClient(result, f.metricsHandler, f.healthSignals, f.logger, f.enableDataLossMetrics)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1422, excerpt = "metrics.PersistenceLatency.With(handler).Record(latency)" },
+]

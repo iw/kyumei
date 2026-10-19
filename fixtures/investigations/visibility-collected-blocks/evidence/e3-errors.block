@@ -1,0 +1,15 @@
+-----BEGIN KYUMEI SAMPLES v1-----
+Collected by kyumei-collect 0.1.0 from file at 2026-10-16 10:45 UTC
+Request R3 of inv-golden-visibility-blocks, 2026-10-16 09:50 UTC to 2026-10-16 10:46 UTC, step 1m
+Query 1: sum by (operation) (rate(visibility_persistence_errors[1m]))
+  operation=RecordWorkflowExecutionStarted  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  min 0  max 0  mean 0  (57 samples)
+  operation=UpsertWorkflowExecution         ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  min 0  max 0  mean 0  (57 samples)
+  operation=RecordWorkflowExecutionClosed   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  min 0  max 0  mean 0  (57 samples)
+Query 2: sum(rate(dlq_writes{task_category="visibility"}[1m]))
+  (no labels)  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  min 0  max 0  mean 0  (57 samples)
+:zZKxSsNgEMeTVhB3wUUldEqGlBZxEHQSJ7cWEREJyZdre-RLrt59aQ0idHHzQerkK9Shb-Di5jP4
+:BEYCVhDXtjcdd_fn_vz5nV91bWs7KfIU0FekNSjjtJrtZmujhxpmL4_z6WAXs5HfJx1D5o9QMEKN
+:pvAjTSqRWudgMv98nQ4m70_l7cdb3aodS546UeG4NAQODVLmOW7ZgLuQB-VKUAxkCgJgJpbrdnrj
+:eXV760e23wFFHF8SJz1N47M7UPn3vGtCNhAfVZ9nz5vWsuuXyZ2LoQCbPybXw93ePxGeapKVJnhY
+:QlJBEevbYMxoQO5NKEmgymGfuDhpLHBpPFR02NYKLX8B
+-----END KYUMEI SAMPLES (348 chars, crc32 be23ea90)-----

@@ -1,0 +1,182 @@
+# Task Queue API fields (DescribeTaskQueue). These are API response fields,
+# not metrics: they are read from `DescribeTaskQueue` output, never scraped.
+
+[[api_field]]
+id = "api.task_queue_stats.approximate_backlog_count"
+message = "temporal.api.taskqueue.v1.TaskQueueStats"
+field = "approximate_backlog_count"
+json_name = "approximateBacklogCount"
+json_path = "stats.approximateBacklogCount"
+field_type = "int64"
+unit = "count"
+purpose = "Approximate number of tasks in the Task Queue's backlog, merged across partitions. Excludes sticky queues."
+returned_by = ["DescribeTaskQueue (report_stats = true)"]
+notes = ["DescribeTaskQueue rejects report_stats unless the request targets the root partition; the root merges every partition's stats and caches the result for 5 s."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "taskqueue/v1/message.pb.go", line = 440, excerpt = "ApproximateBacklogCount int64" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 1410, excerpt = "if req.ReportStats {" },
+]
+
+[[api_field]]
+id = "api.task_queue_stats.approximate_backlog_age"
+message = "temporal.api.taskqueue.v1.TaskQueueStats"
+field = "approximate_backlog_age"
+json_name = "approximateBacklogAge"
+json_path = "stats.approximateBacklogAge"
+field_type = "google.protobuf.Duration"
+unit = "seconds"
+purpose = "Age of the oldest task in the Task Queue's backlog. Excludes sticky queues."
+returned_by = ["DescribeTaskQueue (report_stats = true)"]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "taskqueue/v1/message.pb.go", line = 447, excerpt = "ApproximateBacklogAge *durationpb.Duration" },
+]
+
+[[api_field]]
+id = "api.task_queue_stats.tasks_add_rate"
+message = "temporal.api.taskqueue.v1.TaskQueueStats"
+field = "tasks_add_rate"
+json_name = "tasksAddRate"
+json_path = "stats.tasksAddRate"
+field_type = "float"
+unit = "per_second"
+purpose = "Rate at which tasks are added to the Task Queue, averaged over the last 30 s. Includes sync-matched tasks; excludes eager and sticky tasks."
+returned_by = ["DescribeTaskQueue (report_stats = true)"]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "taskqueue/v1/message.pb.go", line = 462, excerpt = "TasksAddRate float32" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 3581, excerpt = "return newTaskTracker(e.timeSource, 5*time.Second, 30*time.Second)" },
+]
+
+[[api_field]]
+id = "api.task_queue_stats.tasks_dispatch_rate"
+message = "temporal.api.taskqueue.v1.TaskQueueStats"
+field = "tasks_dispatch_rate"
+json_name = "tasksDispatchRate"
+json_path = "stats.tasksDispatchRate"
+field_type = "float"
+unit = "per_second"
+purpose = "Rate at which tasks are dispatched from the Task Queue to Workers, averaged over the last 30 s. Includes sync-matched tasks; excludes eager and sticky tasks."
+returned_by = ["DescribeTaskQueue (report_stats = true)"]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "taskqueue/v1/message.pb.go", line = 477, excerpt = "TasksDispatchRate float32" },
+]
+
+[[api_field]]
+id = "api.describe_task_queue.effective_rate_limit"
+message = "temporal.api.workflowservice.v1.DescribeTaskQueueResponse.EffectiveRateLimit"
+field = "requests_per_second"
+json_name = "requestsPerSecond"
+json_path = "effectiveRateLimit.requestsPerSecond"
+field_type = "float"
+unit = "per_second"
+purpose = "The Task Queue's effective dispatch rate limit: the per-partition limit multiplied by the number of read partitions."
+returned_by = ["DescribeTaskQueue"]
+notes = [
+  "Always set by DescribeTaskQueue in 1.31.0; rateLimitSource says whether it came from the API, the Worker or the system default.",
+  "The system default per-partition limit is the minimum of admin.matchingNamespaceToPartitionDispatchRate and admin.matchingNamespaceTaskqueueToPartitionDispatchRate.",
+  "It is reported even when the partition does not yet enforce it (limit.dispatch-applied-on-change).",
+]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "workflowservice/v1/request_response.pb.go", line = 6569, excerpt = "EffectiveRateLimit *DescribeTaskQueueResponse_EffectiveRateLimit" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 1518, excerpt = "effectiveRPS, sourceForEffectiveRPS := pm.GetRateLimitManager().GetEffectiveRPSAndSource()" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/ratelimit_manager.go", line = 200, excerpt = "return r.effectiveRPS * float64(r.numReadPartitions), r.rateLimitSource" },
+]
+
+[[api_field]]
+id = "api.describe_task_queue.rate_limit_source"
+message = "temporal.api.workflowservice.v1.DescribeTaskQueueResponse.EffectiveRateLimit"
+field = "rate_limit_source"
+json_name = "rateLimitSource"
+json_path = "effectiveRateLimit.rateLimitSource"
+field_type = "enum temporal.api.enums.v1.RateLimitSource"
+purpose = "Where the effective dispatch rate limit comes from: RATE_LIMIT_SOURCE_API (UpdateTaskQueueConfig), RATE_LIMIT_SOURCE_WORKER (an Activity Worker's Task Queue rate) or RATE_LIMIT_SOURCE_SYSTEM (the system default)."
+returned_by = ["DescribeTaskQueue"]
+notes = ["API or Worker is reported only when that rate is below the system default (behaviour.describe-task-queue-rate-limit)."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "workflowservice/v1/request_response.pb.go", line = 16616, excerpt = "RateLimitSource v11.RateLimitSource" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/task_queue.pb.go", line = 395, excerpt = "RATE_LIMIT_SOURCE_API RateLimitSource = 1" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/task_queue.pb.go", line = 397, excerpt = "RATE_LIMIT_SOURCE_WORKER RateLimitSource = 2" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/task_queue.pb.go", line = 399, excerpt = "RATE_LIMIT_SOURCE_SYSTEM RateLimitSource = 3" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 1521, excerpt = "RateLimitSource:   sourceForEffectiveRPS," },
+]
+
+[[api_field]]
+id = "api.describe_task_queue.pollers"
+message = "temporal.api.workflowservice.v1.DescribeTaskQueueResponse"
+field = "pollers"
+json_name = "pollers"
+json_path = "pollers"
+field_type = "repeated temporal.api.taskqueue.v1.PollerInfo"
+unit = "count"
+purpose = "The Workers that polled the Task Queue within matching.PollerHistoryTTL, 5 minutes by default (behaviour.pollers-listed-for-ttl)."
+returned_by = ["DescribeTaskQueue"]
+notes = ["Kyumei counts the list. Protobuf JSON leaves an empty list out, and Kyumei reads a list printed as null as empty."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = "temporal-api-go-v1.62.8", path = "workflowservice/v1/request_response.pb.go", line = 6547, excerpt = "Pollers []*v14.PollerInfo" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/physical_task_queue_manager.go", line = 632, excerpt = "Pollers: c.GetAllPollerInfo()," },
+]
+
+[[statement]]
+id = "cli.task-queue-describe"
+category = "cli-command"
+title = "temporal task-queue describe"
+statement = "Temporal CLI 1.7.0 to 1.9.1 describe a Task Queue through the Go SDK's DescribeTaskQueueEnhanced and print rows of their own, not DescribeTaskQueue's response. With `-o json`, `stats` lists a row per Build ID and Task Queue type, with approximateBacklogCount, approximateBacklogAge, tasksAddRate and tasksDispatchRate, and `pollers` lists the Workers that polled, a row each with its Build ID and type. No flag makes them print the effective rate limit or its source."
+notes = [
+  "The Go SDK 1.41.1, which CLI 1.7.0 to 1.8.3 build with, asks for DescribeTaskQueue's enhanced mode, in which the server returns versionsInfo alone, without effectiveRateLimit (behaviour.describe-task-queue-rate-limit).",
+  "`--report-config` takes effect only with `--legacy-mode`, whose JSON lists each partition's status, pollers and configuration, without the effective rate limit. `temporal task-queue config get` prints only the queue rate limit set through the API.",
+  "Without `--task-queue-type` the Frontend describes the Workflow and the Activity Task Queue, a row for each.",
+  "Without a `--select-*` flag the CLI describes the Task Queue's default Build ID only: the unversioned queue, unless versioning rules name a default. DescribeTaskQueue's default mode merges the statistics of every version and lists the pollers of every loaded version.",
+  "The CLI writes its rows with Go's encoding/json: approximateBacklogCount is a number, no pollers is `null`, and approximateBacklogAge is a Go duration with a space after each letter and whole days as `d`, such as `4m 39.240305s`, `450m s` (milliseconds) or `3d 0h 5m 2s`.",
+  "backlogIncreaseRate is not a DescribeTaskQueue field: the CLI prints the Go SDK's, which SDK 1.41.1 computes as TasksAddRate minus TasksDispatchRate.",
+]
+verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+provenance = [
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 290, excerpt = "resp, err := cl.DescribeTaskQueueEnhanced(cctx, client.DescribeTaskQueueEnhancedOptions{" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 252, excerpt = "return cctx.Printer.PrintStructured(descRows, printer.StructuredOptions{})" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/printer/printer.go", line = 281, excerpt = 'return json.MarshalIndent(v, "", indent)' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 32, excerpt = "type statsRowType struct {" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 45, excerpt = 'Stats        []statsRowType                 `json:"stats"`' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 44, excerpt = 'Pollers      []pollerRowType                `json:"pollers"`' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 35, excerpt = 'ApproximateBacklogCount int64   `json:"approximateBacklogCount"`' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 163, excerpt = "stats.ApproximateBacklogAge = formatDuration(info.Stats.ApproximateBacklogAge)" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3"], path = "internal/temporalcli/commands.schedule.go", line = 604, excerpt = 's = reLetters.ReplaceAllString(s, "$0 ")' },
+  { source = ["temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.schedule.go", line = 605, excerpt = 's = reLetters.ReplaceAllString(s, "$0 ")' },
+  { source = "sdk-go-v1.41.1", path = "internal/internal_versioning_client.go", line = 311, excerpt = "ApiMode:                enumspb.DESCRIBE_TASK_QUEUE_MODE_ENHANCED," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 1391, excerpt = "VersionsInfo: versionsInfo," },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 353, excerpt = "ReportConfig:           c.ReportConfig," },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 382, excerpt = '"taskQueues": statuses,' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue_config.go", line = 57, excerpt = "return printTaskQueueConfig(cctx, resp.Config)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3"], path = "service/frontend/workflow_handler.go", line = 3270, excerpt = "request.TaskQueueTypes = []enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_WORKFLOW, enumspb.TASK_QUEUE_TYPE_ACTIVITY}" },
+  { source = "temporal-server-v1.31.4", path = "service/frontend/workflow_handler.go", line = 3275, excerpt = "request.TaskQueueTypes = []enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_WORKFLOW, enumspb.TASK_QUEUE_TYPE_ACTIVITY}" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 1256, excerpt = "req.Versions = &taskqueuepb.TaskQueueVersionSelection{BuildIds: []string{defaultBuildId}}" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 1434, excerpt = "// No version was requested, so we need to query all versions." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 897, excerpt = "info := vq.GetAllPollerInfo()" },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 160, excerpt = "stats.BacklogIncreaseRate = info.Stats.BacklogIncreaseRate" },
+  { source = "sdk-go-v1.41.1", path = "internal/internal_versioning_client.go", line = 392, excerpt = "BacklogIncreaseRate:     stats.TasksAddRate - stats.TasksDispatchRate," },
+]
+
+# How to call DescribeTaskQueue without the CLI.
+
+[[statement]]
+id = "behaviour.frontend-grpc-reflection"
+category = "behaviour"
+title = "The Frontend serves gRPC reflection"
+statement = "The Frontend registers the gRPC reflection service on its gRPC server when it starts, so gRPC clients that use reflection, such as grpcurl, can call WorkflowService methods such as DescribeTaskQueue without the API's proto files."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/service.go", line = 469, excerpt = "reflection.Register(s.server)" },
+]

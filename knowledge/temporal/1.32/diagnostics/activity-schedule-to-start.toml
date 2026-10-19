@@ -1,0 +1,970 @@
+# Diagnostic: elevated Activity schedule-to-start latency.
+#
+# The investigation follows an Activity Task's path: Worker execution
+# capacity, Activity polling, poll failures and throttling, Matching's
+# backlog and dispatch, which rate limit caps dispatch, then upstream load.
+# Activity Task Queues can carry a rate limit set by the Workers themselves,
+# for the whole Task Queue, so "the Workers are idle" is not evidence that
+# more Workers would help.
+
+[diagnostic]
+id = "activity-schedule-to-start"
+title = "Elevated Activity schedule-to-start latency"
+summary = "Activity Tasks wait a long time between being scheduled and being started by a Worker."
+# Ahead of the Workflow Task diagnostic, whose patterns also match "schedule-to-start".
+precedence = 5
+
+[diagnostic.path]
+description = "The path an Activity Task takes: scheduled by a Workflow, added to Matching by History, and dispatched to the Activity Workers."
+layers = ["clients", "frontend", "history", "matching", "workers"]
+labels = { clients = "Workflows scheduling Activities" }
+
+[[symptom]]
+id = "activity-schedule-to-start-elevated"
+title = "Activity schedule-to-start latency is elevated"
+patterns = [
+  "activit(y|ies)\\b.{0,40}schedule[- ]?to[- ]?start",
+  "schedule[- ]?to[- ]?start.{0,40}\\bactivit(y|ies)",
+  "activit(y|ies)( tasks?)?\\b.{0,80}\\b(wait|waiting|delayed|slow|queued|backlog|taking|pil(e|ing) up)",
+  "activit(y|ies)( tasks?)?\\b.{0,80}\\b(takes?|took)\\b.{0,40}\\bto (start|be picked up|get picked up)",
+  "activit(y|ies)( tasks?)?\\b.{0,80}\\b(start(s|ing|ed)? late|late to start)",
+]
+signal = "activity_schedule_to_start"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "activity-capacity"
+order = 1
+title = "Worker execution capacity"
+question = "Are Workers out of Activity slots?"
+
+[[stage]]
+id = "activity-pollers"
+order = 2
+title = "Activity Task polling"
+question = "Are enough Activity Task polls outstanding?"
+
+[[stage]]
+id = "poll-throttling"
+order = 3
+title = "Poll failures and throttling"
+question = "Are Activity Task polls failing or being throttled?"
+
+[[stage]]
+id = "matching-backlog"
+order = 4
+title = "Matching backlog and dispatch"
+question = "Are Activity Tasks waiting in Matching?"
+
+[[stage]]
+id = "rate-limit"
+order = 5
+title = "Task Queue rate limit"
+question = "Which rate limit caps Activity dispatch?"
+
+[[stage]]
+id = "upstream"
+order = 6
+title = "Upstream load"
+question = "What is driving the Activity Task add rate?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "activity_schedule_to_start"
+title = "Activity schedule-to-start latency"
+unit = "seconds"
+description = "Time from an Activity Task being scheduled to a Worker starting it (a high quantile over the window)."
+source = [{ claim = "sdk.activity_schedule_to_start_latency" }]
+
+[[signal]]
+id = "activity_slots_available"
+title = "Free Activity slots (all Workers)"
+unit = "count"
+description = "Activity execution slots free across the Workers polling the Task Queue."
+combine = "sum"
+source = [{ claim = "sdk.worker_task_slots_available", labels = { worker_type = "ActivityWorker" } }]
+
+[[signal]]
+id = "activity_pollers"
+title = "Activity Task pollers"
+unit = "count"
+description = "Activity Task pollers on the Task Queue, across Workers."
+combine = "sum"
+source = [{ claim = "sdk.num_pollers", labels = { poller_type = "activity_task" } }]
+
+[[signal]]
+id = "activity_poll_failures_rate"
+title = "Failed Activity Task polls (SDK)"
+unit = "per_second"
+description = "PollActivityTaskQueue attempts that failed, as seen by the Workers."
+combine = "sum"
+source = [{ claim = "sdk.long_request_failure", labels = { operation = "PollActivityTaskQueue" }, transform = "rate" }]
+
+[[signal]]
+id = "activity_poll_rejections_rate"
+title = "Rejected Activity Task polls (Frontend)"
+unit = "per_second"
+description = "PollActivityTaskQueue calls the Frontend rejected with ResourceExhausted."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { operation = "PollActivityTaskQueue" }, transform = "rate" }]
+
+[[signal]]
+id = "backlog_count"
+title = "Matching backlog (tasks)"
+unit = "count"
+description = "Activity Tasks waiting in the Task Queue's backlog in Matching."
+combine = "sum"
+source = [
+  { claim = "api.task_queue_stats.approximate_backlog_count" },
+  { claim = "server.approximate_backlog_count", labels = { task_type = "Activity" } },
+]
+
+[[signal]]
+id = "backlog_age"
+title = "Matching backlog age"
+unit = "seconds"
+description = "Age of the oldest Activity Task waiting in Matching's backlog."
+source = [
+  { claim = "api.task_queue_stats.approximate_backlog_age" },
+  { claim = "server.approximate_backlog_age_seconds", labels = { task_type = "Activity" } },
+]
+
+[[signal]]
+id = "tasks_add_rate"
+title = "Activity Task add rate"
+unit = "per_second"
+description = "Activity Tasks added to the Task Queue per second (30-second average)."
+source = [{ claim = "api.task_queue_stats.tasks_add_rate" }]
+
+[[signal]]
+id = "tasks_dispatch_rate"
+title = "Activity Task dispatch rate"
+unit = "per_second"
+description = "Activity Tasks dispatched to Workers per second (30-second average)."
+source = [{ claim = "api.task_queue_stats.tasks_dispatch_rate" }]
+
+[[signal]]
+id = "dispatch_rate_limit"
+title = "Effective dispatch rate limit"
+unit = "per_second"
+description = "The Activity Task Queue's effective dispatch rate limit reported by DescribeTaskQueue."
+source = [{ claim = "api.describe_task_queue.effective_rate_limit" }]
+
+[[signal]]
+id = "rate_limit_source"
+title = "Source of the dispatch rate limit"
+unit = "count"
+description = "Where the effective rate limit comes from: the API, the Workers or the system default."
+source = [{ claim = "api.describe_task_queue.rate_limit_source" }]
+
+[[signal]]
+id = "rate_limiting_active"
+title = "Rate limiting holding dispatch back"
+unit = "flag"
+description = "Whether DescribeTaskQueue reported rate limiting active: within about 30 seconds before it was captured, Matching's rate limiter held back Activity Tasks it could otherwise have dispatched, on any partition."
+source = [{ claim = "api.task_queue_stats.rate_limiting_active" }]
+
+[[signal]]
+id = "scheduled_activities_rate"
+title = "Activities scheduled by Workflows"
+unit = "per_second"
+description = "ScheduleActivityTask commands per second in completed Workflow Tasks, across the namespace."
+combine = "sum"
+source = [{ claim = "server.command", labels = { commandType = "ScheduleActivityTask" }, transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "activity-slot-exhaustion"
+stage = "activity-capacity"
+primary = true
+layer = "workers"
+title = "Activity Worker slots exhausted"
+question = "Activity execution capacity exhausted?"
+statement = "Every Activity Worker has used all of its Activity slots, so Workers stop polling and tasks wait until a slot frees."
+implication = "Add Workers or Activity slots, or shorten Activity execution."
+
+[[hypothesis]]
+id = "activity-poller-starvation"
+stage = "activity-pollers"
+primary = true
+layer = "workers"
+title = "Activity Task poller starvation"
+question = "Poll rate the bottleneck?"
+statement = "Workers keep too few Activity Task polls outstanding: tasks wait in Matching for the next poll even though execution slots are free."
+implication = "Raise the number of Activity Task pollers per Worker."
+
+[[hypothesis]]
+id = "activity-pollers-absent"
+stage = "activity-pollers"
+layer = "workers"
+title = "No Activity Task pollers"
+question = "Any Worker polling for Activities?"
+statement = "No Worker is polling the Task Queue for Activity Tasks: Activity Workers are down, disconnected, or polling a different Task Queue name."
+
+[[hypothesis]]
+id = "activity-poll-throttling"
+stage = "poll-throttling"
+primary = true
+layer = "frontend"
+title = "Activity Task polls throttled or failing"
+question = "Polls rejected or failing?"
+statement = "PollActivityTaskQueue calls fail or are rejected (for example ResourceExhausted from a namespace or host rate limit), so pollers back off while execution slots stay free."
+
+[[hypothesis]]
+id = "activity-matching-backlog"
+stage = "matching-backlog"
+primary = true
+layer = "matching"
+title = "Activity Tasks accumulating in Matching"
+question = "Latency accruing in Matching's backlog?"
+statement = "Activity Tasks reach Matching promptly but wait in its backlog because Matching dispatches them more slowly than they are added."
+
+[[hypothesis]]
+id = "activity-history-delay"
+stage = "matching-backlog"
+layer = "history"
+title = "Activity Tasks reaching Matching late"
+question = "Latency accruing before Matching?"
+statement = "The delay accrues between History scheduling the Activity and Matching receiving its task, so Matching's backlog does not account for the schedule-to-start latency."
+
+[[hypothesis]]
+id = "dispatch-rate-limited"
+stage = "rate-limit"
+primary = true
+layer = "matching"
+title = "Activity dispatch pinned at the Task Queue's rate limit"
+question = "Dispatch pinned at the rate limit?"
+statement = "Matching dispatches Activity Tasks at the Task Queue's effective rate limit while tasks are added faster, so the backlog grows whatever the Worker capacity."
+implication = "Find which limit is in force: one set by the Workers, one set through the API, or the system default."
+
+[[hypothesis]]
+id = "worker-rate-limit"
+stage = "rate-limit"
+layer = "matching"
+title = "Rate limit set by the Workers for the whole Task Queue"
+question = "Limit set by the Workers?"
+statement = "The Workers' Task Queue-wide Activity rate option (TaskQueueActivitiesPerSecond in Go) is the effective limit. Matching applies it to the whole Task Queue, not to each Worker, so adding Workers does not raise it."
+implication = "Raise or remove the Workers' Task Queue rate, or use the per-Worker option if a per-Worker limit was intended."
+activation = { hypothesis = "dispatch-rate-limited", state = ["established"] }
+
+[[hypothesis]]
+id = "api-rate-limit"
+stage = "rate-limit"
+layer = "matching"
+title = "Rate limit set through the API"
+question = "Limit set through the API?"
+statement = "A queue rate limit set with UpdateTaskQueueConfig is the effective limit, overriding any rate the Workers send."
+implication = "Review the queue rate limit set through the API."
+activation = { hypothesis = "dispatch-rate-limited", state = ["established"] }
+
+[[hypothesis]]
+id = "system-rate-limit"
+stage = "rate-limit"
+layer = "matching"
+title = "System default dispatch limit reached"
+question = "System default limit binding?"
+statement = "No API or Worker limit is below the system default, so Matching's per-partition default (1,000 tasks/s by default) times the read partitions caps dispatch."
+implication = "Raise the partition count or the per-partition dispatch rate."
+activation = { hypothesis = "dispatch-rate-limited", state = ["established"] }
+
+[[hypothesis]]
+id = "activity-fanout"
+stage = "upstream"
+primary = true
+layer = "clients"
+title = "Activity fan-out driving the add rate"
+question = "Fan-out driving the add rate?"
+statement = "Workflows scheduled far more Activities than before the incident, raising the Activity Task add rate."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "activity-worker-slots"
+stage = "activity-capacity"
+title = "Free Activity slots across Workers"
+why = "A Worker only polls for an Activity when it can reserve a free Activity slot, so if every Worker had used all its slots, tasks would wait — the one cause more Workers would fix. This single query confirms or rules that out."
+signals = ["activity_slots_available"]
+distinguishes = ["activity-slot-exhaustion"]
+cost = 1
+group_by = ["task_queue"]
+window = { pad_before_minutes = 10, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Free Activity slots, summed across Workers (range query, step {step})"
+body = "sum by (task_queue) (temporal_worker_task_slots_available{worker_type=\"ActivityWorker\", namespace=\"{namespace}\", task_queue=\"{task_queue}\"})"
+unit = "count"
+claims = ["sdk.worker_task_slots_available", "sdk.activity-poll-needs-slot"]
+note = "every SDK exports this gauge under this name; the Java SDK only when its slot supplier has a maximum"
+
+[[request]]
+id = "activity-schedule-to-start"
+stage = "activity-capacity"
+title = "Activity schedule-to-start latency"
+why = "The symptom's magnitude is so far the operator's estimate. Measuring it lets every later comparison rest on telemetry."
+signals = ["activity_schedule_to_start"]
+distinguishes = ["activity-slot-exhaustion"]
+cost = 1
+group_by = ["task_queue"]
+
+[[request.collect]]
+method = "promql"
+label = "p95 Activity schedule-to-start (Core-based SDKs: milliseconds by default)"
+sdk_family = "core"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_activity_schedule_to_start_latency_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "milliseconds"
+claims = ["sdk.activity_schedule_to_start_latency", "sdk.core-duration-unit"]
+
+[[request.collect]]
+method = "promql"
+label = "p95 Activity schedule-to-start (Go SDK: seconds)"
+sdk_family = "go"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_activity_schedule_to_start_latency_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "seconds"
+claims = ["sdk.activity_schedule_to_start_latency", "sdk.go-metrics-naming"]
+note = "with the OpenTelemetry handler, or tally's NewPrometheusNamingScope, the series is temporal_activity_schedule_to_start_latency_seconds_bucket"
+
+[[request.collect]]
+method = "promql"
+label = "p95 Activity schedule-to-start (Java SDK with Micrometer: seconds)"
+sdk_family = "java"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_activity_schedule_to_start_latency_seconds_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "seconds"
+claims = ["sdk.activity_schedule_to_start_latency", "sdk.java-metrics-naming"]
+
+[[request]]
+id = "activity-pollers"
+stage = "activity-pollers"
+title = "Activity Task pollers"
+why = "The next question is whether Workers kept polls outstanding. The poller count shows whether any Worker was polling, and, against the dispatch rate, whether pollers were saturated or waiting for work."
+signals = ["activity_pollers"]
+distinguishes = ["activity-pollers-absent", "activity-poller-starvation"]
+cost = 1
+group_by = ["task_queue"]
+
+[[request.collect]]
+method = "promql"
+label = "Activity Task pollers, summed across Workers"
+body = "sum(temporal_num_pollers{poller_type=\"activity_task\", namespace=\"{namespace}\", task_queue=\"{task_queue}\"})"
+unit = "count"
+claims = ["sdk.num_pollers"]
+
+[[request]]
+id = "activity-poll-failures"
+stage = "poll-throttling"
+title = "Failed Activity Task polls"
+why = "Polls rejected by a Frontend rate limit make Workers back off while slots stay free. Poll failures seen by the Workers show whether that happened."
+signals = ["activity_poll_failures_rate"]
+distinguishes = ["activity-poll-throttling"]
+cost = 1
+group_by = ["status_code"]
+
+[[request.collect]]
+method = "promql"
+label = "Failed PollActivityTaskQueue attempts per second, by status code"
+sdk_family = ["core", "go"]
+body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollActivityTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+unit = "per_second"
+claims = ["sdk.long_request_failure", "sdk.long-poll-failures-counted-on-failure"]
+
+[[request.collect]]
+method = "promql"
+label = "Failed PollActivityTaskQueue attempts per second, by status code"
+sdk_family = "java"
+body = "sum by (status_code) (rate(temporal_long_request_failure_total{operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request_total{operation="PollActivityTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+unit = "per_second"
+claims = ["sdk.long_request_failure", "sdk.java-metrics-naming", "sdk.long-poll-failures-counted-on-failure"]
+
+[[request]]
+id = "activity-poll-rejections"
+stage = "poll-throttling"
+title = "Activity Task polls rejected by the Frontend"
+why = "The Frontend's own count of rejected polls, by cause, confirms or rules out rate-limit throttling of polls."
+signals = ["activity_poll_rejections_rate"]
+distinguishes = ["activity-poll-throttling"]
+cost = 2
+requires = ["server-metrics"]
+group_by = ["resource_exhausted_cause", "resource_exhausted_scope"]
+
+[[request.collect]]
+method = "promql"
+label = "PollActivityTaskQueue calls rejected with ResourceExhausted, per second"
+body = "sum by (resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name=\"frontend\", operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(service_requests{service_name="frontend", operation="PollActivityTaskQueue", namespace="{namespace}"}[1m]))', because = "server.request-errors-counted-on-error" }
+unit = "per_second"
+claims = ["server.service_errors_resource_exhausted", "server.request-errors-counted-on-error"]
+
+[[request]]
+id = "activity-queue-stats"
+stage = "matching-backlog"
+title = "Activity Task Queue backlog, rates and rate limit"
+why = "With Worker capacity free and polls not throttled, the question is where the wait accrues. DescribeTaskQueue for the Activity Task Queue reports Matching's backlog, the add and dispatch rates, the effective rate limit, where that limit comes from, and whether the rate limiter held dispatch back in the last 30 seconds."
+signals = ["backlog_age", "backlog_count", "tasks_add_rate", "tasks_dispatch_rate", "dispatch_rate_limit", "rate_limit_source", "rate_limiting_active"]
+distinguishes = ["activity-matching-backlog", "activity-history-delay", "dispatch-rate-limited", "worker-rate-limit", "api-rate-limit", "system-rate-limit", "activity-poller-starvation"]
+cost = 2
+window = { pad_before_minutes = 0, pad_after_minutes = 0, guidance = "Capture it while the latency is elevated, and note the time." }
+
+[[request.collect]]
+method = "temporal-api"
+label = "DescribeTaskQueue for the Activity Task Queue, with statistics, through grpcurl, captured during the incident"
+body = '''grpcurl -plaintext -emit-defaults -d '{"namespace": "{namespace}", "taskQueue": {"name": "{task_queue}"}, "taskQueueType": "TASK_QUEUE_TYPE_ACTIVITY", "reportStats": true}' <frontend-host:7233> temporal.api.workflowservice.v1.WorkflowService/DescribeTaskQueue'''
+claims = ["behaviour.frontend-grpc-reflection", "behaviour.describe-task-queue-rate-limit", "api.task_queue_stats.approximate_backlog_age", "api.task_queue_stats.tasks_add_rate", "api.task_queue_stats.tasks_dispatch_rate", "api.describe_task_queue.effective_rate_limit", "api.describe_task_queue.rate_limit_source", "api.task_queue_stats.rate_limiting_active"]
+note = "point it at a Frontend, which answers gRPC reflection, so grpcurl needs no proto files; -emit-defaults keeps zero rates and a false rateLimitingActive, which protobuf JSON leaves out; with TLS, use -cacert, -cert and -key instead of -plaintext; record when you captured it"
+
+[[request.collect]]
+method = "temporal-cli"
+label = "If you cannot run grpcurl: the Temporal CLI's description, as JSON, without the rate limit"
+body = "temporal task-queue describe --namespace {namespace} --task-queue {task_queue} --task-queue-type activity -o json"
+claims = ["cli.task-queue-describe", "api.task_queue_stats.approximate_backlog_age", "api.task_queue_stats.tasks_add_rate", "api.task_queue_stats.tasks_dispatch_rate"]
+note = "CLI 1.7.0 to 1.9.1 print the backlog and rates but not the effective rate limit, its source or rateLimitingActive, and describe only the unversioned queue, or the default Build ID's, so with versioned Workers use grpcurl; keep --task-queue-type activity, or the Workflow Task Queue's rows come too; record when you captured it"
+
+[[request.collect]]
+method = "promql"
+label = "If you can run neither: Matching's Activity backlog age over the window"
+body = "max(approximate_backlog_age_seconds{namespace=\"{namespace}\", taskqueue=\"{task_queue}\", task_type=\"Activity\"})"
+unit = "seconds"
+claims = ["server.approximate_backlog_age_seconds", "server.taskqueue-tag"]
+
+[[request]]
+id = "scheduled-activities"
+stage = "upstream"
+title = "Activities scheduled by Workflows, before and during the incident"
+why = "Each Activity a Workflow schedules adds one Activity Task. Comparing the rate of ScheduleActivityTask commands before and during the incident with the Task Queue's add rate shows whether a fan-out drove it."
+signals = ["scheduled_activities_rate"]
+distinguishes = ["activity-fanout"]
+cost = 2
+requires = ["server-metrics"]
+window = { pad_before_minutes = 20, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "ScheduleActivityTask commands per second in the namespace (include at least 10 minutes before the incident)"
+body = "sum(rate(command{commandType=\"ScheduleActivityTask\", namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.command", "server.metrics-framework", "behaviour.schedule-activity-adds-task"]
+note = "with the OpenTelemetry metrics framework the counter is named command_total"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "slots-headroom"
+hypothesis = "activity-slot-exhaustion"
+effect = "eliminates"
+statement = "Activity execution capacity was not exhausted: at least {activity_slots_available.min} Activity slots stayed free across the Workers throughout the window while schedule-to-start reached {activity_schedule_to_start.max}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.slots-headroom", "heuristic.sts-elevated", "sdk.activity-poll-needs-slot"]
+when = { all = [
+  { signal = "activity_slots_available", stat = "min", op = "ge", value = 5 },
+  { signal = "activity_slots_available", stat = "samples", op = "ge", value = 3 },
+  { signal = "activity_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "slots-ran-out"
+hypothesis = "activity-slot-exhaustion"
+effect = "supports"
+statement = "At times no Activity slot was free across the Workers (minimum {activity_slots_available.min})."
+claims = ["heuristic.slots-headroom"]
+when = { signal = "activity_slots_available", stat = "min", op = "lt", value = 1 }
+
+[[rule]]
+id = "slots-exhausted"
+hypothesis = "activity-slot-exhaustion"
+effect = "establishes"
+statement = "Free Activity slots across the Workers averaged {activity_slots_available.mean} and never rose above {activity_slots_available.max} while schedule-to-start reached {activity_schedule_to_start.max}: Workers could poll for more Activities only as running ones finished."
+claims = ["heuristic.sustained-needs-samples", "heuristic.slots-exhausted", "sdk.activity-poll-needs-slot", "heuristic.sts-elevated"]
+when = { all = [
+  { signal = "activity_slots_available", stat = "mean", op = "lt", value = 1 },
+  { signal = "activity_slots_available", stat = "max", op = "lt", value = 5 },
+  { signal = "activity_slots_available", stat = "samples", op = "ge", value = 3 },
+  { signal = "activity_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "pollers-present"
+hypothesis = "activity-pollers-absent"
+effect = "eliminates"
+statement = "Workers kept at least {activity_pollers.min} Activity Task pollers throughout the window."
+when = { signal = "activity_pollers", stat = "min", op = "ge", value = 1 }
+
+[[rule]]
+id = "no-pollers"
+hypothesis = "activity-pollers-absent"
+effect = "establishes"
+statement = "No Activity Task poller was active at any sample (maximum {activity_pollers.max}), and the Workers were not out of slots, which would also have stopped their polls."
+claims = ["heuristic.sustained-needs-samples", "sdk.activity-poll-needs-slot"]
+when = { all = [
+  { signal = "activity_pollers", stat = "max", op = "lt", value = 1 },
+  { signal = "activity_pollers", stat = "samples", op = "ge", value = 3 },
+  { not = { hypothesis = "activity-slot-exhaustion", state = ["established", "supported"] } },
+] }
+
+[[rule]]
+id = "pollers-busy"
+hypothesis = "activity-poller-starvation"
+effect = "supports"
+statement = "Pollers were rarely idle: Matching dispatched {tasks_dispatch_rate.max} Activity Tasks to only {activity_pollers.mean} pollers, more than 50 per poller per second."
+claims = ["heuristic.poller-busy"]
+when = { all = [
+  { signal = "activity_pollers", stat = "min", op = "ge", value = 1 },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "activity_pollers.mean" }, op = "ge", value = 50 },
+] }
+
+[[rule]]
+id = "pollers-waiting"
+hypothesis = "activity-poller-starvation"
+effect = "weakens"
+statement = "Pollers were mostly waiting for work: Matching dispatched {tasks_dispatch_rate.max} Activity Tasks across {activity_pollers.mean} pollers, fewer than 10 per poller per second."
+claims = ["heuristic.poller-busy"]
+when = { all = [
+  { signal = "activity_pollers", stat = "min", op = "ge", value = 1 },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "activity_pollers.mean" }, op = "le", value = 10 },
+] }
+
+[[rule]]
+id = "dispatch-capped-not-pollers"
+hypothesis = "activity-poller-starvation"
+effect = "eliminates"
+statement = "Pollers were not the binding constraint: dispatch ran at {tasks_dispatch_rate.max}, pinned at the Task Queue's effective rate limit of {dispatch_rate_limit.last}, while tasks were added at {tasks_add_rate.max}."
+claims = ["heuristic.dispatch-at-limit"]
+when = { all = [
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 },
+  { ratio = { numerator = "tasks_add_rate.max", denominator = "tasks_dispatch_rate.max" }, op = "ge", value = 1.02 },
+] }
+
+[[rule]]
+id = "starved-below-limit"
+hypothesis = "activity-poller-starvation"
+effect = "establishes"
+statement = "Tasks waited in Matching's backlog while dispatch ({tasks_dispatch_rate.max}) stayed well below the rate limit ({dispatch_rate_limit.last}) and each poller was almost always busy ({tasks_dispatch_rate.max} across {activity_pollers.mean} pollers): the poll rate limited dispatch."
+claims = ["heuristic.poller-busy", "heuristic.dispatch-at-limit"]
+when = { all = [
+  { hypothesis = "activity-matching-backlog", state = ["established"] },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.7 },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "activity_pollers.mean" }, op = "ge", value = 50 },
+] }
+
+[[rule]]
+id = "no-poll-failures"
+hypothesis = "activity-poll-throttling"
+effect = "eliminates"
+statement = "No Activity Task poll failed during the window (at most {activity_poll_failures_rate.max}) while schedule-to-start reached {activity_schedule_to_start.max}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.effectively-zero-rate", "heuristic.sts-elevated"]
+when = { all = [
+  { signal = "activity_poll_failures_rate", stat = "max", op = "le", value = 0.01 },
+  { signal = "activity_poll_failures_rate", stat = "samples", op = "ge", value = 3 },
+  { signal = "activity_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "poll-failures"
+hypothesis = "activity-poll-throttling"
+effect = "supports"
+statement = "Activity Task polls failed at {activity_poll_failures_rate.mean} on average (peak {activity_poll_failures_rate.max})."
+claims = ["heuristic.effectively-zero-rate"]
+when = { signal = "activity_poll_failures_rate", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-poll-rejections"
+hypothesis = "activity-poll-throttling"
+effect = "eliminates"
+statement = "The Frontend rejected no Activity Task polls during the window (at most {activity_poll_rejections_rate.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.effectively-zero-rate"]
+when = { all = [
+  { signal = "activity_poll_rejections_rate", stat = "max", op = "le", value = 0.01 },
+  { signal = "activity_poll_rejections_rate", stat = "samples", op = "ge", value = 3 },
+  { signal = "activity_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "poll-rejections"
+hypothesis = "activity-poll-throttling"
+effect = "establishes"
+statement = "The Frontend rejected Activity Task polls with ResourceExhausted at {activity_poll_rejections_rate.mean} on average (peak {activity_poll_rejections_rate.max})."
+claims = ["heuristic.rejections-significant", "behaviour.frontend-priorities"]
+when = { signal = "activity_poll_rejections_rate", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "backlog-carries-latency"
+hypothesis = "activity-matching-backlog"
+effect = "establishes"
+statement = "The latency accrues in Matching: its Activity backlog reached {backlog_age.max} old ({backlog_count.max} tasks), comparable to the schedule-to-start latency of {activity_schedule_to_start.max}."
+claims = ["heuristic.backlog-carries-latency"]
+when = { all = [
+  { ratio = { numerator = "backlog_age.max", denominator = "activity_schedule_to_start.max" }, op = "ge", value = 0.5 },
+  { signal = "backlog_count", stat = "max", op = "ge", value = 1 },
+] }
+
+[[rule]]
+id = "adds-exceed-dispatch"
+hypothesis = "activity-matching-backlog"
+effect = "supports"
+statement = "Activity Tasks were added faster than they were dispatched: up to {tasks_add_rate.max} added against {tasks_dispatch_rate.max} dispatched."
+when = { ratio = { numerator = "tasks_add_rate.max", denominator = "tasks_dispatch_rate.max" }, op = "ge", value = 1.02 }
+
+[[rule]]
+id = "no-backlog"
+hypothesis = "activity-matching-backlog"
+effect = "eliminates"
+statement = "Matching's Activity backlog stayed under a second old (at most {backlog_age.max}) while schedule-to-start reached {activity_schedule_to_start.max}: the wait is not in Matching's backlog."
+claims = ["heuristic.sustained-needs-samples", "heuristic.sts-elevated"]
+when = { all = [
+  { signal = "backlog_age", stat = "max", op = "lt", value = 1 },
+  { signal = "backlog_age", stat = "samples", op = "ge", value = 3 },
+  { signal = "activity_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "matching-accounts-for-latency"
+hypothesis = "activity-history-delay"
+effect = "eliminates"
+statement = "Matching's backlog age ({backlog_age.max}) accounts for most of the schedule-to-start latency ({activity_schedule_to_start.max}), leaving little room for delay before Matching."
+claims = ["heuristic.backlog-carries-latency"]
+when = { ratio = { numerator = "backlog_age.max", denominator = "activity_schedule_to_start.max" }, op = "ge", value = 0.8 }
+
+[[rule]]
+id = "latency-before-matching"
+hypothesis = "activity-history-delay"
+effect = "supports"
+statement = "Matching's backlog age ({backlog_age.max}) explains less than a third of the schedule-to-start latency ({activity_schedule_to_start.max}); the rest accrues before Matching."
+claims = ["heuristic.backlog-carries-latency"]
+when = { all = [
+  { ratio = { numerator = "backlog_age.max", denominator = "activity_schedule_to_start.max" }, op = "lt", value = 0.3 },
+  { signal = "activity_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "dispatch-at-limit"
+hypothesis = "dispatch-rate-limited"
+effect = "establishes"
+statement = "Dispatch was pinned at the Task Queue's effective rate limit: {tasks_dispatch_rate.max} dispatched against a limit of {dispatch_rate_limit.last}, while {tasks_add_rate.max} were added."
+claims = ["heuristic.dispatch-at-limit", "behaviour.describe-task-queue-rate-limit"]
+when = { all = [
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 },
+  { ratio = { numerator = "tasks_add_rate.max", denominator = "tasks_dispatch_rate.max" }, op = "ge", value = 1.02 },
+] }
+
+[[rule]]
+id = "dispatch-below-limit"
+hypothesis = "dispatch-rate-limited"
+effect = "eliminates"
+statement = "Dispatch ({tasks_dispatch_rate.max}) stayed well below the Task Queue's effective rate limit ({dispatch_rate_limit.last}), so the limit was not binding."
+claims = ["heuristic.sustained-needs-samples", "heuristic.dispatch-at-limit"]
+when = { all = [
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.7 },
+  { signal = "tasks_dispatch_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "rate-limited-backlog"
+hypothesis = "dispatch-rate-limited"
+effect = "establishes"
+statement = "Activity Tasks accumulated in Matching's backlog, {tasks_add_rate.max} added against {tasks_dispatch_rate.max} dispatched, while Matching's rate limiter held dispatch back: the dispatch limit was binding."
+claims = ["api.task_queue_stats.rate_limiting_active", "behaviour.dispatch-throttle-visibility", "behaviour.partition-dispatch-rate-limit"]
+when = { all = [
+  { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 },
+  { hypothesis = "activity-matching-backlog", state = ["established"] },
+  { ratio = { numerator = "tasks_add_rate.max", denominator = "tasks_dispatch_rate.max" }, op = "ge", value = 1.02 },
+] }
+
+[[rule]]
+id = "rate-limiting-active"
+hypothesis = "dispatch-rate-limited"
+effect = "supports"
+statement = "DescribeTaskQueue reported rate limiting active: within about 30 seconds before it was captured, Matching's rate limiter held back Activity Tasks it could otherwise have dispatched."
+claims = ["api.task_queue_stats.rate_limiting_active", "behaviour.dispatch-throttle-visibility"]
+when = { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 }
+
+[[rule]]
+id = "rate-limiting-inactive"
+hypothesis = "dispatch-rate-limited"
+effect = "weakens"
+statement = "DescribeTaskQueue reported rate limiting inactive: Matching's rate limiter held back no dispatch in the 30 seconds before it was captured."
+claims = ["api.task_queue_stats.rate_limiting_active", "behaviour.dispatch-throttle-visibility"]
+when = { signal = "rate_limiting_active", stat = "max", op = "lt", value = 1 }
+
+[[rule]]
+id = "limit-from-workers"
+hypothesis = "worker-rate-limit"
+effect = "establishes"
+statement = "DescribeTaskQueue reports the effective limit of {dispatch_rate_limit.last} with source Worker: a Worker polling the Task Queue sent that rate, and Matching applies it to the whole Task Queue."
+claims = ["api.describe_task_queue.rate_limit_source", "limit.activity-worker-rate", "sdk.task-queue-activities-per-second"]
+when = { all = [
+  { signal = "rate_limit_source", equals = "RATE_LIMIT_SOURCE_WORKER" },
+  { signal = "dispatch_rate_limit", stat = "last", op = "gt", value = 0 },
+] }
+
+[[rule]]
+id = "limit-not-from-workers"
+hypothesis = "worker-rate-limit"
+effect = "eliminates"
+statement = "DescribeTaskQueue reports that the effective limit does not come from the Workers."
+claims = ["api.describe_task_queue.rate_limit_source", "behaviour.describe-task-queue-rate-limit"]
+when = { not = { signal = "rate_limit_source", equals = "RATE_LIMIT_SOURCE_WORKER" } }
+
+[[rule]]
+id = "limit-from-api"
+hypothesis = "api-rate-limit"
+effect = "establishes"
+statement = "DescribeTaskQueue reports the effective limit of {dispatch_rate_limit.last} with source API: a queue rate limit set through UpdateTaskQueueConfig is in force."
+claims = ["api.describe_task_queue.rate_limit_source", "limit.task-queue-api-rate"]
+when = { all = [
+  { signal = "rate_limit_source", equals = "RATE_LIMIT_SOURCE_API" },
+  { signal = "dispatch_rate_limit", stat = "last", op = "gt", value = 0 },
+] }
+
+[[rule]]
+id = "limit-not-from-api"
+hypothesis = "api-rate-limit"
+effect = "eliminates"
+statement = "DescribeTaskQueue reports that the effective limit was not set through the API."
+claims = ["api.describe_task_queue.rate_limit_source", "behaviour.describe-task-queue-rate-limit"]
+when = { not = { signal = "rate_limit_source", equals = "RATE_LIMIT_SOURCE_API" } }
+
+[[rule]]
+id = "limit-from-system"
+hypothesis = "system-rate-limit"
+effect = "establishes"
+statement = "DescribeTaskQueue reports the effective limit of {dispatch_rate_limit.last} with source System: the per-partition default times the read partitions."
+claims = ["api.describe_task_queue.rate_limit_source", "limit.task-queue-dispatch", "limit.dispatch-applied-on-change"]
+when = { all = [
+  { signal = "rate_limit_source", equals = "RATE_LIMIT_SOURCE_SYSTEM" },
+  { signal = "dispatch_rate_limit", stat = "last", op = "gt", value = 0 },
+] }
+
+[[rule]]
+id = "limit-not-from-system"
+hypothesis = "system-rate-limit"
+effect = "eliminates"
+statement = "DescribeTaskQueue reports that a limit below the system default is in force."
+claims = ["api.describe_task_queue.rate_limit_source", "behaviour.describe-task-queue-rate-limit"]
+when = { not = { signal = "rate_limit_source", equals = "RATE_LIMIT_SOURCE_SYSTEM" } }
+
+[[rule]]
+id = "fanout"
+hypothesis = "activity-fanout"
+effect = "supports"
+statement = "Workflows fanned out: ScheduleActivityTask commands rose from about {scheduled_activities_rate.baseline} before the incident to {scheduled_activities_rate.max}."
+claims = ["heuristic.activity-fanout"]
+when = { all = [
+  { ratio = { numerator = "scheduled_activities_rate.max", denominator = "scheduled_activities_rate.baseline" }, op = "ge", value = 3 },
+  { signal = "scheduled_activities_rate", stat = "max", op = "ge", value = 50 },
+] }
+
+[[rule]]
+id = "fanout-drives-adds"
+hypothesis = "activity-fanout"
+effect = "establishes"
+statement = "The fan-out accounts for the Activity Task add rate: Workflows scheduled up to {scheduled_activities_rate.max} Activities (from about {scheduled_activities_rate.baseline}) against up to {tasks_add_rate.max} Activity Tasks added."
+claims = ["heuristic.activity-fanout", "behaviour.schedule-activity-adds-task"]
+when = { all = [
+  { ratio = { numerator = "scheduled_activities_rate.max", denominator = "scheduled_activities_rate.baseline" }, op = "ge", value = 3 },
+  { signal = "scheduled_activities_rate", stat = "max", op = "ge", value = 50 },
+  { ratio = { numerator = "scheduled_activities_rate.max", denominator = "tasks_add_rate.max" }, op = "ge", value = 0.8 },
+] }
+
+[[rule]]
+id = "no-fanout"
+hypothesis = "activity-fanout"
+effect = "eliminates"
+statement = "There was no fan-out: ScheduleActivityTask commands peaked at {scheduled_activities_rate.max} against a baseline of about {scheduled_activities_rate.baseline}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.activity-fanout"]
+when = { all = [
+  { ratio = { numerator = "scheduled_activities_rate.max", denominator = "scheduled_activities_rate.baseline" }, op = "lt", value = 1.5 },
+  { signal = "scheduled_activities_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "worker-rate-limit-under-fanout"
+title = "Workers' Task Queue rate limit reached under an Activity fan-out"
+statement = "Activity schedule-to-start rose because the rate limit the Workers set for the whole Task Queue ({dispatch_rate_limit.last}) held Activity Tasks back while a fan-out added them at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free throughout (at least {activity_slots_available.min}) and no Activity Task polls failed: every Worker sends the same Task Queue-wide limit, so more Workers would not have raised it."
+when = { all = [
+  { hypothesis = "worker-rate-limit", state = ["established"] },
+  { hypothesis = "activity-matching-backlog", state = ["established"] },
+  { hypothesis = "activity-slot-exhaustion", state = ["eliminated"] },
+  { hypothesis = "activity-poll-throttling", state = ["eliminated"] },
+  { hypothesis = "activity-fanout", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, pinned at the limit."
+
+[[conclusion.clause]]
+when = { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 }
+text = "DescribeTaskQueue reported the rate limiter holding dispatch back in the 30 seconds before it was captured."
+
+[[conclusion.clause]]
+when = { all = [
+  { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.95 },
+] }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, below the limit: each read partition enforces its share of it, so partitions that receive fewer tasks leave part of the limit unused."
+
+[[conclusion.clause]]
+when = { signal = "scheduled_activities_rate", stat = "max", op = "ge", value = 1 }
+text = "Workflows scheduled Activities at up to {scheduled_activities_rate.max}, from about {scheduled_activities_rate.baseline} before the incident."
+
+[[conclusion.recommendation]]
+text = "The Workers' Activity rate option limits the whole Task Queue, not each Worker: TaskQueueActivitiesPerSecond in Go, setMaxTaskQueueActivitiesPerSecond in Java, max_task_queue_activities_per_second in Core-based SDKs. If a per-Worker limit was intended, use the per-Worker option instead (WorkerActivitiesPerSecond in Go, setMaxWorkerActivitiesPerSecond in Java) and raise or remove the Task Queue limit."
+caution = "Change the option on every Worker polling the Task Queue: Workers with different values overwrite each other's, and the latest poll wins."
+claims = ["sdk.task-queue-activities-per-second", "limit.activity-worker-rate"]
+
+[[conclusion.recommendation]]
+text = "If the limit protects a downstream dependency, keep it and pace the Workflows that fan out Activities, so the add rate stays below the limit ({dispatch_rate_limit.last})."
+claims = ["behaviour.schedule-activity-adds-task", "heuristic.activity-fanout"]
+
+[[conclusion.recommendation]]
+text = "Do not add Workers or Activity slots for this symptom: execution capacity was available throughout."
+claims = ["heuristic.slots-headroom"]
+
+[[conclusion]]
+id = "worker-rate-limit"
+title = "Workers' Task Queue rate limit reached"
+statement = "Activity schedule-to-start rose because the rate limit the Workers set for the whole Task Queue ({dispatch_rate_limit.last}) held Activity Tasks back while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free (at least {activity_slots_available.min}), so more Workers would not have raised the limit."
+when = { all = [
+  { hypothesis = "worker-rate-limit", state = ["established"] },
+  { hypothesis = "activity-matching-backlog", state = ["established"] },
+  { hypothesis = "activity-slot-exhaustion", state = ["eliminated"] },
+  { hypothesis = "activity-poll-throttling", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, pinned at the limit."
+
+[[conclusion.clause]]
+when = { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 }
+text = "DescribeTaskQueue reported the rate limiter holding dispatch back in the 30 seconds before it was captured."
+
+[[conclusion.clause]]
+when = { all = [
+  { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.95 },
+] }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, below the limit: each read partition enforces its share of it, so partitions that receive fewer tasks leave part of the limit unused."
+
+[[conclusion.recommendation]]
+text = "Raise or remove the Workers' Task Queue-wide Activity rate (TaskQueueActivitiesPerSecond in Go, setMaxTaskQueueActivitiesPerSecond in Java, max_task_queue_activities_per_second in Core-based SDKs), or use the per-Worker option if a per-Worker limit was intended."
+caution = "Change the option on every Worker polling the Task Queue: the latest poll's value wins."
+claims = ["sdk.task-queue-activities-per-second", "limit.activity-worker-rate"]
+
+[[conclusion]]
+id = "api-rate-limit"
+title = "Task Queue rate limit set through the API reached"
+statement = "Activity schedule-to-start rose because a queue rate limit set through the API ({dispatch_rate_limit.last}) held Activity Tasks back while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free (at least {activity_slots_available.min}) and no Activity Task polls failed, so neither more Workers nor a different Worker rate would have helped: the API limit overrides the rate Workers send."
+when = { all = [
+  { hypothesis = "api-rate-limit", state = ["established"] },
+  { hypothesis = "activity-matching-backlog", state = ["established"] },
+  { hypothesis = "activity-slot-exhaustion", state = ["eliminated"] },
+  { hypothesis = "activity-poll-throttling", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, pinned at the limit."
+
+[[conclusion.clause]]
+when = { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 }
+text = "DescribeTaskQueue reported the rate limiter holding dispatch back in the 30 seconds before it was captured."
+
+[[conclusion.clause]]
+when = { all = [
+  { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.95 },
+] }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, below the limit: each read partition enforces its share of it, so partitions that receive fewer tasks leave part of the limit unused."
+
+[[conclusion.recommendation]]
+text = "Find who set the Task Queue's queue rate limit and why, then raise or remove it with UpdateTaskQueueConfig if the current load is expected."
+caution = "An API limit is often set to protect a downstream dependency; check that it can take the higher rate first."
+claims = ["limit.task-queue-api-rate", "api.describe_task_queue.rate_limit_source"]
+
+[[conclusion.recommendation]]
+text = "Do not add Workers or Activity slots for this symptom: execution capacity was available throughout."
+claims = ["heuristic.slots-headroom"]
+
+[[conclusion]]
+id = "system-rate-limit"
+title = "Task Queue's default dispatch limit reached"
+statement = "Activity schedule-to-start rose because the Task Queue's system default dispatch limit ({dispatch_rate_limit.last}) held Activity Tasks back while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free (at least {activity_slots_available.min}), so more Workers would not have reduced the latency."
+when = { all = [
+  { hypothesis = "system-rate-limit", state = ["established"] },
+  { hypothesis = "activity-matching-backlog", state = ["established"] },
+  { hypothesis = "activity-slot-exhaustion", state = ["eliminated"] },
+  { hypothesis = "activity-poll-throttling", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, pinned at the limit."
+
+[[conclusion.clause]]
+when = { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 }
+text = "DescribeTaskQueue reported the rate limiter holding dispatch back in the 30 seconds before it was captured."
+
+[[conclusion.clause]]
+when = { all = [
+  { signal = "rate_limiting_active", stat = "max", op = "ge", value = 1 },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.95 },
+] }
+text = "Dispatch ran at {tasks_dispatch_rate.max}, below the limit: each read partition enforces its share of it, so partitions that receive fewer tasks leave part of the limit unused."
+
+[[conclusion.recommendation]]
+text = "Pace what adds the Activities, or raise the Task Queue's dispatch ceiling: increase matching.numTaskqueueReadPartitions first, then matching.numTaskqueueWritePartitions, or the per-partition rate admin.matchingNamespaceTaskqueueToPartitionDispatchRate."
+caution = "More partitions add load to Matching hosts and persistence; check their headroom first. In 1.32 a partition enforces the system default only after its effective rate has changed since it loaded, so the ceiling may also lift on its own after a Matching restart."
+claims = ["limit.task-queue-dispatch", "limit.dispatch-applied-on-change", "dc.matching.numTaskqueueReadPartitions", "dc.matching.numTaskqueueWritePartitions", "dc.admin.matchingNamespaceTaskqueueToPartitionDispatchRate"]
+
+[[conclusion]]
+id = "activity-poll-throttling"
+title = "Activity Task polls throttled"
+statement = "Activity schedule-to-start rose because Activity Task polls were rejected or failing while Workers still had free slots. Rejected pollers back off, so tasks wait for the next successful poll."
+when = { all = [
+  { hypothesis = "activity-poll-throttling", state = ["established"] },
+  { hypothesis = "activity-slot-exhaustion", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Check the rejection cause. A namespace limit (RpsLimit with scope Namespace) points at frontend.namespaceRPS: Activity polls are admitted at a lower priority than Signals and Starts, so a surge of those starves polls first."
+claims = ["behaviour.frontend-priorities", "limit.frontend-namespace-rps", "server.service_errors_resource_exhausted"]
+
+[[conclusion]]
+id = "activity-poller-starvation"
+title = "Activity Task poller starvation"
+statement = "Activity schedule-to-start rose because Workers kept too few Activity Task polls outstanding: tasks waited in Matching's backlog while dispatch ran below the rate limit and every poller was busy, even though execution slots were free."
+when = { all = [
+  { hypothesis = "activity-poller-starvation", state = ["established"] },
+  { hypothesis = "activity-slot-exhaustion", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Raise the number of Activity Task pollers per Worker, or run more Worker processes."
+claims = ["heuristic.poller-busy"]
+
+[[conclusion]]
+id = "activity-slot-exhaustion"
+title = "Activity Worker execution slots exhausted"
+statement = "Activity schedule-to-start rose because Workers had no free Activity slots, so they stopped polling and tasks waited for a slot."
+when = { hypothesis = "activity-slot-exhaustion", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Add Worker processes or Activity slots, or shorten Activity execution. Check first that the Activities are not waiting on a slow downstream dependency, which more slots would only load further."
+claims = ["sdk.activity-poll-needs-slot", "sdk.worker_task_slots_available"]
+
+[[conclusion]]
+id = "activity-pollers-absent"
+title = "No Worker polling for Activities"
+statement = "Activity schedule-to-start rose because no Worker was polling the Task Queue for Activity Tasks, so they waited in Matching until one did."
+when = { hypothesis = "activity-pollers-absent", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Check that Activity Workers are running, connected, registered for these Activities, and polling exactly this Task Queue name."
+claims = ["sdk.num_pollers"]

@@ -1,0 +1,82 @@
+# Per-Workflow history limits in Temporal Server 1.31.0: what History does
+# when a history grows past them, and the continue-as-new suggestion before.
+
+[[statement]]
+id = "limit.history-size-and-count"
+category = "limit"
+title = "History size and event count limits terminate a Workflow"
+statement = "When an update finds a running Workflow's history larger than limit.historySize.error (50 MiB by default) or with more events than limit.historyCount.error (51,200 by default), History discards the update and terminates the Workflow. It checks the size first, then the event count, then the Workflow's mutable state against limit.mutableStateSize.error (8 MiB by default). The caller, usually the Worker completing a Workflow Task, gets an InvalidArgument error. The warn limits, limit.historySize.warn (10 MiB) and limit.historyCount.warn (10,240 events), only log a warning."
+notes = ["limit.historySize.error and limit.historyCount.error are set per namespace; limit.mutableStateSize.error is global."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 412, excerpt = "historySizeForceTerminate, err := c.enforceHistorySizeCheck(ctx, shardContext)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 418, excerpt = "historyCountForceTerminate, err = c.enforceHistoryCountCheck(ctx, shardContext)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 425, excerpt = "msForceTerminate, err = c.enforceMutableStateSizeCheck(ctx, shardContext)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1025, excerpt = "if historySize > historySizeLimitError && c.MutableState.IsWorkflowExecutionRunning() {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1063, excerpt = "if historyCount > historyCountLimitError && c.MutableState.IsWorkflowExecutionRunning() {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1100, excerpt = "if mutableStateSize > mutableStateSizeLimitError {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1130, excerpt = "c.Clear()" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 453, excerpt = "return consts.ErrHistorySizeExceedsLimit" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/consts/const.go", line = 81, excerpt = "ErrHistorySizeExceedsLimit = serviceerror.NewInvalidArgument(common.FailureReasonHistorySizeExceedsLimit)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1033, excerpt = "c.throttledLogger.Warn(\"history size exceeds warn limit.\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1071, excerpt = "c.throttledLogger.Warn(\"history count exceeds warn limit.\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 361, excerpt = "\"limit.historySize.error\"," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 366, excerpt = "\"limit.historySize.error\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 362, excerpt = "50*1024*1024," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 367, excerpt = "50*1024*1024," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 377, excerpt = "\"limit.historyCount.error\"," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 382, excerpt = "\"limit.historyCount.error\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 378, excerpt = "50*1024," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 383, excerpt = "50*1024," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 398, excerpt = "\"limit.mutableStateSize.error\"," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 403, excerpt = "\"limit.mutableStateSize.error\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 399, excerpt = "8*1024*1024," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 404, excerpt = "8*1024*1024," },
+]
+
+[[statement]]
+id = "behaviour.limit-termination-reason"
+category = "behaviour"
+title = "A Workflow a history limit terminates says which limit"
+statement = "A Workflow terminated by a history limit ends with a WorkflowExecutionTerminated event whose identity is history-service and whose reason is \"Workflow history size exceeds limit.\", \"Workflow history count exceeds limit.\" or \"Workflow mutable state size exceeds limit.\"."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1008, excerpt = "if err := c.forceTerminateWorkflow(ctx, shardContext, common.FailureReasonHistorySizeExceedsLimit); err != nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1046, excerpt = "if err := c.forceTerminateWorkflow(ctx, shardContext, common.FailureReasonHistoryCountExceedsLimit); err != nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1082, excerpt = "if err := c.forceTerminateWorkflow(ctx, shardContext, common.FailureReasonMutableStateSizeExceedsLimit); err != nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 1151, excerpt = "consts.IdentityHistoryService," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 105, excerpt = "FailureReasonHistorySizeExceedsLimit = \"Workflow history size exceeds limit.\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 107, excerpt = "FailureReasonHistoryCountExceedsLimit = \"Workflow history count exceeds limit.\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util.go", line = 109, excerpt = "FailureReasonMutableStateSizeExceedsLimit = \"Workflow mutable state size exceeds limit.\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/consts/const.go", line = 13, excerpt = "IdentityHistoryService = \"history-service\"" },
+]
+
+[[statement]]
+id = "behaviour.suggest-continue-as-new"
+category = "behaviour"
+title = "History suggests continue-as-new before the limits"
+statement = "When a Workflow Task starts on a history of at least limit.historySize.suggestContinueAsNew (4 MiB by default) or limit.historyCount.suggestContinueAsNew (4,096 events by default), History marks the task's WorkflowTaskStarted event to suggest continue-as-new, on every task while the history stays past the threshold, and counts it in workflow_suggest_continue_as_new_count. The SDKs pass the suggestion to Workflow code, which must act on it."
+notes = ["Go reads it with GetContinueAsNewSuggested, Java with isContinueAsNewSuggested and Python with is_continue_as_new_suggested."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"], sdk = [{ family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }, { family = "core", revision = "sdk-python 1.25.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1457, excerpt = "if historySize >= sizeLimit {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1458, excerpt = "reasons = append(reasons, enumspb.SUGGEST_CONTINUE_AS_NEW_REASON_HISTORY_SIZE_TOO_LARGE)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1460, excerpt = "if historyCount >= countLimit {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1461, excerpt = "reasons = append(reasons, enumspb.SUGGEST_CONTINUE_AS_NEW_REASON_TOO_MANY_HISTORY_EVENTS)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/historybuilder/event_factory.go", line = 140, excerpt = "SuggestContinueAsNew:        suggestContinueAsNew," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 539, excerpt = "metrics.WorkflowSuggestContinueAsNewCount.With(m.metricsHandler.WithTags(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 371, excerpt = "\"limit.historySize.suggestContinueAsNew\"," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 376, excerpt = "\"limit.historySize.suggestContinueAsNew\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 372, excerpt = "4*1024*1024," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 377, excerpt = "4*1024*1024," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 413, excerpt = "\"limit.historyCount.suggestContinueAsNew\"," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 418, excerpt = "\"limit.historyCount.suggestContinueAsNew\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 414, excerpt = "4*1024," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 419, excerpt = "4*1024," },
+  { source = "sdk-go-v1.44.0", path = "internal/workflow.go", line = 1594, excerpt = "func (wInfo *WorkflowInfo) GetContinueAsNewSuggested() bool {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/workflow/WorkflowInfo.java", line = 164, excerpt = "boolean isContinueAsNewSuggested();" },
+  { source = "sdk-python-1.25.0", path = "temporalio/workflow.py", line = 595, excerpt = "def is_continue_as_new_suggested(self) -> bool:" },
+]

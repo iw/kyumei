@@ -1,0 +1,68 @@
+-----BEGIN KYUMEI SAMPLES v1-----
+Collected by kyumei-collect 0.1.0 from file at 2026-10-16 10:48 UTC
+Request R4 of inv-golden-visibility-blocks, 2026-10-16 09:40 UTC to 2026-10-16 10:49 UTC, step 15s
+Query 1: histogram_quantile(0.99, sum by (le, operation) (rate(visibility_persistence_latency_buck…
+  operation=RecordWorkflowExecutionStarted  ▁▁▁▁▁▁▁▁▁▆████████████████▇████▇  min 0.807  max 30  mean 19.3  (277 samples)
+  operation=UpsertWorkflowExecution         ▁▁▁▁▁▁▁▁▁▅▇██████▇█████▇██▇█████  min 0.816  max 29.99  mean 18.74  (277 samples)
+  operation=RecordWorkflowExecutionClosed   ▁▁▁▁▁▁▁▁▁▆█████████▇▇█████████▇▇  min 0.851  max 30  mean 19.32  (277 samples)
+  operation=ListWorkflowExecutions          ▁▁▁▁▁▁▁▁▁▅█▇▇▇▇█▇██▇▇▆██▇▆███▆█▇  min 0.0806  max 0.447  mean 0.282  (277 samples)
+  operation=CountWorkflowExecutions         ▂▁▁▁▂▂▁▁▁▅▇▆▇▇▇▆▇▆█▇▇█▆█▇▆▇▇▇▆▇█  min 0.0501  max 0.279  mean 0.166  (277 samples)
+:7Zd5UNxHdsf1Xnf_fr85mWEAgS3JlGRnJVt2tLFzONnabFZxJZWktjZ2XPbGcVQ62DUlLLQ6vCG7
+:SYZbI67hvm8YQNw3DDfivm8YQAgEI3ENiEMCZmAIW6lKXNlKtvZ_vaqu7up-71VX13uf-vbf_uQT
+:OGZ33ePu1y6u7151d3NzuXrH-cJ7333vAv2pq5uLOi--NfurE643vnn3Z-5u11xuvPuN623XK65u
+:rnc83r3i5n71-m38-AO1Lqcp-6vG0bQj35i7x-DKV66377j_7Nblry_9_O7lG3eOEp298N6HH553
+:vn33a-crHs5n3VzOO7vfdLl1-Y6r-41zzmePFi5n_yf1paOj20c5XG5cdbnkdvnXs8elK3evXne5
+:88V3v_7y3LlzDET_HX_qY5er7reufeZ-6_pP3dx_8dG_uFy9--v9T-5cvnXH5Vok_tf9ipbh2Cv7
+:3wZ8YCZEO-azGeWwKu9UvF2Ew5a40ab9rVkyodAovWwq5R2qWdbCQkStjrPo90aN1N9p36lXOWnv
+:6_z8TI6T1rkQKp1TXnuo2nR67Lgv7pJ2nlu0H7D7ky1oktdyLazfttRu93QB6VV28e2vV5wLtW-Q
+:x3CH0MJeola6yEJPdzk8FbZUGCT1sRtXljhWntS9Y5QFOBQocqU6Ydv7jA-0JuCiLxgSIVXHmsOF
+:Qx2_GMUVN2J2AzEEctlqNpII3Vus0aarnjU9I5EXsw0w0AcHoXyKXtgKoDVV1GxgL-oh9tPZfdgb
+:o3lNrDWF6OdJejTVfjBSyfp_sGSG0UE0aXCymh60g3WITK3z-4NsNJ8FD9FqX8h0eqgl28mYOQLP
+:s-HBNn20RMvG2HoPTdukKwW8NoaWh9PgQfYimdV6Yf1LGqrh1HoImsXNeTY1AP2LsLCBO99Z0-Ox
+:mjKcEFIPaUMspFSD3yFJG8ToEqiJIibXRhNrihea4wXjDaM3t1zGhR5A-jRUaslAFq-5TysCiMHA
+:dbTRjUJqfkf7mBlLYNitu4d2LPAaLcQvcUO1pCgZY40Y5Q_-XVhlZcVPacUK22ui5iZ6uMY_aAZr
+:GjuoZgaPxVGc3CaFV_fF8T64wwoPoCQGlvIhzp_4zGG1FfRWmAvnYh5hZh8892HGQxZXh1t1pLoO
+:zHVCbjnb-CBpmeU08cFfmiJgrIoZ6sj6J9ZBbv1i5wzZtELiDN19wCb-LDGB5DVjeDUpz0ftAEz9
+:o7mYJk5ii5X4bsHIifYcOqmm4UMwEoEzPZjYDWuBsDIBlmGysQ8pe_Sgj4Z7aF1WB_nRh_B4CAe_
+:NxqH9_Vk4FyNJ5s9bzZAYB98CwzHP7152-XWnd8Awysi_BYi6GCAZr7T9mbQCausQ1qtfC6rhRD7
+:fkw6HSq32KXyXcohIUaUdbrrTO8pP-WQqtwxh2VIVo4nQMSparshsb902Tb15KkwUYQ0my3CnIMP
+:K3H6_JlNgsIoqnGIcx493QyNJ2bZDjcAoQ4D1Mcu365bqhW6hVlROBmi4-LA76SfXRCvvZavOMB9
+:cZ4k_Y1saSJdVzy1sdh4DZ7q8iSHp1J7uap17PWCllVcG0NLLI5W0Mp8KIiB3WScT0HPv34wAUY1
+:-BWz3UbMzCNBsTTyj_uiBU0FHLQS8wo0P8L8enzmHvKnxiDMvplrHxaOC793mMyl9PBLrdDuDzoj
+:6R-i_R0wd7Psl9pp9L043wn6YEwJRd1N9c3wAP7-ATOusU0vbDggSWaW_k7c9eYSMETwOX-1ukbX
+:P4wdw7wbT943J5PBEjQ9gvFAWMqFeh2rayL6OejNwahs2riDpTmkwR-2HuFMFyRFkeHvh3_RloTz
+:hcT8ggy55_rzCQFsz4JrxSznniisBWebMS-brE9zhn8qWuY0I7S9gTxpptv5uMFpxDHhOFeBRW-P
+:daNvDTzcY-l66CvlDMtQ_pcFHSRxkLu_hI93caaUhv_BcDPpa2GFaja1CUk6zBiitcx_nMwkkJxt
+:qpcfnrsXxnJroKgJgmogcRmLFsj-32-MsbZJfPr5WipOJmG6hdsLxqrzuu9rDXzQfT7KdXMUEv5m
+:thibvtAEsN16KNKRQW-ynEzbTXg4A5VPoPWXbb1scA6e34P1C5MjdOspezIBa21omkF1CA3J4xbG
+:YPFfLZ95niyOID0VXOQUjlhJp5UL-ryikdvp56Pm8Wk50VQdvVbxj54s0HlPUD8m30LAyf9DG1x0
+:c7_9Shr8NhB0-UGGEOzYbbfo7P_2iHTQZtWpV7HHEpRJx0dfb36t1DZBOfqWVrUtreRTZMOn_q1A
+:qZYabEvFi4JaoqeJMGqfYO_NGmR1JMwmADpsB-WljhXOB_bTtp4SL9mcOEuR9Fqa6OFb07Zd2EiK
+:HTZVrQrr8VL64o17Z4ttboXbPZfnkz3RFu-l0tisnmqStiiSpemcVpR-okUZYa_PdC4tg8li2tkN
+:iQeYUkqjk5k5jBRYoepMZ45wb5LEbuCEnqy5eLZj0jMsq8LODAx5QqI-q43E6Aqi1lLTzZcl-LiL
+:y1hH3R81l9HcR5zp9FHM8jCxPKRpB3AYi52eENgO2TbrdtEJkLIKWYl4P4o7Nm-k1l0y380SuqBi
+:jubezfACSxN2TrOUbdatI-Y_zA3ADB1fE0zK8rA8Cxtn0TuAbmyQVRgwkqp6eszQR8vXUPMf5hB-
+:2mMrEL0ryeokG6yDNAMcexFHihdITzFbimXpH_XeMhzX6vlux4ZCfrOPRsdhidNoBoz5QJ0Jegaw
+:IIWWZ0PDCubNg-f7k7ZVC2QjhJrfVyegYY8VdULPE5KlJtYgpplmffdZfAi1fBRVS6p3YHeOVPrx
+:fousyUL2kslatTAexi_G0olG8K8gmxZcr8CkHNoZAXNfbmVyaXreOwy8nkO6hWqu9niT0C99XuJe
+:E5-SyCI_bxcnB1J9LDxYpUsPsElN7idx0Rm03CNxD2L0fO4TyE-iXh5xaoyYx5pIGDWyKAN_GMNm
+:u9A_A70NoMujSx20apGMbUPrSxZnIp6R4LOOo3qyl4QzP9T8oGuea4_BhX8uXqEvz5QcaYVJmjcM
+:-3-RlsUZa_nla_nd0DjJ1L0wXkW_RQOHvzv6VPwGC26_wsD_j4E1hZYPkSg2eTVmcW_qaTrxZBmc
+:GtQYAIeYw8zgXECS6BJ5TDNEDeSCiRyfQq0gy2GNZANCaBxmo90orHGFVIs5fB8fzhdAHz8FnUKw
+:ZJ375gj4oCG_qOKDoZIV4AzG8x2kmo2JWkk5pxZ9uATLpJtYWBGrQJMojvbQbmGI33yzHn4Vbbdg
+:H-qglVcLXrbrEqtITX4eTuvZM_HdYOorjHHN0n6n35-RaURmW82RU6CiS1Qj3eP_3AgJOKYoP97i
+:OAep0Gk_Y5tJpvhxmMAelffJCMdDFia84I7UhezfZxSH9nknc53aVD4sgE453oN6Ox-SZTeGq5I5
+:aYRoVgiibVwJNQqmo5AZSQkkkF1-TxnHVRKnTrHayaAYkksO5cXiS43i8SNlpZOacIV_IflxNDy1
+:L5XuSNTyWZqu0glh8hmu3LFIamExcL5IViPy5XphURXK4mgD9xDDpbtkQpapHLKbsm223XL4uEpK
+:C6UJtJq0KC3KGz-qgWyxD_9YOiY1QqhIiCJh4n5Jj3gHI_kDckD95EbORIPlfixUMWCjg0rJA25Q
+:-QzD4CFEiMNEfpy3o71VXgxFRE93sJwfI_NCEzNjJfGRLkg2ZP6Cn7KBT_92Qx2_6H73xquO-p07
+:qkChSkULld1jMziOlVRLs0gK-LFM6tCAyTCNRdgCw9xzCOZ6yRY9qlXwJd_r4Nfp220wBAmQDvmk
+:AX_INx5ViEpDhuEJezuEddBOro1uQyV44h6Y4QVaiQ6mCK-yknnuHndIF8CP5LAfOy7w1aydZFPa
+:RBqPxjMoeV2LGjIv61KFc7m8Xtwr1koey3WCCWflyaxBlIwzvAGCuEfQIYsUlXHBwrB9gXDt_Drm
+:ED_BFyOkmuOTglZuIU_JvGReXMI_kNeC3ZbMR4iVpbI-rBWl87_KUNbZLzCFTnxIOtk_jEmzxIGS
+:eVUMU8tM4jzI57aVdbYG4LP5ItEO3yfKEk0yk6BVeHLVLEjaIQqU90pj2SydE2_ah3BBtIh2S_2U
+:5bI1zkNPErCfBgg-GI1FsmJogEDUqHbZPm3nd8UjfLIwTMuEFnYg3iIrUCEZJWPkOR6oUlQn46XB
+:Nku2PTbJ8nhigRGHR7bZknA-TbynDFOlioMlo6IiSal9MDyQl8trbR6KLvawp2xUNC2rtB2Sh8hm
+:FYX2Xnbttj5CKA6ItbRaOOBCYZU3SL5alV1bkvmIA8Q6xRSvIx9McT-Z4e8JIaIV0bbs03Gpmm8R
+:Ban-Ew
+-----END KYUMEI SAMPLES (4338 chars, crc32 9b201d7b)-----

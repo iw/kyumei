@@ -1,0 +1,271 @@
+# Reviewed additions to generated SDK metric claims (generated/sdk-metrics.toml).
+#
+# The SDKs attach tags where a metric is recorded, so the generated claims have no labels.
+# Each annotation below adds what a reviewer read at the recording sites of the Core, Go and
+# Java SDKs: the label set, a gauge's unit, notes, and the provenance for them. Every metric
+# a diagnostic signal reads needs a reviewed label set, because the validator checks the
+# signal's label constraints against it.
+
+[[annotation]]
+claim = "sdk.worker_task_slots_available"
+unit = "count"
+labels = [
+  { name = "worker_type", values = ["WorkflowWorker", "ActivityWorker", "LocalActivityWorker", "NexusWorker"], purpose = "Which kind of task the slots execute." },
+  { name = "namespace" },
+  { name = "task_queue", purpose = "Task Queue name (SDK label key; the server uses `taskqueue`)." },
+]
+notes = [
+  "Slots reserved by an in-flight poll but not yet used count as available.",
+  "Core omits the gauge when the slot supplier cannot report availability; the default fixed-size supplier reports it.",
+  "The Java SDK publishes it only when the slot supplier has a maximum.",
+]
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 744, excerpt = "MetricKeyValue::new(KEY_WORKER_TYPE, \"WorkflowWorker\")" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerMetricsTag.java", line = 7, excerpt = "WORKFLOW_WORKER(\"WorkflowWorker\")," },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/TrackingSlotSupplier.java", line = 107, excerpt = "if (maximumSlots().isPresent()) {" },
+]
+
+[[annotation]]
+claim = "sdk.num_pollers"
+unit = "count"
+labels = [
+  { name = "poller_type", values = ["workflow_task", "sticky_workflow_task", "workflow_sticky_task", "activity_task", "nexus_task"], purpose = "Core uses `sticky_workflow_task`; Go and Java use `workflow_sticky_task` for sticky Workflow Task pollers." },
+  { name = "namespace" },
+  { name = "task_queue" },
+]
+notes = ["This metric has a `poller_type` label, not `worker_type`."]
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 723, excerpt = "MetricKeyValue::new(KEY_POLLER_TYPE, \"workflow_task\")" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 726, excerpt = "MetricKeyValue::new(KEY_POLLER_TYPE, \"sticky_workflow_task\")" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/constants.go", line = 91, excerpt = "PollerTypeWorkflowStickyTask = \"workflow_sticky_task\"" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/PollerTypeMetricsTag.java", line = 8, excerpt = "WORKFLOW_STICKY_TASK(\"workflow_sticky_task\")," },
+]
+
+[[annotation]]
+claim = "sdk.workflow_task_schedule_to_start_latency"
+labels = [
+  { name = "namespace" },
+  { name = "task_queue" },
+  { name = "workflow_type", purpose = "The Go SDK sets it; the Java SDK sets it to `none` on this metric; Core does not set it." },
+]
+notes = [
+  "Both timestamps are set by the server's History service, so the value includes any delay before the task reached Matching.",
+  "Recorded only for tasks received by polling, not for Workflow Tasks returned inline on completion.",
+  "Core's default buckets are 100, 500, 1000, 5000, 10000, 100000 and 1000000 ms, so quantiles between 10 s and 100 s are interpolated.",
+  "The Java SDK records sticky-queue polls with `task_queue=\"<queue>:sticky\"`, so a filter on the Task Queue's name covers normal polls only.",
+]
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/wft_poller.rs", line = 221, excerpt = "if let Some(dur) = wft.sched_to_start() {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowPollTask.java", line = 67, excerpt = ".put(MetricsTag.TASK_QUEUE, String.format(\"%s:%s\", taskQueue, \"sticky\"))" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/MetricsTag.java", line = 75, excerpt = ".put(WORKFLOW_TYPE, DEFAULT_VALUE)" },
+]
+
+[[annotation]]
+claim = "sdk.workflow_task_queue_poll_succeed"
+labels = [
+  { name = "namespace" },
+  { name = "task_queue" },
+  { name = "workflow_type", purpose = "Go SDK only: the type of the Workflow whose task the poll returned. Core and Java count successful polls without it." },
+]
+notes = [
+  "Core labels sticky-queue polls with the normal Task Queue name by default, so sticky and normal polls are counted together.",
+  "The Java SDK labels sticky-queue polls `task_queue=\"<queue>:sticky\"`, so a filter on the Task Queue's name counts normal polls only.",
+]
+provenance = [
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowPollTask.java", line = 67, excerpt = ".put(MetricsTag.TASK_QUEUE, String.format(\"%s:%s\", taskQueue, \"sticky\"))" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 1224, excerpt = "metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(response.WorkflowType.GetName()))" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 1225, excerpt = "metricsHandler.Counter(metrics.WorkflowTaskQueuePollSucceedCounter).Inc(1)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowPollTask.java", line = 206, excerpt = "metricsScope.counter(MetricsType.WORKFLOW_TASK_QUEUE_POLL_SUCCEED_COUNTER).inc(1);" },
+]
+
+[[annotation]]
+claim = "sdk.workflow_task_queue_poll_empty"
+labels = [{ name = "namespace" }, { name = "task_queue" }]
+notes = [
+  "Core labels sticky-queue polls with the normal Task Queue name by default; idle sticky pollers therefore also produce empty polls here.",
+  "The Java SDK labels sticky-queue polls `task_queue=\"<queue>:sticky\"`.",
+]
+provenance = [
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowPollTask.java", line = 67, excerpt = ".put(MetricsTag.TASK_QUEUE, String.format(\"%s:%s\", taskQueue, \"sticky\"))" },
+]
+
+[[annotation]]
+claim = "sdk.long_request_failure"
+labels = [
+  { name = "operation", purpose = "RPC method name, e.g. PollWorkflowTaskQueue." },
+  { name = "status_code", purpose = "gRPC status code in screaming snake case, e.g. RESOURCE_EXHAUSTED; Core also uses TRANSPORT_ERROR." },
+  { name = "namespace" },
+  { name = "task_queue" },
+]
+notes = ["Counts every failed attempt, including ones the SDK retries."]
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 172, excerpt = "const KEY_SVC_METHOD: &str = \"operation\";" },
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 174, excerpt = "const KEY_STATUS_CODE: &str = \"status_code\";" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 40, excerpt = "new ImmutableMap.Builder<String, String>(1).put(OPERATION_NAME, name).build();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 125, excerpt = ".put(STATUS_CODE, code.name())" },
+]
+
+[[annotation]]
+claim = "sdk.activity_schedule_to_start_latency"
+labels = [
+  { name = "namespace" },
+  { name = "task_queue" },
+  { name = "activity_type", purpose = "Only the Go SDK sets it on this metric." },
+  { name = "workflow_type", purpose = "Only the Go SDK sets it on this metric." },
+]
+notes = [
+  "Measured from the current attempt's scheduled time to its started time, both set by the server's History service, so a retry is measured from when it was scheduled again and the value includes any delay before the task reached Matching.",
+]
+provenance = [
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 1435, excerpt = "scheduleToStartLatency := response.GetStartedTime().AsTime().Sub(response.GetCurrentAttemptScheduledTime().AsTime())" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 1433, excerpt = "metricsHandler := atp.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, atp.taskQueueName))" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/ActivityPollTask.java", line = 127, excerpt = "response.getStartedTime(), response.getCurrentAttemptScheduledTime()));" },
+  { source = "sdk-core-acac9e3f", path = "crates/protos/src/protos/mod.rs", line = 2964, excerpt = "sched_to_start_impl!(current_attempt_scheduled_time);" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/activities.rs", line = 726, excerpt = "if let Some(dur) = task.resp.sched_to_start() {" },
+]
+
+[[annotation]]
+claim = "sdk.request_failure"
+labels = [
+  { name = "operation", purpose = "RPC method name, e.g. StartWorkflowExecution." },
+  { name = "status_code", purpose = "gRPC status code in screaming snake case, e.g. RESOURCE_EXHAUSTED." },
+  { name = "namespace" },
+]
+notes = ["Long polls are counted in long_request_failure instead."]
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 172, excerpt = "const KEY_SVC_METHOD: &str = \"operation\";" },
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 174, excerpt = "const KEY_STATUS_CODE: &str = \"status_code\";" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/grpc.go", line = 85, excerpt = "failureMetric := TemporalRequestFailure" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/grpc.go", line = 87, excerpt = "failureMetric = TemporalLongRequestFailure" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/grpc.go", line = 92, excerpt = "handler = handler.WithTags(RequestFailureCodeTags(errStatus.Code()))" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/tags.go", line = 126, excerpt = "return \"RESOURCE_EXHAUSTED\"" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/constants.go", line = 83, excerpt = "RequestFailureCode      = \"status_code\"" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 125, excerpt = ".put(STATUS_CODE, code.name())" },
+]
+
+
+[[annotation]]
+claim = "sdk.workflow_task_execution_failed"
+labels = [
+  { name = "failure_reason", values = ["NonDeterminismError", "WorkflowError", "GrpcMessageTooLarge", "PayloadsTooLarge", "RequestTooLarge"], purpose = "NonDeterminismError for a replay that does not match history; WorkflowError for other failures of Workflow code; the rest for a completion too large to send." },
+  { name = "namespace" },
+  { name = "task_queue" },
+  { name = "workflow_type" },
+]
+notes = [
+  "Counted for every failed attempt, including the retries the SDK does not report to the server (sdk.wft-failures-counted-every-attempt).",
+  "The Go SDK and Core use PayloadsTooLarge; the Java SDK and Core use RequestTooLarge.",
+]
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 720, excerpt = "const KEY_TASK_FAILURE_TYPE: &str = \"failure_reason\";" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 773, excerpt = "FailureReason::Nondeterminism => \"NonDeterminismError\".to_owned()," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 774, excerpt = "FailureReason::Workflow => \"WorkflowError\".to_owned()," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 779, excerpt = "FailureReason::GrpcMessageTooLarge => \"GrpcMessageTooLarge\".to_owned()," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 780, excerpt = "FailureReason::PayloadsTooLarge => \"PayloadsTooLarge\".to_owned()," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 782, excerpt = "FailureReason::RequestTooLarge => \"RequestTooLarge\".to_owned()," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 96, excerpt = "MetricKeyValue::new(KEY_NAMESPACE, namespace)," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 97, excerpt = "task_queue(tq)," },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/run_cache.rs", line = 69, excerpt = ".with_new_attrs([workflow_type(pwft.work.workflow_type.clone())]);" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/constants.go", line = 79, excerpt = "FailureReasonTagName    = \"failure_reason\"" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 579, excerpt = "metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 631, excerpt = "failureReason = \"PayloadsTooLarge\"" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 684, excerpt = "failureReason = \"GrpcMessageTooLarge\"" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/MetricsTag.java", line = 26, excerpt = "public static final String TASK_FAILURE_TYPE = \"failure_reason\";" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/MetricsTag.java", line = 29, excerpt = "public static final String TASK_FAILURE_VALUE_REQUEST_TOO_LARGE = \"RequestTooLarge\";" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowWorker.java", line = 529, excerpt = "workerMetricsScope.tagged(ImmutableMap.of(MetricsTag.WORKFLOW_TYPE, workflowType));" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/Worker.java", line = 141, excerpt = "new ImmutableMap.Builder<String, String>(1).put(MetricsTag.TASK_QUEUE, taskQueue).build();" },
+]
+
+[[annotation]]
+claim = "sdk.workflow_task_replay_latency"
+labels = [{ name = "namespace" }, { name = "task_queue" }, { name = "workflow_type" }]
+notes = [
+  "The time a Workflow Task spends replaying history before it reaches new events: close to zero for a Workflow the Worker had cached.",
+  "Core records it only for the part of a task in which replay ends.",
+]
+provenance = [
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 1072, excerpt = "metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 1075, excerpt = "metricsTimer := metricsHandler.Timer(metrics.WorkflowTaskReplayLatency)" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 1177, excerpt = "metricsTimer.Record(time.Since(start))" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowRunTaskHandler.java", line = 253, excerpt = "Stopwatch sw = metricsScope.timer(MetricsType.WORKFLOW_TASK_REPLAY_LATENCY).start();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowRunTaskHandler.java", line = 285, excerpt = "if (!timerStopped && !workflowStateMachines.isReplaying()) {" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/machines/workflow_machines.rs", line = 830, excerpt = "if was_replaying && !self.replaying {" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/machines/workflow_machines.rs", line = 831, excerpt = "self.metrics.wf_task_replay_latency(replay_start.elapsed());" },
+]
+
+[[annotation]]
+claim = "sdk.sticky_cache_hit"
+labels = [{ name = "namespace" }, { name = "task_queue" }, { name = "workflow_type" }]
+notes = ["Counted for a sticky task whose Workflow the Worker had cached."]
+provenance = [
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 783, excerpt = "metricsHandler := wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 805, excerpt = "metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 82, excerpt = "workflowTypeScope.counter(MetricsType.STICKY_CACHE_HIT).inc(1);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 81, excerpt = "options.getMetricsScope().tagged(ImmutableMap.of(MetricsTag.WORKFLOW_TYPE, workflowType));" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/managed_run.rs", line = 248, excerpt = "self.metrics.sticky_cache_hit();" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/run_cache.rs", line = 69, excerpt = ".with_new_attrs([workflow_type(pwft.work.workflow_type.clone())]);" },
+]
+
+[[annotation]]
+claim = "sdk.sticky_cache_miss"
+labels = [{ name = "namespace" }, { name = "task_queue" }, { name = "workflow_type", purpose = "Go and Java set it; Core does not." }]
+notes = ["Counted only for a sticky task whose Workflow the Worker no longer cached; a task that carries the whole history is never a miss (sdk.full-history-replay)."]
+provenance = [
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 838, excerpt = "metricsHandler.Counter(metrics.StickyCacheMiss).Inc(1)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 91, excerpt = "workflowTypeScope.counter(MetricsType.STICKY_CACHE_MISS).inc(1);" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/workflow_stream.rs", line = 272, excerpt = "self.metrics.sticky_cache_miss();" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/telemetry/metrics.rs", line = 97, excerpt = "task_queue(tq)," },
+]
+
+[[annotation]]
+claim = "sdk.sticky_cache_size"
+unit = "count"
+labels = [
+  { name = "namespace" },
+  { name = "task_queue", purpose = "Core and Go set it; Java does not." },
+  { name = "workflow_type", purpose = "Go only: the type of the task that last updated the gauge." },
+]
+notes = [
+  "Go reports the size of the whole process's cache, shared by its Workers, under the labels of the task that last updated it; Java reports the worker factory's cache, labelled with the namespace only.",
+  "A Go cache holds at most one Workflow fewer than its configured size.",
+]
+provenance = [
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 788, excerpt = "metricsHandler.Gauge(metrics.StickyCacheSize).Update(float64(wth.cache.getWorkflowCache().Size()))" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_worker_cache.go", line = 79, excerpt = "newcache := cache.New(cacheSize-1, &cache.Options{" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 60, excerpt = "this.metricsScope.gauge(MetricsType.STICKY_CACHE_SIZE).update(size());" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/MetricsType.java", line = 184, excerpt = "// gauge, tagged with namespace" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/run_cache.rs", line = 61, excerpt = "self.metrics.cache_size(cur_num_cached_runs as u64);" },
+]
+
+[[annotation]]
+claim = "sdk.workflow_active_thread_count"
+purpose = "Threads of a Java worker factory's Workflow pool in use, the threads of cached Workflows included."
+unit = "count"
+labels = [
+  { name = "namespace" },
+  { name = "task_queue", purpose = "Always none: the pool belongs to the worker factory." },
+]
+notes = ["Java only. Held at maxWorkflowThreadCount (600 by default) while the pool is exhausted (sdk.java-workflow-thread-pool)."]
+provenance = [
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/ActiveThreadReportingExecutor.java", line = 31, excerpt = "int tasksCount = tasksInFlight.incrementAndGet();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/ActiveThreadReportingExecutor.java", line = 32, excerpt = "metricsScope.gauge(MetricsType.WORKFLOW_ACTIVE_THREAD_COUNT).update(tasksCount);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/ActiveThreadReportingExecutor.java", line = 36, excerpt = "tasksCount = tasksInFlight.decrementAndGet();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactory.java", line = 133, excerpt = ".tagged(MetricsTag.defaultTags(namespace));" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactory.java", line = 153, excerpt = "new ActiveThreadReportingExecutor(this.workflowThreadPool, this.metricsScope);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/MetricsTag.java", line = 72, excerpt = ".put(TASK_QUEUE, DEFAULT_VALUE)" },
+]
+
+[[annotation]]
+claim = "sdk.sticky_cache_thread_forced_eviction"
+purpose = "Cached Workflows a Java Worker evicted to free a Workflow thread."
+labels = [
+  { name = "namespace" },
+  { name = "task_queue" },
+  { name = "workflow_type", purpose = "The type of the Workflow that needed the thread, not of the one evicted." },
+]
+notes = ["Java only. Not counted while the Workflow that needs the thread is replaying (sdk.java-thread-forced-eviction)."]
+provenance = [
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 129, excerpt = "workflowTypeScope.counter(MetricsType.STICKY_CACHE_THREAD_FORCED_EVICTION).inc(1);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 108, excerpt = "* @param workflowTypeScope accepts workflow metric scope (tagged with task queue and workflow" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/sync/WorkflowThreadImpl.java", line = 228, excerpt = "context.getWorkflowExecution(), workflowContext.getMetricsScope());" },
+]

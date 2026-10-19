@@ -1,0 +1,21 @@
+[package]
+name = "kyumei-samples"
+description = "Kyumei sample blocks: exact metric samples as a short, checksummed block of text that survives a terminal copy, and the request codes that ask for them."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+crc32fast.workspace = true
+miniz_oxide.workspace = true
+jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

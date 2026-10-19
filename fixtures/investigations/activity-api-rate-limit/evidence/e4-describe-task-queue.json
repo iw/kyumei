@@ -1,0 +1,52 @@
+{
+ "pollers": [
+  {
+   "lastAccessTime": "2026-10-01T14:31:58.455Z",
+   "identity": "2200@shipment-worker-k1",
+   "ratePerSecond": 100000
+  },
+  {
+   "lastAccessTime": "2026-10-01T14:31:57.516Z",
+   "identity": "2201@shipment-worker-k2",
+   "ratePerSecond": 100000
+  },
+  {
+   "lastAccessTime": "2026-10-01T14:31:56.577Z",
+   "identity": "2202@shipment-worker-k3",
+   "ratePerSecond": 100000
+  },
+  {
+   "lastAccessTime": "2026-10-01T14:31:55.638Z",
+   "identity": "2203@shipment-worker-k4",
+   "ratePerSecond": 100000
+  },
+  {
+   "lastAccessTime": "2026-10-01T14:31:54.699Z",
+   "identity": "2204@shipment-worker-k5",
+   "ratePerSecond": 100000
+  },
+  {
+   "lastAccessTime": "2026-10-01T14:31:53.760Z",
+   "identity": "2205@shipment-worker-k6",
+   "ratePerSecond": 100000
+  }
+ ],
+ "stats": {
+  "approximateBacklogCount": "2610",
+  "approximateBacklogAge": "46.218s",
+  "tasksAddRate": 64.3,
+  "tasksDispatchRate": 49.7
+ },
+ "statsByPriorityKey": {
+  "3": {
+   "approximateBacklogCount": "2610",
+   "approximateBacklogAge": "46.218s",
+   "tasksAddRate": 64.3,
+   "tasksDispatchRate": 49.7
+  }
+ },
+ "effectiveRateLimit": {
+  "requestsPerSecond": 50,
+  "rateLimitSource": "RATE_LIMIT_SOURCE_API"
+ }
+}

@@ -1,0 +1,552 @@
+# Diagnostic: Workflows stop progressing because their Workflow Tasks fail.
+#
+# History retries a failed Workflow Task without limit, so a Workflow whose
+# task keeps failing makes no progress. The investigation first asks why the
+# tasks fail, from the reasons the Workers count for every failed attempt:
+# a replay that no longer matches history (nondeterminism), an error in
+# Workflow code, or a completion too large to send. If the Workers counted
+# no failures, it asks whether the tasks time out instead. Then it asks
+# whether the failing Workflows are stuck: whether every retry fails again.
+#
+# The server's own failure counts are a fallback only. SDKs report a task's
+# first failed attempt and let the retries time out, so those counts go flat
+# while Workflows stay stuck, and they never rule a cause out.
+
+[diagnostic]
+id = "workflow-task-failures"
+title = "Workflow Tasks failing"
+summary = "Workflows stop progressing because their Workflow Tasks fail, and History keeps retrying them."
+# Before the latency diagnostics: a description that mentions failing
+# Workflow Tasks or nondeterminism is about failures, even when it also
+# mentions slowness or a backlog.
+precedence = 7
+
+[diagnostic.path]
+description = "The path of a Workflow Task: History schedules it, Matching dispatches it to a Worker, the Worker replays the Workflow's history and runs its code, and History records the result and retries a task that failed or timed out."
+layers = ["history", "matching", "workers"]
+
+[[symptom]]
+id = "workflow-task-failures"
+title = "Workflow Tasks are failing"
+patterns = [
+  "non[- ]?determinis(m|tic)",
+  "TMPRL1100",
+  "workflow ?task ?(failed|timed ?out)\\b",
+  "workflow[- ]tasks?\\b.{0,60}\\b(fail|failing|failed|failures?|retry|retrying|retries)\\b",
+  "\\bwft\\b.{0,40}\\b(fail|failing|failed|failures?|retry|retrying|retries)\\b",
+  "workflows?\\b.{0,60}\\b(stopped|stop|not|no longer)\\b.{0,12}\\bprogress(ing)?\\b",
+]
+signal = "wft_failures"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "failure-kinds"
+order = 1
+title = "Failure reasons"
+question = "Why do Workflow Tasks fail?"
+
+[[stage]]
+id = "timeouts"
+order = 2
+title = "Workflow Task timeouts"
+question = "Do Workflow Tasks time out instead of failing?"
+
+[[stage]]
+id = "retries"
+order = 3
+title = "Retries"
+question = "Are the failing Workflows stuck in retries?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "wft_failures"
+title = "Failed Workflow Task attempts"
+unit = "per_second"
+description = "Workflow Task attempts that failed on the Workers, per second, whatever the reason."
+combine = "sum"
+source = [{ claim = "sdk.workflow_task_execution_failed", transform = "rate" }]
+
+[[signal]]
+id = "nondeterminism_failures"
+title = "Attempts failed by nondeterminism"
+unit = "per_second"
+description = "Failed Workflow Task attempts the Workers counted with failure_reason NonDeterminismError, per second."
+combine = "sum"
+source = [{ claim = "sdk.workflow_task_execution_failed", labels = { failure_reason = "NonDeterminismError" }, transform = "rate" }]
+
+[[signal]]
+id = "workflow_error_failures"
+title = "Attempts failed by Workflow code"
+unit = "per_second"
+description = "Failed Workflow Task attempts the Workers counted with failure_reason WorkflowError, errors in Workflow code other than nondeterminism, per second."
+combine = "sum"
+source = [{ claim = "sdk.workflow_task_execution_failed", labels = { failure_reason = "WorkflowError" }, transform = "rate" }]
+
+[[signal]]
+id = "too_large_failures"
+title = "Attempts failed by size"
+unit = "per_second"
+description = "Failed Workflow Task attempts the Workers counted as too large to send (GrpcMessageTooLarge, PayloadsTooLarge or RequestTooLarge), per second."
+combine = "sum"
+source = [
+  { claim = "sdk.workflow_task_execution_failed", labels = { failure_reason = "GrpcMessageTooLarge" }, transform = "rate" },
+  { claim = "sdk.workflow_task_execution_failed", labels = { failure_reason = "PayloadsTooLarge" }, transform = "rate" },
+  { claim = "sdk.workflow_task_execution_failed", labels = { failure_reason = "RequestTooLarge" }, transform = "rate" },
+]
+
+[[signal]]
+id = "reported_nondeterminism"
+title = "Nondeterminism failures reported to History"
+unit = "per_second"
+description = "Workflow Task failures with cause NonDeterministicError that Workers reported to History, per second: the first failed attempt of each failing task."
+combine = "sum"
+source = [{ claim = "server.failed_workflow_tasks", labels = { operation = "RespondWorkflowTaskFailed", failure = "NonDeterministicError" }, transform = "rate" }]
+
+[[signal]]
+id = "reported_code_errors"
+title = "Workflow code failures reported to History"
+unit = "per_second"
+description = "Workflow Task failures with cause WorkflowWorkerUnhandledFailure that Workers reported to History, per second: the first failed attempt of each failing task."
+combine = "sum"
+source = [{ claim = "server.failed_workflow_tasks", labels = { operation = "RespondWorkflowTaskFailed", failure = "WorkflowWorkerUnhandledFailure" }, transform = "rate" }]
+
+[[signal]]
+id = "wft_timeouts"
+title = "Workflow Task timeouts"
+unit = "per_second"
+description = "Workflow Tasks History timed out because no Worker completed or failed them in time, per second."
+combine = "sum"
+source = [{ claim = "server.start_to_close_timeout", labels = { operation = "TimerActiveTaskWorkflowTaskTimeout" }, transform = "rate" }]
+
+[[signal]]
+id = "pending_attempt"
+title = "Attempt of a stuck Workflow's task"
+unit = "count"
+description = "The attempt of the pending Workflow Task of a Workflow that stopped progressing, from DescribeWorkflowExecution."
+source = [{ claim = "api.pending_workflow_task.attempt" }]
+
+[[signal]]
+id = "attempt_bucket"
+title = "Highest Workflow Task attempt started (bucket)"
+unit = "count"
+description = "The upper bound of the highest workflow_task_attempt bucket with a started Workflow Task in it, across the namespace: 2 means no task went past its second attempt, 5 that some reached attempt 3 to 5."
+source = [{ claim = "server.workflow_task_attempt" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "nondeterminism"
+stage = "failure-kinds"
+primary = true
+layer = "workers"
+title = "Nondeterminism"
+question = "Replay rejecting history?"
+statement = "Replaying a Workflow's history on the Workers produces commands that do not match the events it records, usually because Workflow code changed in a way the Workflows already running cannot replay. The SDK fails the Workflow Task with a nondeterminism error."
+implication = "Run code that replays the existing histories: roll the change back, or keep the old path for running Workflows behind a version check."
+
+[[hypothesis]]
+id = "workflow-code-error"
+stage = "failure-kinds"
+layer = "workers"
+title = "Workflow code failing"
+question = "Workflow code throwing?"
+statement = "Workflow code raises an error or panics, other than a nondeterminism error, and the SDK fails the Workflow Task rather than the Workflow."
+implication = "Fix the code: History keeps retrying the tasks, so the Workflows resume on fixed Workers."
+
+[[hypothesis]]
+id = "completion-too-large"
+stage = "failure-kinds"
+layer = "workers"
+title = "Completions too large"
+question = "Completions too large?"
+statement = "A Workflow Task's completion, its commands and their payloads, is too large to send, and the SDK fails the task as too large."
+
+[[hypothesis]]
+id = "wft-timeouts"
+stage = "timeouts"
+primary = true
+layer = "workers"
+title = "Workflow Tasks timing out"
+question = "Tasks timing out?"
+statement = "Workers start the Workflow Tasks but neither complete nor fail them before the start-to-close timeout, for example because a Worker crashes or hangs while processing them, so History times them out and retries them."
+# Retries of failing tasks also end as timeouts, because SDKs report only a
+# task's first failed attempt; timeouts are a cause of their own only when
+# the Workers counted no failures.
+activation = { all = [
+  { hypothesis = "nondeterminism", state = ["eliminated"] },
+  { hypothesis = "workflow-code-error", state = ["eliminated"] },
+  { hypothesis = "completion-too-large", state = ["eliminated"] },
+] }
+
+[[hypothesis]]
+id = "stuck-retrying"
+stage = "retries"
+primary = true
+layer = "history"
+title = "Workflows stuck in retries"
+question = "Workflows stuck retrying?"
+statement = "The failing Workflow Tasks fail or time out again on every retry. History retries them without limit, so each affected Workflow makes no progress, and from the third attempt its queries and Updates fail, until the cause is fixed."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "failures-by-reason"
+stage = "failure-kinds"
+title = "Failed Workflow Task attempts, by failure reason"
+why = "Workers count every failed Workflow Task attempt, the retries they do not report included, with its reason: a nondeterminism error, an error in Workflow code, or a completion too large to send. One breakdown says why the tasks fail, and reasons missing from it did not occur. The time before the incident shows whether the failures began with it."
+signals = ["nondeterminism_failures", "workflow_error_failures", "too_large_failures"]
+distinguishes = ["nondeterminism", "workflow-code-error", "completion-too-large"]
+cost = 1
+group_by = ["failure_reason"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Failed Workflow Task attempts per second, by failure reason (include at least 15 minutes before the incident)"
+sdk_family = ["core", "go"]
+body = "sum by (failure_reason) (rate(temporal_workflow_task_execution_failed{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.workflow_task_execution_failed", "sdk.wft-failures-counted-every-attempt"]
+note = "the name gains _total with Core's counters_total_suffix, tally's NewPrometheusNamingScope or OpenTelemetry's UseMonotonicCounters; if the query returns no series, say so: an empty result is not the same as zero"
+
+[[request.collect]]
+method = "promql"
+label = "Failed Workflow Task attempts per second, by failure reason (include at least 15 minutes before the incident)"
+sdk_family = "java"
+body = "sum by (failure_reason) (rate(temporal_workflow_task_execution_failed_total{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.workflow_task_execution_failed", "sdk.wft-failures-counted-every-attempt", "sdk.java-metrics-naming"]
+note = "if the query returns no series, say so: an empty result is not the same as zero"
+
+[[request]]
+id = "reported-failures"
+stage = "failure-kinds"
+title = "Workflow Task failures reported to History, by cause"
+why = "If the Workers' metrics are out of reach, History's count of the failures Workers report gives the cause. It counts only each task's first failed attempt, so it shows Workflows starting to fail, not how long they keep failing, and a cause missing from it is not ruled out."
+signals = ["reported_nondeterminism", "reported_code_errors"]
+distinguishes = ["nondeterminism", "workflow-code-error"]
+cost = 2
+requires = ["server-metrics"]
+group_by = ["failure"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Workflow Task failures reported to History per second, by cause (include at least 15 minutes before the incident)"
+body = "sum by (failure) (rate(failed_workflow_tasks{operation=\"RespondWorkflowTaskFailed\", namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.failed_workflow_tasks", "sdk.wft-failure-reported-once"]
+note = "with the OpenTelemetry metrics framework the counter is named failed_workflow_tasks_total"
+
+[[request]]
+id = "wft-timeouts"
+stage = "timeouts"
+title = "Workflow Task timeouts"
+why = "The Workers counted no failed Workflow Tasks, so the tasks either completed or timed out. History counts every Workflow Task it times out because no Worker answered in time: a Worker that crashes or hangs while processing a task leaves only this trace."
+signals = ["wft_timeouts"]
+distinguishes = ["wft-timeouts"]
+cost = 1
+requires = ["server-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Workflow Task start-to-close timeouts per second (include at least 15 minutes before the incident)"
+body = "sum(rate(start_to_close_timeout{operation=\"TimerActiveTaskWorkflowTaskTimeout\", namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.start_to_close_timeout", "sdk.wft-failure-reported-once"]
+note = "with the OpenTelemetry metrics framework the counter is named start_to_close_timeout_total"
+
+[[request]]
+id = "retry-attempts"
+stage = "retries"
+title = "How often the failing Workflow Tasks have been attempted"
+why = "History retries a failed Workflow Task without limit and writes no history events for the retries, so a stuck Workflow's history shows one failure however long it has been stuck. The attempt of its pending task shows whether the retries fail again."
+signals = ["pending_attempt", "attempt_bucket"]
+distinguishes = ["stuck-retrying"]
+cost = 2
+window = { pad_before_minutes = 0, pad_after_minutes = 0, guidance = "Describe a Workflow while it is still stuck, and note the time." }
+
+[[request.collect]]
+method = "temporal-cli"
+label = "DescribeWorkflowExecution for a Workflow that stopped progressing, as JSON"
+body = "temporal workflow describe --namespace {namespace} --workflow-id <workflow-id> -o json"
+claims = ["cli.workflow-describe", "api.pending_workflow_task.attempt", "behaviour.wft-retries-leave-no-events"]
+note = "record when you captured it; pendingWorkflowTask.attempt is the attempt the task is on"
+
+[[request.collect]]
+method = "promql"
+label = "If you cannot run the CLI: the highest Workflow Task attempt History started, as a bucket bound"
+body = "histogram_quantile(1, sum by (le) (rate(workflow_task_attempt_bucket{namespace=\"{namespace}\"}[5m])))"
+unit = "count"
+claims = ["server.workflow_task_attempt", "heuristic.wft-attempt-stuck"]
+note = "the result is the upper bound of the highest bucket holding an attempt: 5 means some task reached attempt 3, 4 or 5. It covers every Workflow in the namespace"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "nondeterminism-failing"
+hypothesis = "nondeterminism"
+effect = "establishes"
+statement = "Workflow Tasks failed replay with nondeterminism errors, at {nondeterminism_failures.mean} on average, peaking at {nondeterminism_failures.max}."
+claims = ["heuristic.wft-failures-occurring", "sdk.nondeterminism-cause", "sdk.wft-failures-counted-every-attempt"]
+when = { signal = "nondeterminism_failures", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "no-nondeterminism"
+hypothesis = "nondeterminism"
+effect = "eliminates"
+statement = "No Workflow Task attempt failed with a nondeterminism error during the window (at most {nondeterminism_failures.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.wft-failures-occurring", "sdk.wft-failures-counted-every-attempt"]
+when = { all = [
+  { signal = "nondeterminism_failures", stat = "max", op = "le", value = 0.01 },
+  { signal = "nondeterminism_failures", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "nondeterminism-reported"
+hypothesis = "nondeterminism"
+effect = "establishes"
+statement = "Workers reported nondeterminism failures to History, up to {reported_nondeterminism.max}: each the first failed attempt of a Workflow's task."
+claims = ["heuristic.wft-failures-occurring", "server.failed_workflow_tasks", "sdk.wft-failure-reported-once"]
+when = { signal = "reported_nondeterminism", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "code-errors-failing"
+hypothesis = "workflow-code-error"
+effect = "establishes"
+statement = "Workflow Tasks failed with errors in Workflow code, at {workflow_error_failures.mean} on average, peaking at {workflow_error_failures.max}."
+claims = ["heuristic.wft-failures-occurring", "sdk.nondeterminism-cause", "sdk.wft-failures-counted-every-attempt"]
+when = { signal = "workflow_error_failures", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "no-code-errors"
+hypothesis = "workflow-code-error"
+effect = "eliminates"
+statement = "No Workflow Task attempt failed with an error in Workflow code during the window (at most {workflow_error_failures.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.wft-failures-occurring", "sdk.wft-failures-counted-every-attempt"]
+when = { all = [
+  { signal = "workflow_error_failures", stat = "max", op = "le", value = 0.01 },
+  { signal = "workflow_error_failures", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "code-errors-reported"
+hypothesis = "workflow-code-error"
+effect = "establishes"
+statement = "Workers reported failures of Workflow code to History, up to {reported_code_errors.max}: each the first failed attempt of a Workflow's task."
+claims = ["heuristic.wft-failures-occurring", "server.failed_workflow_tasks", "sdk.wft-failure-reported-once"]
+when = { signal = "reported_code_errors", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "too-large-failing"
+hypothesis = "completion-too-large"
+effect = "establishes"
+statement = "Workflow Tasks failed because their completions were too large to send, at {too_large_failures.mean} on average, peaking at {too_large_failures.max}."
+claims = ["heuristic.wft-failures-occurring", "sdk.workflow_task_execution_failed"]
+when = { signal = "too_large_failures", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "nothing-too-large"
+hypothesis = "completion-too-large"
+effect = "eliminates"
+statement = "No Workflow Task attempt failed for being too large during the window (at most {too_large_failures.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.wft-failures-occurring"]
+when = { all = [
+  { signal = "too_large_failures", stat = "max", op = "le", value = 0.01 },
+  { signal = "too_large_failures", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "timeouts-occurring"
+hypothesis = "wft-timeouts"
+effect = "establishes"
+statement = "History timed out Workflow Tasks that no Worker completed or failed in time, at {wft_timeouts.mean} on average, peaking at {wft_timeouts.max}, while the Workers counted no failures."
+claims = ["heuristic.wft-timeouts-occurring", "server.start_to_close_timeout", "sdk.wft-failures-counted-every-attempt"]
+when = { signal = "wft_timeouts", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "no-timeouts"
+hypothesis = "wft-timeouts"
+effect = "eliminates"
+statement = "History timed out no Workflow Task during the window (at most {wft_timeouts.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.wft-timeouts-occurring"]
+when = { all = [
+  { signal = "wft_timeouts", stat = "max", op = "le", value = 0.01 },
+  { signal = "wft_timeouts", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "pending-attempt-high"
+hypothesis = "stuck-retrying"
+effect = "establishes"
+statement = "The described Workflow's Workflow Task was on attempt {pending_attempt.last}: it had failed again on every retry, so the Workflow makes no progress until the cause is fixed."
+claims = ["heuristic.wft-attempt-stuck", "api.pending_workflow_task.attempt", "behaviour.wft-retried-without-limit"]
+when = { signal = "pending_attempt", stat = "last", op = "ge", value = 3 }
+
+[[rule]]
+id = "attempts-past-second"
+hypothesis = "stuck-retrying"
+effect = "establishes"
+statement = "History started Workflow Task attempts past the second, up to the bucket bounded by {attempt_bucket.max}: failing tasks failed again on their retries."
+claims = ["heuristic.wft-attempt-stuck", "server.workflow_task_attempt", "behaviour.wft-retried-without-limit"]
+when = { signal = "attempt_bucket", stat = "max", op = "gt", value = 2 }
+
+[[rule]]
+id = "attempts-resolved"
+hypothesis = "stuck-retrying"
+effect = "eliminates"
+statement = "No Workflow Task went past its second attempt during the window (highest bucket {attempt_bucket.max}): the first retry of each failed task succeeded."
+claims = ["heuristic.sustained-needs-samples", "heuristic.wft-attempt-stuck", "server.workflow_task_attempt"]
+when = { all = [
+  { signal = "attempt_bucket", stat = "max", op = "le", value = 2 },
+  { signal = "attempt_bucket", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "nondeterminism-stuck"
+title = "Nondeterminism: Workflows stuck replaying"
+statement = "Workflows stopped progressing because replaying their histories fails with nondeterminism errors: the Workers counted failed attempts at {nondeterminism_failures.mean} on average, peaking at {nondeterminism_failures.max}. History retries each failed task without limit, and the retries fail too."
+when = { all = [
+  { hypothesis = "nondeterminism", state = ["established"] },
+  { hypothesis = "stuck-retrying", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "nondeterminism_failures", stat = "baseline", op = "le", value = 0.01 }
+text = "No task failed this way before the incident (about {nondeterminism_failures.baseline}), so the failures began with it: code deployed to the Workers then is the likely change."
+
+[[conclusion.clause]]
+when = { signal = "pending_attempt", stat = "last", op = "ge", value = 3 }
+text = "The Workflow described was on attempt {pending_attempt.last}."
+
+[[conclusion.clause]]
+when = { signal = "attempt_bucket", stat = "max", op = "gt", value = 2 }
+text = "Across the namespace, History started Workflow Task attempts up to {attempt_bucket.max}, the upper bound of the highest histogram bucket reached."
+
+[[conclusion.recommendation]]
+text = "Run code that replays the existing histories: roll the Workers back to the previous build, or deploy the change behind a version check (patching) so that Workflows already running keep the old path. History keeps retrying the stuck tasks, so the Workflows resume once the Workers can replay them."
+caution = "A stuck Workflow retries when its current attempt times out: the Workflow Task timeout plus a backoff of up to history.workflowTaskRetryMaxInterval (10 minutes by default). Expect the Workflows to resume over that time, not at once."
+claims = ["sdk.nondeterminism-cause", "behaviour.wft-retried-without-limit", "dc.history.workflowTaskRetryMaxInterval"]
+
+[[conclusion.recommendation]]
+text = "Find the change from the failure message: nondeterminism errors begin with [TMPRL1100] and say which command or event no longer matches. A stuck Workflow's history keeps the WorkflowTaskFailed event of its first failed attempt, with that message."
+claims = ["sdk.nondeterminism-cause", "behaviour.wft-retries-leave-no-events"]
+
+[[conclusion.recommendation]]
+text = "Expect queries and Updates to these Workflows to fail with WorkflowNotReady until their tasks succeed."
+claims = ["behaviour.failing-wft-rejects-queries"]
+
+[[conclusion]]
+id = "code-error-stuck"
+title = "Workflow code failing: Workflows stuck"
+statement = "Workflows stopped progressing because their Workflow code fails: the Workers counted failed attempts at {workflow_error_failures.mean} on average, peaking at {workflow_error_failures.max}, with errors other than nondeterminism. The SDK fails the Workflow Task rather than the Workflow, and History retries it without limit: the retries fail too."
+when = { all = [
+  { hypothesis = "workflow-code-error", state = ["established"] },
+  { hypothesis = "stuck-retrying", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "workflow_error_failures", stat = "baseline", op = "le", value = 0.01 }
+text = "No task failed this way before the incident (about {workflow_error_failures.baseline}), so the failures began with it: code deployed to the Workers then is the likely change."
+
+[[conclusion.clause]]
+when = { signal = "pending_attempt", stat = "last", op = "ge", value = 3 }
+text = "The Workflow described was on attempt {pending_attempt.last}."
+
+[[conclusion.clause]]
+when = { signal = "attempt_bucket", stat = "max", op = "gt", value = 2 }
+text = "Across the namespace, History started Workflow Task attempts up to {attempt_bucket.max}, the upper bound of the highest histogram bucket reached."
+
+[[conclusion.recommendation]]
+text = "Find the error in a stuck Workflow's history: the WorkflowTaskFailed event of its first failed attempt carries the failure, with cause WorkflowWorkerUnhandledFailure. Fix the code and deploy it, or roll back; History keeps retrying the stuck tasks, so the Workflows resume on the fixed Workers."
+caution = "A stuck Workflow retries when its current attempt times out: the Workflow Task timeout plus a backoff of up to history.workflowTaskRetryMaxInterval (10 minutes by default). Expect the Workflows to resume over that time, not at once."
+claims = ["sdk.nondeterminism-cause", "behaviour.wft-retries-leave-no-events", "behaviour.wft-retried-without-limit", "dc.history.workflowTaskRetryMaxInterval"]
+
+[[conclusion.recommendation]]
+text = "Expect queries and Updates to these Workflows to fail with WorkflowNotReady until their tasks succeed."
+claims = ["behaviour.failing-wft-rejects-queries"]
+
+[[conclusion]]
+id = "completion-too-large"
+title = "Workflow Task completions too large"
+statement = "Workflow Tasks fail because their completions are too large to send: the Workers counted such failed attempts at {too_large_failures.mean} on average, peaking at {too_large_failures.max}."
+when = { hypothesis = "completion-too-large", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Find the Workflows whose commands carry large payloads, such as large Activity inputs, results or Signals, and pass references to data stored elsewhere instead."
+caution = "When the gRPC message itself is too large, History terminates the Workflow instead of retrying the task."
+claims = ["sdk.workflow_task_execution_failed", "behaviour.grpc-too-large-terminates"]
+
+[[conclusion]]
+id = "timeouts-stuck"
+title = "Workflow Tasks timing out: Workflows stuck"
+statement = "Workflows stopped progressing because their Workflow Tasks time out: History timed them out at {wft_timeouts.mean} on average, peaking at {wft_timeouts.max}, while the Workers counted no failures. A Worker that crashes, restarts or hangs while processing a task neither completes nor fails it, and History retries the task without limit: the retries time out too."
+when = { all = [
+  { hypothesis = "wft-timeouts", state = ["established"] },
+  { hypothesis = "stuck-retrying", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "pending_attempt", stat = "last", op = "ge", value = 3 }
+text = "The Workflow described was on attempt {pending_attempt.last}."
+
+[[conclusion.clause]]
+when = { signal = "attempt_bucket", stat = "max", op = "gt", value = 2 }
+text = "Across the namespace, History started Workflow Task attempts up to {attempt_bucket.max}, the upper bound of the highest histogram bucket reached."
+
+[[conclusion.recommendation]]
+text = "Check the Workers over the window for restarts, out-of-memory kills and stalls while processing these Workflows' tasks, and for tasks that take longer than the Workflow Task timeout, for example to replay a long history."
+claims = ["server.start_to_close_timeout", "behaviour.wft-retried-without-limit"]
+
+[[conclusion.recommendation]]
+text = "Expect queries and Updates to these Workflows to fail with WorkflowNotReady until their tasks succeed."
+claims = ["behaviour.failing-wft-rejects-queries"]
+
+[[conclusion]]
+id = "nondeterminism"
+title = "Nondeterminism"
+statement = "Workflow Tasks fail replay with nondeterminism errors: the Workers counted failed attempts at {nondeterminism_failures.mean} on average, peaking at {nondeterminism_failures.max}."
+when = { hypothesis = "nondeterminism", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "stuck-retrying", state = ["eliminated"] }
+text = "No task went past its second attempt, so the retries succeeded: the same history replayed differently on different attempts. That happens when Workers run different versions of the code, as during a rolling deploy, or when Workflow code is not deterministic itself."
+
+[[conclusion.recommendation]]
+text = "Find the change from the failure message: nondeterminism errors begin with [TMPRL1100] and say which command or event no longer matches. A failing Workflow's history keeps the WorkflowTaskFailed event of its first failed attempt, with that message."
+claims = ["sdk.nondeterminism-cause", "behaviour.wft-retries-leave-no-events"]
+
+[[conclusion.recommendation]]
+text = "Run code that replays the existing histories: roll the Workers back, or deploy the change behind a version check (patching) so that Workflows already running keep the old path."
+claims = ["sdk.nondeterminism-cause", "behaviour.wft-retried-without-limit"]
+
+[[conclusion]]
+id = "code-error"
+title = "Workflow code failing"
+statement = "Workflow Tasks fail with errors in Workflow code: the Workers counted failed attempts at {workflow_error_failures.mean} on average, peaking at {workflow_error_failures.max}."
+when = { hypothesis = "workflow-code-error", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "stuck-retrying", state = ["eliminated"] }
+text = "No task went past its second attempt, so the retries succeeded: the failures depend on something that differs between attempts, not on the history alone, such as the Worker that ran them."
+
+[[conclusion.recommendation]]
+text = "Find the error in a failing Workflow's history: the WorkflowTaskFailed event of its first failed attempt carries the failure, with cause WorkflowWorkerUnhandledFailure."
+claims = ["sdk.nondeterminism-cause", "behaviour.wft-retries-leave-no-events"]
+
+[[conclusion]]
+id = "timeouts"
+title = "Workflow Tasks timing out"
+statement = "Workflow Tasks time out: History timed them out at {wft_timeouts.mean} on average, peaking at {wft_timeouts.max}, while the Workers counted no failures. Workers start these tasks but neither complete nor fail them in time."
+when = { hypothesis = "wft-timeouts", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Check the Workers over the window for restarts, out-of-memory kills and stalls while processing these Workflows' tasks, and for tasks that take longer than the Workflow Task timeout."
+claims = ["server.start_to_close_timeout", "behaviour.wft-retried-without-limit"]

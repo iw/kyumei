@@ -1,0 +1,541 @@
+# Diagnostic: Workers replaying Workflow histories instead of using their
+# cache.
+#
+# A Worker that has a Workflow cached runs its next task from where it left
+# off; one that does not must replay the Workflow's whole history first. The
+# investigation measures the replay, then asks whether sticky tasks miss the
+# Workers' caches and whether the caches are full, and finally whether tasks
+# stop reaching the Worker that caches the Workflow: sticky tasks timing out
+# when that Worker is gone or busy, or Workers running without a cache.
+#
+# Misses count only sticky tasks. A task that reaches a Worker through the
+# normal queue carries the whole history and is never counted as a miss, so
+# replays with few misses point at routing, not at the cache's size.
+
+[diagnostic]
+id = "sticky-cache"
+title = "Workflow cache misses and replays"
+summary = "Workers replay Workflow histories instead of running from their cache, slowing Workflow Tasks after restarts or under load."
+# After Workflow Task failures, before Workflow Task schedule-to-start: a
+# description that names the cache, replays or sticky queues is about them.
+precedence = 8
+
+[diagnostic.path]
+description = "The path of a Workflow's next task: History sends it to the sticky queue of the Worker that ran the last one, which runs it from its cache; if the task goes to the normal queue instead, or the Worker has evicted the Workflow, a Worker replays the whole history first."
+layers = ["history", "matching", "workers"]
+
+[[symptom]]
+id = "sticky-cache"
+title = "Workers replaying Workflow histories"
+patterns = [
+  "\\bsticky\\b",
+  "\\breplay(s|ing|ed)?\\b",
+  "(workflow|worker) cache",
+  "cache (miss|misses|hit rate|hits|evict|evictions)",
+  "(after|since)\\b.{0,30}\\bworkers?\\b.{0,20}\\b(restart|restarted|restarts|crash|crashed|crashes|redeploy|redeployed)",
+]
+signal = "wft_replay_latency"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "replay"
+order = 1
+title = "Replay"
+question = "Are Workers replaying histories?"
+
+[[stage]]
+id = "cache"
+order = 2
+title = "Cache hits"
+question = "Do sticky tasks find their Workflow in the Worker's cache?"
+
+[[stage]]
+id = "capacity"
+order = 3
+title = "Cache capacity"
+question = "Are the Workers' caches full?"
+
+[[stage]]
+id = "routing"
+order = 4
+title = "Sticky routing"
+question = "Do tasks reach the Worker that caches the Workflow?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "wft_replay_latency"
+title = "Workflow Task replay latency"
+unit = "seconds"
+description = "Time Workflow Tasks spend replaying history before they reach new events (a high quantile over the window)."
+source = [{ claim = "sdk.workflow_task_replay_latency" }]
+
+[[signal]]
+id = "cache_hits"
+title = "Sticky cache hits"
+unit = "per_second"
+description = "Sticky tasks per second whose Workflow the Worker had cached."
+combine = "sum"
+source = [{ claim = "sdk.sticky_cache_hit", transform = "rate" }]
+
+[[signal]]
+id = "cache_misses"
+title = "Sticky cache misses"
+unit = "per_second"
+description = "Sticky tasks per second whose Workflow the Worker no longer cached, so it fetched and replayed the whole history."
+combine = "sum"
+source = [{ claim = "sdk.sticky_cache_miss", transform = "rate" }]
+
+[[signal]]
+id = "cache_size"
+title = "Workflows cached (largest cache)"
+unit = "count"
+description = "The number of Workflows in the largest Worker cache."
+source = [{ claim = "sdk.sticky_cache_size" }]
+
+[[signal]]
+id = "sticky_timeouts"
+title = "Sticky Workflow Task timeouts"
+unit = "per_second"
+description = "Workflow Tasks per second that History timed out on a sticky queue because no Worker started them within the sticky timeout."
+combine = "sum"
+source = [{ claim = "server.schedule_to_start_timeout", labels = { operation = "TimerActiveTaskWorkflowTaskTimeout" }, transform = "rate" }]
+
+[[signal]]
+id = "sticky_enabled"
+title = "Completions with sticky execution"
+unit = "per_second"
+description = "Workflow Task completions per second, across the cluster, that asked for the next task on the Worker's sticky queue."
+combine = "sum"
+source = [{ claim = "server.complete_workflow_task_sticky_enabled_count", transform = "rate" }]
+
+[[signal]]
+id = "sticky_disabled"
+title = "Completions without sticky execution"
+unit = "per_second"
+description = "Workflow Task completions per second, across the cluster, without sticky attributes."
+combine = "sum"
+source = [{ claim = "server.complete_workflow_task_sticky_disabled_count", transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "replay-pressure"
+stage = "replay"
+primary = true
+layer = "workers"
+title = "Workers replaying histories"
+question = "Workers replaying?"
+statement = "Workers spend much of each Workflow Task replaying history, because the Workflows they get tasks for are not in their cache."
+
+[[hypothesis]]
+id = "cache-misses"
+stage = "cache"
+primary = true
+layer = "workers"
+title = "Sticky tasks missing the cache"
+question = "Tasks missing the cache?"
+statement = "Sticky tasks arrive for Workflows the Worker has evicted from its cache, so it fetches and replays each whole history."
+
+[[hypothesis]]
+id = "cache-full"
+stage = "capacity"
+primary = true
+layer = "workers"
+title = "Workflow caches full"
+question = "Caches full?"
+statement = "More Workflows are active at once than the Workers' caches hold, so the caches evict Workflows that soon get another task."
+implication = "Raise the cache size or add Workers, so the Workflows in flight fit."
+
+[[hypothesis]]
+id = "sticky-timeouts"
+stage = "routing"
+primary = true
+layer = "history"
+title = "Sticky tasks timing out"
+question = "Sticky tasks timing out?"
+statement = "Tasks sent to a Worker's sticky queue are not started within the sticky timeout, because that Worker crashed, stopped without shutting down, or is too busy to poll. History moves them to the normal queue, where another Worker replays the whole history."
+
+[[hypothesis]]
+id = "sticky-disabled"
+stage = "routing"
+layer = "workers"
+title = "Workers without a cache"
+question = "Workers without a cache?"
+statement = "Workers complete Workflow Tasks without sticky attributes, because their Workflow cache is turned off, so every task goes to the normal queue and replays the whole history."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "replay-latency"
+stage = "replay"
+title = "Workflow Task replay latency, before and during the incident"
+why = "A Worker that has a Workflow cached replays nothing; one that does not replays the whole history before it can run the task. Replay latency against its baseline shows whether replays are what slows the Workers."
+signals = ["wft_replay_latency"]
+distinguishes = ["replay-pressure"]
+cost = 1
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p95 replay latency (Core-based SDKs: milliseconds; include at least 15 minutes before the incident)"
+sdk_family = "core"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_replay_latency_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "milliseconds"
+claims = ["sdk.workflow_task_replay_latency", "sdk.core-duration-unit"]
+
+[[request.collect]]
+method = "promql"
+label = "p95 replay latency (Go SDK: seconds; include at least 15 minutes before the incident)"
+sdk_family = "go"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_replay_latency_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "seconds"
+claims = ["sdk.workflow_task_replay_latency", "sdk.go-metrics-naming"]
+note = "with the OpenTelemetry handler, or tally's NewPrometheusNamingScope, the series is temporal_workflow_task_replay_latency_seconds_bucket"
+
+[[request.collect]]
+method = "promql"
+label = "p95 replay latency (Java SDK with Micrometer: seconds; include at least 15 minutes before the incident)"
+sdk_family = "java"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_replay_latency_seconds_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "seconds"
+claims = ["sdk.workflow_task_replay_latency", "sdk.java-metrics-naming"]
+
+[[request]]
+id = "cache-hits"
+stage = "cache"
+title = "Sticky cache hits and misses"
+why = "A sticky task whose Workflow the Worker still caches is a hit; one it has evicted is a miss and replays the whole history. Misses against hits show whether the cache is failing the sticky tasks. Tasks that reach a Worker through the normal queue count as neither."
+signals = ["cache_hits", "cache_misses"]
+distinguishes = ["cache-misses"]
+cost = 1
+
+[[request.collect]]
+method = "promql"
+label = "Sticky cache hits per second"
+sdk_family = ["core", "go"]
+body = "sum(rate(temporal_sticky_cache_hit{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.sticky_cache_hit"]
+note = "the name gains _total with Core's counters_total_suffix, tally's NewPrometheusNamingScope or OpenTelemetry's UseMonotonicCounters"
+
+[[request.collect]]
+method = "promql"
+label = "Sticky cache misses per second"
+sdk_family = ["core", "go"]
+body = "sum(rate(temporal_sticky_cache_miss{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.sticky_cache_miss", "sdk.full-history-replay"]
+note = "if the query returns no series, say so: Workers without a cache record no misses"
+
+[[request.collect]]
+method = "promql"
+label = "Sticky cache hits per second"
+sdk_family = "java"
+body = "sum(rate(temporal_sticky_cache_hit_total{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.sticky_cache_hit", "sdk.java-metrics-naming"]
+
+[[request.collect]]
+method = "promql"
+label = "Sticky cache misses per second"
+sdk_family = "java"
+body = "sum(rate(temporal_sticky_cache_miss_total{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.sticky_cache_miss", "sdk.full-history-replay", "sdk.java-metrics-naming"]
+
+[[request]]
+id = "cache-size"
+stage = "capacity"
+title = "How many Workflows the Workers cache"
+why = "Sticky tasks are missing the cache. A cache with room grows and shrinks with the Workflows in flight; a full one holds at its limit, evicting a Workflow for every one it adds. Its size over the window shows which."
+signals = ["cache_size"]
+distinguishes = ["cache-full"]
+cost = 1
+
+[[request.collect]]
+method = "promql"
+label = "Workflows in the largest Worker cache"
+sdk_family = ["core", "go"]
+body = "max(temporal_sticky_cache_size{namespace=\"{namespace}\", task_queue=\"{task_queue}\"})"
+unit = "count"
+claims = ["sdk.sticky_cache_size", "sdk.workflow-cache-size"]
+note = "a Go process reports its whole cache, shared by its Workers"
+
+[[request.collect]]
+method = "promql"
+label = "Workflows in the largest Worker cache"
+sdk_family = "java"
+body = "max(temporal_sticky_cache_size{namespace=\"{namespace}\"})"
+unit = "count"
+claims = ["sdk.sticky_cache_size", "sdk.workflow-cache-size"]
+note = "the Java SDK labels this gauge with the namespace only"
+
+[[request]]
+id = "sticky-timeouts"
+stage = "routing"
+title = "Sticky Workflow Task timeouts"
+why = "Only sticky Workflow Tasks have a schedule-to-start timeout. History counts each one that the Worker whose sticky queue it was sent to did not start in time, because the Worker had crashed, stopped without shutting down, or was too busy to poll. The task then goes to the normal queue and another Worker replays the whole history."
+signals = ["sticky_timeouts"]
+distinguishes = ["sticky-timeouts"]
+cost = 1
+requires = ["server-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Sticky Workflow Task schedule-to-start timeouts per second (include at least 15 minutes before the incident)"
+body = "sum(rate(schedule_to_start_timeout{operation=\"TimerActiveTaskWorkflowTaskTimeout\", namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.schedule_to_start_timeout", "behaviour.sticky-queue-routing"]
+note = "with the OpenTelemetry metrics framework the counter is named schedule_to_start_timeout_total"
+
+[[request]]
+id = "sticky-completions"
+stage = "routing"
+title = "Workflow Task completions with and without sticky execution"
+why = "A Worker with a Workflow cache asks for the next task on its sticky queue every time it completes one; a Worker without a cache never does, and every task it gets replays the whole history. History counts both kinds of completion, for the whole cluster."
+signals = ["sticky_enabled", "sticky_disabled"]
+distinguishes = ["sticky-disabled"]
+cost = 2
+requires = ["server-metrics"]
+
+[[request.collect]]
+method = "promql"
+label = "Completions with sticky execution per second, across the cluster"
+body = "sum(rate(complete_workflow_task_sticky_enabled_count[1m]))"
+unit = "per_second"
+claims = ["server.complete_workflow_task_sticky_enabled_count"]
+note = "the counter has no namespace label; with the OpenTelemetry metrics framework it is named complete_workflow_task_sticky_enabled_count_total"
+
+[[request.collect]]
+method = "promql"
+label = "Completions without sticky execution per second, across the cluster"
+body = "sum(rate(complete_workflow_task_sticky_disabled_count[1m]))"
+unit = "per_second"
+claims = ["server.complete_workflow_task_sticky_disabled_count", "sdk.workflow-cache-size"]
+note = "the counter has no namespace label; with the OpenTelemetry metrics framework it is named complete_workflow_task_sticky_disabled_count_total"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "replay-elevated"
+hypothesis = "replay-pressure"
+effect = "establishes"
+statement = "Workflow Tasks spent up to {wft_replay_latency.max} replaying history, against about {wft_replay_latency.baseline} before the incident."
+claims = ["heuristic.replay-latency-elevated", "sdk.workflow_task_replay_latency"]
+when = { signal = "wft_replay_latency", stat = "max", op = "ge", value = 1 }
+
+[[rule]]
+id = "replay-normal"
+hypothesis = "replay-pressure"
+effect = "eliminates"
+statement = "Workflow Tasks spent little time replaying: at most {wft_replay_latency.max} at any sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.replay-latency-elevated"]
+when = { all = [
+  { signal = "wft_replay_latency", stat = "max", op = "lt", value = 0.2 },
+  { signal = "wft_replay_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "misses-high"
+hypothesis = "cache-misses"
+effect = "establishes"
+statement = "Sticky tasks missed the cache at {cache_misses.mean} on average against {cache_hits.mean} hits: each miss replayed a whole history."
+claims = ["heuristic.cache-misses-significant", "sdk.full-history-replay"]
+when = { all = [
+  { ratio = { numerator = "cache_misses.mean", denominator = "cache_hits.mean" }, op = "ge", value = 0.25 },
+  { signal = "cache_misses", stat = "mean", op = "gt", value = 0.01 },
+] }
+
+[[rule]]
+id = "misses-low"
+hypothesis = "cache-misses"
+effect = "eliminates"
+statement = "Sticky tasks found their Workflow in the cache: {cache_misses.mean} misses on average against {cache_hits.mean} hits."
+claims = ["heuristic.sustained-needs-samples", "heuristic.cache-misses-significant"]
+when = { all = [
+  { ratio = { numerator = "cache_misses.mean", denominator = "cache_hits.mean" }, op = "le", value = 0.05 },
+  { signal = "cache_hits", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "cache-pinned"
+hypothesis = "cache-full"
+effect = "establishes"
+statement = "The largest cache held between {cache_size.min} and {cache_size.max} Workflows at every sample, pinned at its limit, while sticky tasks missed it."
+claims = ["heuristic.cache-pinned", "sdk.sticky_cache_size", "sdk.workflow-cache-size"]
+when = { all = [
+  { hypothesis = "cache-misses", state = ["established"] },
+  { ratio = { numerator = "cache_size.min", denominator = "cache_size.max" }, op = "ge", value = 0.97 },
+  { signal = "cache_size", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "cache-had-room"
+hypothesis = "cache-full"
+effect = "weakens"
+statement = "The largest cache ranged from {cache_size.min} to {cache_size.max} Workflows: it was not held at a limit."
+claims = ["heuristic.cache-pinned", "sdk.sticky_cache_size"]
+when = { all = [
+  { ratio = { numerator = "cache_size.min", denominator = "cache_size.max" }, op = "lt", value = 0.8 },
+  { signal = "cache_size", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "no-misses-to-explain"
+hypothesis = "cache-full"
+effect = "eliminates"
+statement = "Sticky tasks found their Workflow in the cache ({cache_misses.mean} misses on average against {cache_hits.mean} hits), so the cache's size is not why Workers replay."
+claims = ["heuristic.cache-misses-significant", "sdk.full-history-replay"]
+when = { all = [
+  { ratio = { numerator = "cache_misses.mean", denominator = "cache_hits.mean" }, op = "le", value = 0.05 },
+  { signal = "cache_hits", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "sticky-timeouts-occurring"
+hypothesis = "sticky-timeouts"
+effect = "establishes"
+statement = "History timed out sticky Workflow Tasks at {sticky_timeouts.mean} on average, peaking at {sticky_timeouts.max}, against about {sticky_timeouts.baseline} before the incident: the Workers whose sticky queues they were sent to did not start them."
+claims = ["heuristic.sticky-timeouts-occurring", "server.schedule_to_start_timeout", "behaviour.sticky-queue-routing"]
+when = { signal = "sticky_timeouts", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "no-sticky-timeouts"
+hypothesis = "sticky-timeouts"
+effect = "eliminates"
+statement = "No sticky Workflow Task timed out during the window (at most {sticky_timeouts.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.sticky-timeouts-occurring"]
+when = { all = [
+  { signal = "sticky_timeouts", stat = "max", op = "le", value = 0.01 },
+  { signal = "sticky_timeouts", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "sticky-off"
+hypothesis = "sticky-disabled"
+effect = "establishes"
+statement = "Workflow Task completions without sticky execution ran at {sticky_disabled.mean} on average, against {sticky_enabled.mean} with it: Workers were running without a cache."
+claims = ["heuristic.sticky-disabled-share", "server.complete_workflow_task_sticky_disabled_count", "sdk.workflow-cache-size"]
+when = { any = [
+  { ratio = { numerator = "sticky_disabled.mean", denominator = "sticky_enabled.mean" }, op = "ge", value = 1 },
+  { all = [
+    { signal = "sticky_enabled", stat = "max", op = "le", value = 0.01 },
+    { signal = "sticky_disabled", stat = "mean", op = "gt", value = 0.01 },
+  ] },
+] }
+
+[[rule]]
+id = "sticky-on"
+hypothesis = "sticky-disabled"
+effect = "eliminates"
+statement = "Workers asked for sticky execution: {sticky_disabled.mean} completions without it on average, against {sticky_enabled.mean} with it."
+claims = ["heuristic.sticky-disabled-share", "server.complete_workflow_task_sticky_enabled_count"]
+when = { ratio = { numerator = "sticky_disabled.mean", denominator = "sticky_enabled.mean" }, op = "le", value = 0.05 }
+
+[[rule]]
+id = "no-sticky-tasks-to-miss"
+hypothesis = "cache-misses"
+effect = "eliminates"
+statement = "Workers were running without sticky execution ({sticky_disabled.mean} completions without it on average, against {sticky_enabled.mean} with it), so no task went to a sticky queue and none could miss a cache: every task carried the whole history."
+claims = ["heuristic.sticky-disabled-share", "sdk.full-history-replay", "sdk.workflow-cache-size"]
+when = { any = [
+  { ratio = { numerator = "sticky_disabled.mean", denominator = "sticky_enabled.mean" }, op = "ge", value = 1 },
+  { all = [
+    { signal = "sticky_enabled", stat = "max", op = "le", value = 0.01 },
+    { signal = "sticky_disabled", stat = "mean", op = "gt", value = 0.01 },
+  ] },
+] }
+
+[[rule]]
+id = "no-cache-to-fill"
+hypothesis = "cache-full"
+effect = "eliminates"
+statement = "Workers were running without sticky execution ({sticky_disabled.mean} completions without it on average, against {sticky_enabled.mean} with it), so no cache was full."
+claims = ["heuristic.sticky-disabled-share", "sdk.workflow-cache-size"]
+when = { any = [
+  { ratio = { numerator = "sticky_disabled.mean", denominator = "sticky_enabled.mean" }, op = "ge", value = 1 },
+  { all = [
+    { signal = "sticky_enabled", stat = "max", op = "le", value = 0.01 },
+    { signal = "sticky_disabled", stat = "mean", op = "gt", value = 0.01 },
+  ] },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "cache-too-small"
+title = "Workflow caches too small for the Workflows in flight"
+statement = "Workflow Tasks slowed because Workers replay histories, up to {wft_replay_latency.max} per task: sticky tasks miss the Workers' caches ({cache_misses.mean} misses on average against {cache_hits.mean} hits) because the caches are full, held at about {cache_size.max} Workflows. More Workflows are active at once than they hold, so they evict Workflows that soon get another task."
+when = { all = [
+  { hypothesis = "replay-pressure", state = ["established"] },
+  { hypothesis = "cache-misses", state = ["established"] },
+  { hypothesis = "cache-full", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Raise the Workers' cache size so the Workflows in flight fit: worker.SetStickyWorkflowCacheSize in Go (10,000 per process by default), WorkerFactoryOptions.workflowCacheSize and maxWorkflowThreadCount in Java (600 each by default), max_cached_workflows in Python (1,000 by default). Or add Workers, which adds cache."
+caution = "Each cached Workflow holds its state in memory, and in Java a thread; raise the size only as far as the Workers' memory allows."
+claims = ["sdk.workflow-cache-size", "heuristic.cache-pinned"]
+
+[[conclusion]]
+id = "sticky-timeouts"
+title = "Sticky tasks timing out after Workers left"
+statement = "Workflow Tasks slowed because Workers replay histories, up to {wft_replay_latency.max} per task. Tasks sent to the sticky queues of Workers that had cached the Workflows were not started in time ({sticky_timeouts.mean} timeouts on average, peaking at {sticky_timeouts.max}): each waited out the sticky timeout, then went to the normal queue, where another Worker replayed the whole history."
+when = { all = [
+  { hypothesis = "replay-pressure", state = ["established"] },
+  { hypothesis = "sticky-timeouts", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { hypothesis = "cache-misses", state = ["eliminated"] }
+text = "The caches themselves worked: sticky tasks that reached their Worker found the Workflow cached."
+
+[[conclusion.recommendation]]
+text = "Find why Workers left without shutting down over the window: crashes, out-of-memory kills, or pods stopped before the Worker's shutdown finished. A Worker that shuts down cleanly unloads its sticky queue, so its tasks move to the normal queue at once instead of waiting out the timeout."
+claims = ["behaviour.sticky-queue-routing", "server.schedule_to_start_timeout"]
+
+[[conclusion.recommendation]]
+text = "If the Workers stayed up, check whether they were too busy to poll their sticky queues: a Worker short of Workflow Task slots does not poll."
+claims = ["behaviour.sticky-queue-routing", "sdk.core-poll-needs-slot"]
+
+[[conclusion]]
+id = "sticky-disabled"
+title = "Workers running without a Workflow cache"
+statement = "Workflow Tasks slowed because Workers replay histories, up to {wft_replay_latency.max} per task: they run without a Workflow cache, so every task goes to the normal queue and replays the whole history ({sticky_disabled.mean} completions without sticky execution on average, against {sticky_enabled.mean} with it)."
+when = { all = [
+  { hypothesis = "replay-pressure", state = ["established"] },
+  { hypothesis = "sticky-disabled", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Turn the Workers' cache back on: a cache size of 0 disables it in Go (worker.SetStickyWorkflowCacheSize) and in Core-based SDKs (max_cached_workflows in Python, 1,000 by default)."
+caution = "The completion counts cover the whole cluster: confirm in the Workers' configuration that these Workers are the ones without a cache."
+claims = ["sdk.workflow-cache-size", "server.complete_workflow_task_sticky_disabled_count"]
+
+[[conclusion]]
+id = "cache-misses"
+title = "Sticky tasks missing the Workers' caches"
+statement = "Workflow Tasks slowed because Workers replay histories, up to {wft_replay_latency.max} per task: sticky tasks miss the Workers' caches, {cache_misses.mean} misses on average against {cache_hits.mean} hits."
+when = { all = [
+  { hypothesis = "replay-pressure", state = ["established"] },
+  { hypothesis = "cache-misses", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Check the Workers' cache sizes against the number of Workflows in flight, and whether Workers restarted over the window."
+claims = ["sdk.workflow-cache-size", "sdk.full-history-replay"]
+
+[[conclusion]]
+id = "replay-pressure"
+title = "Workers replaying histories"
+statement = "Workflow Tasks slowed because Workers replay histories, up to {wft_replay_latency.max} per task, against about {wft_replay_latency.baseline} before the incident."
+when = { hypothesis = "replay-pressure", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Find which Workflows the Workers replay: those with long histories cost the most, so continue-as-new keeps each replay short."
+claims = ["sdk.full-history-replay", "behaviour.suggest-continue-as-new"]

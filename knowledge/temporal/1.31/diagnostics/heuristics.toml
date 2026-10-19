@@ -1,0 +1,367 @@
+# Kyumei's own diagnostic thresholds. These are judgements, not Temporal
+# behaviour, and are shown to operators as such.
+
+[[heuristic]]
+id = "heuristic.sts-elevated"
+title = "Elevated schedule-to-start"
+statement = "Workflow or Activity Task schedule-to-start of 5 seconds or more is treated as elevated."
+rationale = "On a healthy Task Queue, tasks usually start within milliseconds of being scheduled. Five seconds is far outside that range while being well below the symptoms Kyumei investigates (tens of seconds or more)."
+authored = 2026-09-30
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.slots-headroom"
+title = "Material slot headroom"
+statement = "At least 5 free slots of the task's kind (Workflow Task or Activity) across the Workers at every sample is treated as capacity remaining available."
+rationale = "A Worker polls only when it can reserve a free slot. If free slots never fell near zero while tasks waited tens of seconds, Workers were not blocked on execution capacity. A small positive margin avoids treating a momentary 1–2 slot dip as headroom."
+authored = 2026-09-30
+relies_on = ["sdk.core-poll-needs-slot", "sdk.worker_task_slots_available"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.slots-exhausted"
+title = "Exhausted slots"
+statement = "Fewer than one free slot of the task's kind (Workflow Task or Activity) across the Workers on average, and never 5 or more at any sample, is treated as execution capacity exhausted."
+rationale = "A Core-based Worker counts a slot held by an outstanding poll as free, so a Worker with every slot busy still shows a free slot while the poll that follows each finished task is in flight. Requiring none free at every sample would miss that exhaustion. Fewer than one on average, and never the 5 that count as headroom, does not."
+authored = 2026-10-19
+relies_on = ["sdk.core-reserved-slot-counts-free", "sdk.worker_task_slots_available"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.poller-busy"
+title = "Busy pollers"
+statement = "More than 50 tasks per second per poller is treated as pollers that are rarely idle; fewer than 10 as pollers that are mostly waiting. The rate is what the Workers received or what Matching dispatched, and Workflow Task pollers are those of the normal queue."
+rationale = "Each poll is a network round trip through the Frontend and Matching. At 50 or more tasks per second, a poller spends most of its time in flight and has little idle capacity. The thresholds are deliberately far apart so only clear cases move the hypothesis."
+authored = 2026-09-30
+relies_on = ["sdk.num_pollers", "sdk.workflow_task_queue_poll_succeed", "api.task_queue_stats.tasks_dispatch_rate"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.effectively-zero-rate"
+title = "Effectively zero"
+statement = "A rate of at most 0.01 per second across the window is treated as none."
+rationale = "PromQL rate() over counters can report tiny non-zero values from counter resets or extrapolation."
+authored = 2026-09-30
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.backlog-carries-latency"
+title = "Backlog accounts for the latency"
+statement = "When Matching's backlog age is at least half of schedule-to-start, the latency is treated as accruing in Matching; at least 80% leaves too little for a delay before Matching to matter; below 30% points before Matching."
+rationale = "Schedule-to-start spans History and Matching; backlog age measures only Matching. Comparing them locates where the time is spent."
+authored = 2026-09-30
+relies_on = ["behaviour.schedule-to-start-measured-by-history", "api.task_queue_stats.approximate_backlog_age"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.dispatch-at-limit"
+title = "Dispatch pinned at the limit"
+statement = "Dispatch at 95% or more of the effective rate limit, while tasks are added at least 2% faster, is treated as the rate limit binding; below 70% as the limit not binding."
+rationale = "The dispatch rate is a 30-second average. A binding limit holds dispatch just below the limit while adds exceed it."
+authored = 2026-09-30
+relies_on = ["api.describe_task_queue.effective_rate_limit", "api.task_queue_stats.tasks_dispatch_rate", "behaviour.partition-dispatch-rate-limit"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.signal-surge"
+title = "Signal surge"
+statement = "A Signal rate at least 5 times its pre-incident baseline, and at least 50 per second, is treated as a surge; one that stays within 1.5 times its baseline is treated as no surge. A surge whose peak is at least 80% of the peak Workflow Task add rate is treated as driving it."
+rationale = "Each Signal to an idle execution schedules one Workflow Task, so a surge large enough to match the add rate explains it."
+authored = 2026-09-30
+relies_on = ["behaviour.signal-schedules-workflow-task", "server.service_requests"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.sustained-needs-samples"
+title = "Claims about a whole window need several samples"
+statement = "A rule that says something held throughout the window (never exceeded, never fell below) needs at least 3 samples; one reading can only show that something happened."
+rationale = "A single point-in-time reading, such as a DescribeTaskQueue capture, says nothing about the rest of the window."
+authored = 2026-09-30
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.activity-fanout"
+title = "Activity fan-out"
+statement = "ScheduleActivityTask commands at least 3 times their pre-incident rate, and at least 50 per second, are treated as an Activity fan-out; within 1.5 times their pre-incident rate as none. A fan-out whose peak is at least 80% of the Task Queue's peak Activity Task add rate is treated as driving it."
+rationale = "Each scheduled Activity adds one Activity Task. The command count covers the whole namespace, so a fan-out large enough to match the Task Queue's add rate can explain it, but it cannot show that every Activity went to that Task Queue."
+authored = 2026-10-03
+relies_on = ["behaviour.schedule-activity-adds-task", "server.command"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.rejections-significant"
+title = "A limit that is rejecting"
+statement = "ResourceExhausted rejections averaging more than 0.1 per second over the window are treated as the limit being reached; at most 0.01 per second at every sample as none."
+rationale = "A limit that rejects requests steadily is binding. Rarer rejections are left alone, since a token bucket's burst allowance can run out briefly under normal load."
+authored = 2026-10-03
+relies_on = ["server.service_errors_resource_exhausted", "behaviour.resource-exhausted-accounting"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.request-surge"
+title = "Request surge"
+statement = "A request rate at least 3 times its pre-incident baseline is treated as a surge; one within 1.5 times its baseline as no surge."
+rationale = "Limits are sized for normal load with some margin. Tripling the load is a change in what callers do; staying within half again of normal is not."
+authored = 2026-10-03
+relies_on = ["server.service_requests"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.persistence-latency-elevated"
+title = "Elevated persistence latency"
+statement = "A persistence latency quantile at least 3 times its pre-incident baseline, and at least 50 milliseconds, is treated as elevated."
+rationale = "Persistence latency depends on the call and the datastore, so it is compared with its own baseline. The floor keeps a rise from 2 to 6 milliseconds from counting."
+authored = 2026-10-03
+relies_on = ["server.persistence_latency"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.pool-saturated"
+title = "A full connection pool"
+statement = "A SQL connection pool with at least 95% of its maximum open connections in use at some sample is treated as full; one whose use stayed at 70% of the maximum or below at every sample as having headroom. A pool with no maximum is never full."
+rationale = "When a capped pool has no free connection, persistence calls wait for one. The gauges are sampled once a minute, so a pool seen full at a sample was full often enough to be caught, and one at 70% or less at every sample had connections to spare."
+authored = 2026-10-03
+relies_on = ["behaviour.sql-pool-wait", "limit.sql-connection-pool", "server.persistence_sql_in_use", "server.persistence_sql_max_open_conn"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.persistence-load-rise"
+title = "Persistence load rise"
+statement = "Persistence calls at least 1.5 times their pre-incident rate are treated as a load increase; within 1.2 times as unchanged."
+rationale = "A pool holds a connection for the length of each call, so at constant database latency its use grows in proportion to the call rate. A rise by half fills a pool sized with less headroom than that; a pool that fills while the rate holds steady points at calls taking longer."
+authored = 2026-10-03
+relies_on = ["server.persistence_requests", "behaviour.sql-pool-wait"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.persistence-errors-significant"
+title = "Persistence calls failing"
+statement = "Persistence errors averaging more than 1 per second over the window are treated as the datastore failing calls; at most 0.1 per second at every sample as none."
+rationale = "persistence_errors leaves out expected outcomes such as condition failures, NotFound and timeouts, so a healthy cluster records almost none. A sustained rate means calls are failing."
+authored = 2026-10-03
+relies_on = ["server.persistence_errors", "behaviour.persistence-throttle-metrics"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.wft-failures-occurring"
+title = "Workflow Tasks failing"
+statement = "Workflow Task failures above 0.01 per second at some sample are treated as tasks failing; at most 0.01 per second at every sample, over at least 3 samples, as no failures."
+rationale = "A failing Workflow Task is retried until it succeeds, so a cause that persists keeps failing it, but the retries of each Workflow slow to one every few minutes. A rate over one-minute windows shows a single failure as about 0.017 per second, so the threshold catches even one stuck Workflow, and a window that never reached it saw no failure. A window shorter than the retry interval can miss a stuck Workflow's retries."
+authored = 2026-10-13
+relies_on = ["sdk.workflow_task_execution_failed", "sdk.wft-failures-counted-every-attempt", "behaviour.wft-retried-without-limit"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.wft-attempt-stuck"
+title = "A Workflow Task stuck in retries"
+statement = "A Workflow Task on its third attempt or later is treated as stuck in retries; attempts that never passed 2, over at least 3 samples, as failures the first retry resolved."
+rationale = "History retries a failed Workflow Task at once, on the same history, so a cause in the code or the history fails the second attempt too. Reaching attempt 3 takes two failures in a row, and from that attempt History also rejects queries and Updates. The attempt histogram's buckets are 1, 2, 5 and up, so its highest bucket reads 5 for attempts 3 to 5."
+authored = 2026-10-13
+relies_on = ["behaviour.wft-retried-without-limit", "behaviour.failing-wft-rejects-queries", "server.workflow_task_attempt", "api.pending_workflow_task.attempt"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.wft-timeouts-occurring"
+title = "Workflow Tasks timing out"
+statement = "Workflow Task start-to-close timeouts above 0.01 per second at some sample are treated as tasks timing out; at most 0.01 per second at every sample, over at least 3 samples, as none."
+rationale = "History retries a Workflow Task that times out just as one that fails, so a cause that persists keeps timing it out, a few minutes apart at most for each Workflow. The threshold is the same as for failures: one timeout in a one-minute window clears it."
+authored = 2026-10-13
+relies_on = ["server.start_to_close_timeout", "behaviour.wft-retried-without-limit"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.history-past-suggestion"
+title = "A Workflow that did not continue-as-new"
+statement = "A history of at least 4,096 events or 4 MiB, the default thresholds at which History suggests continue-as-new, is treated as a Workflow that ran on past the suggestion; one below both as a Workflow that never reached it."
+rationale = "History suggests continue-as-new on every Workflow Task once a history passes either threshold, so a history past one has been offered the suggestion on its tasks since and kept running. Namespaces with other thresholds are judged against the defaults."
+authored = 2026-10-13
+relies_on = ["behaviour.suggest-continue-as-new", "api.workflow_execution_info.history_length", "api.workflow_execution_info.history_size_bytes"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.payload-heavy-history"
+title = "A history filled by payloads"
+statement = "A history averaging at least 4 KiB an event is treated as filled by large payloads; one averaging 1 KiB or less as filled by the number of its events."
+rationale = "The default limits allow 50 MiB in 51,200 events, about 1 KiB an event, so a history averaging more reaches the size limit before the count limit. Events that carry no payload, such as those of timers and tasks, are much smaller than that, so an average four times higher comes from the inputs, results and Signals the events carry."
+authored = 2026-10-13
+relies_on = ["limit.history-size-and-count", "api.workflow_execution_info.history_length", "api.workflow_execution_info.history_size_bytes"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.replay-latency-elevated"
+title = "Elevated replay latency"
+statement = "A Workflow Task replay latency quantile of 1 second or more is treated as Workers spending much of their tasks replaying; under 0.2 seconds at every sample, over at least 3 samples, as little replay."
+rationale = "A task for a Workflow the Worker has cached replays nothing, so replay latency stays near zero. A second or more means tasks rebuilding Workflow state from history, which grows with the history and delays every task the Worker could run meanwhile."
+authored = 2026-10-13
+relies_on = ["sdk.workflow_task_replay_latency", "sdk.full-history-replay"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.cache-misses-significant"
+title = "A Workflow cache missing"
+statement = "Sticky cache misses at a quarter or more of the hits, about a fifth of the sticky tasks, are treated as the cache missing; at most a twentieth of the hits as the cache working."
+rationale = "A working cache misses only for Workflows it evicted to make room or lost to a restart, a small share of the sticky tasks. Every miss replays a whole history, so a fifth of the tasks missing is enough to dominate the Workers' time."
+authored = 2026-10-13
+relies_on = ["sdk.sticky_cache_hit", "sdk.sticky_cache_miss", "sdk.full-history-replay"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.cache-pinned"
+title = "A full Workflow cache"
+statement = "A Workflow cache whose size stays within 3% of its peak at every sample, over at least 3 samples, while tasks miss it, is treated as full."
+rationale = "A cache with room grows and shrinks as Workflows start and finish. A full one evicts a Workflow for every one it adds, so its size holds at the limit; misses at the same time are Workflows it evicted that got another task."
+authored = 2026-10-13
+relies_on = ["sdk.sticky_cache_size", "sdk.workflow-cache-size"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.sticky-timeouts-occurring"
+title = "Sticky tasks timing out"
+statement = "Workflow Task schedule-to-start timeouts above 0.01 per second at some sample are treated as sticky tasks timing out; at most 0.01 per second at every sample, over at least 3 samples, as none."
+rationale = "Only sticky Workflow Tasks have a schedule-to-start timeout, and a Worker that is alive and polling starts them within it. One timeout in a one-minute window clears the threshold."
+authored = 2026-10-13
+relies_on = ["server.schedule_to_start_timeout", "behaviour.sticky-queue-routing"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.sticky-disabled-share"
+title = "Workers without sticky execution"
+statement = "Workflow Task completions without sticky attributes at least as frequent as those with them are treated as Workers running without a Workflow cache; at most a twentieth of them as Workers using it."
+rationale = "A Worker with a cache asks for stickiness on every completion; one without asks on none. The counts cover the whole cluster, so only a share this large points at the Workers being investigated rather than at some other namespace's."
+authored = 2026-10-13
+relies_on = ["server.complete_workflow_task_sticky_enabled_count", "server.complete_workflow_task_sticky_disabled_count", "sdk.workflow-cache-size"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.task-stage-delay"
+title = "A delayed History task stage"
+statement = "A p99 latency of 1 second or more at a stage of History task processing (loading, waiting for a scheduler worker, or one attempt's execution) is treated as tasks delayed at that stage; under 0.2 seconds at every sample, over at least 3 samples, as no delay there."
+rationale = "On a healthy host each stage takes milliseconds: a timer is loaded before it is due, and a worker picks up a loaded task at once. A second at any one stage is a backlog or a stall there, and it adds directly to how late timers fire and tasks complete."
+authored = 2026-10-13
+relies_on = ["behaviour.history-task-latencies", "behaviour.history-task-pipeline"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.task-retries-significant"
+title = "History tasks retrying"
+statement = "Throttled or failed History task attempts averaging more than 0.1 per second over the window are treated as tasks retrying; at most 0.01 per second at every sample, over at least 3 samples, as none."
+rationale = "Each throttled or failed attempt sends a task back to wait, from the second onwards for seconds to minutes. A steady rate keeps tasks from completing; a rare one is noise."
+authored = 2026-10-13
+relies_on = ["behaviour.history-task-retries", "server.task_errors_throttled", "server.task_errors"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.history-cache-miss-share"
+title = "History's Workflow cache missing"
+statement = "Workflow cache misses at a quarter or more of the cache's lookups are treated as the cache missing; a tenth or fewer as the cache working."
+rationale = "A Workflow that keeps getting requests and tasks stays cached, so in steady operation most misses are Workflows read for the first time. A quarter of lookups missing means Workflows in use are being dropped, and each miss is a database read."
+authored = 2026-10-13
+relies_on = ["behaviour.mutable-state-cache", "server.cache_miss", "server.cache_requests"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.history-cache-full"
+title = "History's Workflow cache full"
+statement = "A Workflow cache whose usage reached 95% of its size is treated as full; one at 80% of its size or below at every sample, over at least 3 samples, as having room. Entries in use at 95% of its size are treated as the cache full of Workflows in use."
+rationale = "A cache only evicts when it is full, so usage at its size means it is dropping Workflows to make room; usage well below it means misses come from somewhere else."
+authored = 2026-10-13
+relies_on = ["behaviour.mutable-state-cache", "server.cache_usage", "server.cache_size", "server.cache_pinned_usage"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.shard-errors-significant"
+title = "Requests failing on moving shards"
+statement = "ShardOwnershipLost errors above 0.5 per second at some sample are treated as requests failing on moving shards; at most 0.01 per second at every sample, over at least 3 samples, as none."
+rationale = "A shard that moves is unavailable for seconds, so the errors come in bursts around each move rather than at a steady rate; the peak catches a burst, and a window with none saw no move fail a request."
+authored = 2026-10-13
+relies_on = ["behaviour.shard-ownership-moves", "server.service_error_with_type"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.membership-changed"
+title = "History membership changing"
+statement = "Membership changes above 0.01 per second at some sample are treated as History hosts joining or leaving; at most 0.01 per second at every sample, over at least 3 samples, as a stable membership."
+rationale = "A stable History cluster sees no membership changes at all; a single change in a one-minute window clears the threshold."
+authored = 2026-10-13
+relies_on = ["server.membership_changed_count", "behaviour.shard-ownership-moves"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.shard-acquisition-slow"
+title = "Slow shard acquisition"
+statement = "A shard acquisition pass taking 5 seconds or more at p99 is treated as slow; under 1 second at every sample, over at least 3 samples, as fast."
+rationale = "Taking a shard is a read and a conditional write of its record in the database, ten shards at a time. A pass that takes seconds keeps the moved shards unavailable for that long, which stretches every burst of errors."
+authored = 2026-10-13
+relies_on = ["server.acquire_shards_latency", "behaviour.shard-ownership-moves"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.visibility-lag-significant"
+title = "Visibility records written late"
+statement = "A p99 visibility record lag (task_latency_queue for visibility tasks) of 10 seconds or more is treated as records written late; under 3 seconds at every sample, over at least 3 samples, as records written on time."
+rationale = "History writes a record as soon as its task runs: with SQL in milliseconds, and with Elasticsearch within about a second, the bulk processor's flush interval, plus Elasticsearch's own time. Ten seconds is a lag people notice: a Workflow just started is missing from lists, or one that has closed still shows as running."
+authored = 2026-10-13
+relies_on = ["behaviour.visibility-record-lag", "behaviour.visibility-store-writes"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.visibility-write-slow"
+title = "Slow visibility writes"
+statement = "Visibility writes are treated as slow when their p99 latency reaches 2 seconds, or reaches 0.25 seconds at 5 times its level before the incident; as fast when it stays under 0.25 seconds, or under 1.5 seconds and under twice its earlier level, over at least 3 samples."
+rationale = "With Elasticsearch a write can wait up to the 1-second flush interval for its bulk to be sent, so a p99 near a second is normal there and 2 seconds is not. With SQL a write takes milliseconds, so a rise to a quarter of a second, five times its usual level, is already slow; at 3 seconds it times out."
+authored = 2026-10-13
+relies_on = ["behaviour.visibility-store-writes", "server.visibility_persistence_latency"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.visibility-query-slow"
+title = "Slow visibility queries"
+statement = "Listing and counting queries with a p99 latency of 1 second or more are treated as slow; under 0.5 seconds at every sample, over at least 3 samples, as fast."
+rationale = "The server itself treats a list query that takes over a second as slow, and logs it (system.visibilityPersistenceSlowQueryThreshold). Callers such as the Web UI wait for these calls, and a slow query holds the store's resources from other queries."
+authored = 2026-10-13
+relies_on = ["behaviour.visibility-slow-query-log", "server.visibility_persistence_latency"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.visibility-errors-significant"
+title = "A failing visibility store"
+statement = "Calls to the visibility store failing at more than 0.1 per second on average over the window are treated as the store failing; at most 0.01 per second at every sample, over at least 3 samples, as not failing."
+rationale = "Each failed write is retried with a growing backoff, so a steady rate of failures keeps records falling behind, and each failed query is an error for a caller. An occasional failure is retried at once and is noise."
+authored = 2026-10-13
+relies_on = ["behaviour.visibility-task-dlq", "server.visibility_persistence_errors"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.thread-evictions-significant"
+title = "Java Workers evicting for threads"
+statement = "Thread-forced evictions averaging more than 0.1 per second over the window are treated as Java Workers out of Workflow threads; at most 0.01 per second at every sample, over at least 3 samples, while the threads in use range below 80% of their peak, as threads to spare."
+rationale = "A Java Worker evicts a cached Workflow for a thread only when every thread of its pool is taken, so a steady rate means the pool is exhausted. The count leaves out evictions for Workflows that are replaying, so an exhausted pool can show few; the threads in use, ranging well below their peak, are what rule exhaustion out."
+authored = 2026-10-13
+relies_on = ["sdk.java-thread-forced-eviction", "sdk.sticky_cache_thread_forced_eviction", "sdk.workflow_active_thread_count"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.thread-pool-pinned"
+title = "A Java Workflow thread pool held at its limit"
+statement = "Workflow threads in use on the busiest Java Worker staying within 3% of their peak at every sample, over at least 3 samples, are treated as a pool held at its limit, and as exhausted when that peak is 594 to 600, the default maxWorkflowThreadCount."
+rationale = "A pool with room grows and shrinks as Workflows start, wait and finish. An exhausted one frees a thread only to give it to the next Workflow that needs one, so the count holds at the limit. The limit is a Worker option that no metric reports; a count held just under 600 is the default limit, while a count held elsewhere only suggests a lower or higher one."
+authored = 2026-10-13
+relies_on = ["sdk.workflow_active_thread_count", "sdk.java-workflow-thread-pool"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.threads-per-workflow"
+title = "Workflow threads per cached Java Workflow"
+statement = "Two or more Workflow threads in use per cached Workflow, comparing the busiest Worker's peaks, are treated as Workflows holding many threads each; under 1.5 as about one thread each."
+rationale = "Every cached Java Workflow holds its main thread while it waits, and one more for each Signal or Update being handled and each branch run in a thread of its own. Threads in use close to the cached Workflows mean one thread each, so the cache fills the pool; well above, the Workflows' handlers and branches do."
+authored = 2026-10-13
+relies_on = ["sdk.java-workflow-thread-pool", "sdk.workflow_active_thread_count", "sdk.sticky_cache_size"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.simulation-reproduces"
+title = "A simulated cause big enough"
+statement = "A cause simulated alone, at the size the evidence shows, is treated as big enough when its simulated latency comes within half to twice the observed latency, and as falling well short below a fifth. Between the two, or above twice, the simulation has no say."
+rationale = "A simulation calibrated on a few facts reproduces the shape of a constraint, not every detail of a cluster: the observed latency may be a quantile, an operator's estimate, or a moment the run doesn't match exactly. A factor of two either way is close for a latency that grows with time. A fifth is far enough below that the cause alone cannot be the whole of it. Above twice, the cluster had something the run lacks, so the run is not evidence either way."
+authored = 2026-10-15
+provenance = [{ source = "kyumei-heuristics" }]

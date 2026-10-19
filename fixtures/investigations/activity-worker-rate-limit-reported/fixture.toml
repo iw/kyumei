@@ -1,0 +1,143 @@
+# The Activity reference fixture on Temporal 1.32.
+#
+# Eight Go Workers poll `invoice-activities` with TaskQueueActivitiesPerSecond
+# set to 100, which limits the whole Task Queue, and the month-end fan-out adds
+# about 150 Activity Tasks a second. Dispatch is pinned at the limit, as on
+# 1.31, and DescribeTaskQueue also reports that the rate limiter held dispatch
+# back: the server's own account of the throttling the rates imply.
+#
+# The investigation must reach the same diagnosis, with the report among its
+# findings and in the conclusion.
+
+[fixture]
+id = "activity-worker-rate-limit-reported"
+title = "Activity fan-out on 1.32: the Workers' Task Queue rate limit, with rate limiting reported"
+description = "The Activity reference fixture on Temporal 1.32, whose DescribeTaskQueue reports the rate limiter holding dispatch back. Five evidence submissions take the investigation to a final diagnosis."
+investigation = "inv-activity-rate-limit-reported"
+
+[open]
+at = 2026-10-01T09:07:00Z
+description = "Since about 09:00 UTC, activities on the invoice-activities task queue (namespace billing-prod) are taking around 2 minutes to start. They normally start within 100ms. The month-end invoice run started at 09:00 and schedules an activity per customer. Our 8 Go workers look mostly idle."
+server_version = "1.32.1"
+sdks = [{ language = "go", version = "1.44.0" }]
+namespaces = ["billing-prod"]
+task_queues = ["invoice-activities"]
+window_start = 2026-10-01T09:00:00Z
+window_end = 2026-10-01T09:15:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 3
+history_hosts = 4
+matching_hosts = 3
+worker_processes = 8
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "activity-worker-slots"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+activity-slot-exhaustion = "candidate"
+activity-poller-starvation = "candidate"
+activity-poll-throttling = "candidate"
+activity-matching-backlog = "candidate"
+dispatch-rate-limited = "candidate"
+activity-fanout = "candidate"
+
+# E1 — Activity execution capacity.
+[[step]]
+at = 2026-10-01T09:10:00Z
+answers = "activity-worker-slots"
+file = "evidence/e1-activity-slots.json"
+channel = "paste"
+query = 'sum by (task_queue) (temporal_worker_task_slots_available{worker_type="ActivityWorker", namespace="billing-prod", task_queue="invoice-activities"})'
+
+[step.expect]
+next_request = "activity-pollers"
+findings = ["F-slots-headroom"]
+bound_signals = ["activity_slots_available"]
+
+[step.expect.states]
+activity-slot-exhaustion = "eliminated"
+
+# E2 — Activity Task pollers.
+[[step]]
+at = 2026-10-01T09:12:00Z
+answers = "activity-pollers"
+file = "evidence/e2-activity-pollers.json"
+channel = "paste"
+query = 'sum(temporal_num_pollers{poller_type="activity_task", namespace="billing-prod", task_queue="invoice-activities"})'
+
+[step.expect]
+next_request = "activity-poll-failures"
+findings = ["F-pollers-present"]
+bound_signals = ["activity_pollers"]
+
+[step.expect.states]
+activity-pollers-absent = "eliminated"
+activity-poller-starvation = "candidate"
+
+# E3 — Activity poll failures seen by the Workers.
+[[step]]
+at = 2026-10-01T09:14:00Z
+answers = "activity-poll-failures"
+file = "evidence/e3-poll-failures.json"
+channel = "paste"
+query = 'sum by (status_code) (rate(temporal_long_request_failure{operation="PollActivityTaskQueue", namespace="billing-prod"}[1m]))'
+
+[step.expect]
+next_request = "activity-queue-stats"
+findings = ["F-no-poll-failures"]
+bound_signals = ["activity_poll_failures_rate"]
+
+[step.expect.states]
+activity-poll-throttling = "eliminated"
+
+# E4 — DescribeTaskQueue for the Activity Task Queue, captured during the incident.
+[[step]]
+at = 2026-10-01T09:16:00Z
+answers = "activity-queue-stats"
+file = "evidence/e4-describe-task-queue.json"
+channel = "paste"
+window_start = 2026-10-01T09:06:30Z
+note = "Captured at 09:06:30 UTC with DescribeTaskQueue (report_stats, Activity type) through the API, as JSON"
+
+[step.expect]
+next_request = "scheduled-activities"
+findings = ["F-backlog-carries-latency", "F-matching-accounts-for-latency", "F-dispatch-at-limit", "F-rate-limiting-active", "F-rate-limited-backlog", "F-limit-from-workers", "F-limit-not-from-api", "F-limit-not-from-system", "F-pollers-waiting", "F-dispatch-capped-not-pollers"]
+bound_signals = ["backlog_age", "backlog_count", "tasks_add_rate", "tasks_dispatch_rate", "dispatch_rate_limit", "rate_limit_source", "rate_limiting_active"]
+conclusion = "worker-rate-limit"
+concluded = false
+
+[step.expect.states]
+activity-matching-backlog = "established"
+activity-history-delay = "eliminated"
+dispatch-rate-limited = "established"
+worker-rate-limit = "established"
+api-rate-limit = "eliminated"
+system-rate-limit = "eliminated"
+activity-poller-starvation = "eliminated"
+
+# E5 — Activities scheduled by Workflows, before and during the incident.
+[[step]]
+at = 2026-10-01T09:20:00Z
+answers = "scheduled-activities"
+file = "evidence/e5-scheduled-activities.json"
+channel = "paste"
+query = 'sum(rate(command{commandType="ScheduleActivityTask", namespace="billing-prod"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-fanout", "F-fanout-drives-adds"]
+bound_signals = ["scheduled_activities_rate"]
+conclusion = "worker-rate-limit-under-fanout"
+concluded = true
+
+[step.expect.states]
+activity-fanout = "established"
+activity-slot-exhaustion = "eliminated"
+activity-poll-throttling = "eliminated"
+activity-matching-backlog = "established"
+worker-rate-limit = "established"

@@ -1,0 +1,40 @@
+[package]
+name = "kyumei-web"
+description = "Kyumei's investigation workspace: a server-rendered Topcoat interface over the application layer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+kyumei-app.workspace = true
+kyumei-domain.workspace = true
+kyumei-knowledge.workspace = true
+kyumei-diagnostics.workspace = true
+kyumei-diagrams.workspace = true
+kyumei-evidence.workspace = true
+# Collect now: Kyumei reads a request's queries from Prometheus or Grafana
+# itself, with the companion's client, and adds them as a sample block.
+kyumei-collect.workspace = true
+kyumei-samples.workspace = true
+# Dashboards loaded at startup or uploaded, to draw evidence as their panels do.
+kyumei-dashboards.workspace = true
+# Topcoat is confined to this crate. No CLI, asset bundle or browser runtime:
+# server-rendered pages, forms, multipart uploads and server-sent events.
+topcoat = { version = "0.10.0", default-features = false, features = ["router", "serve", "view", "sse", "multipart"] }
+base64.workspace = true
+futures-util = "0.3"
+jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

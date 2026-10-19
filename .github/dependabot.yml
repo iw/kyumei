@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # The actions CI pins by commit.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # One weekly pull request for the workspace's Cargo dependencies, so the
+  # 650-odd crates don't each open their own.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]

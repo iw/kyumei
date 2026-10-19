@@ -1,0 +1,13 @@
+-----BEGIN KYUMEI SAMPLES v1-----
+Collected by kyumei-collect 0.1.0 from file at 2026-10-16 10:42 UTC
+Request R2 of inv-golden-visibility-blocks, 2026-10-16 10:00 UTC to 2026-10-16 10:43 UTC, step 15s
+Query 1: sum by (operation) (rate(visibility_persistence_resource_exhausted[1m]))
+  operation=RecordWorkflowExecutionStarted  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  min 0  max 0  mean 0  (173 samples)
+  operation=UpsertWorkflowExecution         ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  min 0  max 0  mean 0  (173 samples)
+  operation=RecordWorkflowExecutionClosed   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  min 0  max 0  mean 0  (173 samples)
+:7VM9a8JQFM1ru3QvdGlLxmSIaP9CKRS6KaWUUiR5uTaXvOTK-7Bm82f0J7gUCo4uIv4MRycXN2ef
+:CCqIo0450-Hcey4XDuf1o8Gcm7QwGWDASQjg2q1WapXqVQsF9AaLST-5w7wTfJOIIQ86qDBCgboI
+:IkE8VRf1x95sOO4no-nS7v4ah70ok7lR4XrUBhlqpNx3PUvA27mbdqRQacg5NCUoMtIS6CahsWL8
+:Wcu-fP-SXW9PPNSBk4zfSaYtQT_PXeBmrTd0KK3hj22--J8zp8RpsJfG7VtbgdQHaZQxnDWG-yOl
+:eBKkyk6cAys
+-----END KYUMEI SAMPLES (315 chars, crc32 e0fc829e)-----

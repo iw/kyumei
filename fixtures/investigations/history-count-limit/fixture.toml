@@ -1,0 +1,72 @@
+# Branch fixture for history limits: the event count limit.
+#
+# ShipmentWatchWorkflow checks a carrier's tracking API every 30 seconds with
+# a timer and an Activity, for as long as a shipment is in transit, and never
+# continues-as-new. Its events are small, but a shipment held at customs for
+# weeks takes its history past 51,200 events, and History terminates it.
+#
+# The investigation must find that the event count, not payloads, filled the
+# history, and confirm from the last event that the count limit terminated it.
+
+[fixture]
+id = "history-count-limit"
+title = "Shipment watchers terminated at the 51,200 event limit"
+description = "Branch fixture for history limits. A small-event polling loop reaches the event count limit; payloads are ruled out."
+investigation = "inv-branch-history-count"
+
+[open]
+at = 2026-10-10T16:05:00Z
+description = "A few long-running ShipmentWatchWorkflow executions in namespace logistics were terminated today with 'Workflow history count exceeds limit.' Java SDK 1.40."
+server_version = "1.31.0"
+sdks = [{ language = "java", version = "1.40.0" }]
+namespaces = ["logistics"]
+task_queues = ["logistics-watch"]
+window_start = 2026-10-10T15:00:00Z
+window_end = 2026-10-10T16:15:00Z
+
+[open.expect]
+next_request = "workflow-size"
+conclusion = "none"
+concluded = false
+
+# E1 — One terminated watcher, described with the CLI.
+[[step]]
+at = 2026-10-10T16:08:00Z
+answers = "workflow-size"
+file = "evidence/e1-describe-workflow.json"
+channel = "paste"
+window_start = 2026-10-10T16:07:00Z
+note = "Captured at 16:07 UTC with temporal workflow describe --workflow-id shipment-watch-SH-77120934 -o json"
+
+[step.expect]
+next_request = "termination-event"
+findings = ["F-count-past-default-limit", "F-past-suggestion", "F-event-heavy"]
+bound_signals = ["workflow_status", "history_length", "history_size_bytes"]
+conclusion = "past-continue-as-new"
+concluded = false
+
+[step.expect.states]
+history-count-limit = "supported"
+continue-as-new-ignored = "established"
+large-payloads = "eliminated"
+
+# E2 — The terminated watcher's last event.
+[[step]]
+at = 2026-10-10T16:11:00Z
+answers = "termination-event"
+file = "evidence/e2-terminated-event.json"
+channel = "paste"
+
+[step.expect]
+next_request = "none"
+findings = ["F-reason-count", "F-reason-not-size", "F-reason-not-mutable-state"]
+bound_signals = ["termination_reason"]
+conclusion = "count-limit"
+concluded = true
+
+[step.expect.states]
+history-size-limit = "eliminated"
+history-count-limit = "established"
+mutable-state-limit = "eliminated"
+continue-as-new-ignored = "established"
+large-payloads = "eliminated"

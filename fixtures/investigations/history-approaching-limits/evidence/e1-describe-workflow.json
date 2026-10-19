@@ -1,0 +1,59 @@
+{
+ "executionConfig": {
+  "taskQueue": {
+   "name": "legal-review",
+   "kind": "TASK_QUEUE_KIND_NORMAL"
+  },
+  "workflowExecutionTimeout": "0s",
+  "workflowRunTimeout": "0s",
+  "defaultWorkflowTaskTimeout": "10s"
+ },
+ "workflowExecutionInfo": {
+  "execution": {
+   "workflowId": "review-matter-2026-0871",
+   "runId": "0199d0b4-1c55-7d21-8e0a-44f9a6b3c17d"
+  },
+  "type": {
+   "name": "DocumentReviewWorkflow"
+  },
+  "startTime": "2026-10-02T13:20:05.004Z",
+  "status": "WORKFLOW_EXECUTION_STATUS_RUNNING",
+  "historyLength": "3112",
+  "executionTime": "2026-10-02T13:20:05.004Z",
+  "memo": {},
+  "taskQueue": "legal-review",
+  "stateTransitionCount": "3101",
+  "historySizeBytes": "24538214",
+  "rootExecution": {
+   "workflowId": "review-matter-2026-0871",
+   "runId": "0199d0b4-1c55-7d21-8e0a-44f9a6b3c17d"
+  },
+  "firstRunId": "0199d0b4-1c55-7d21-8e0a-44f9a6b3c17d"
+ },
+ "pendingActivities": [
+  {
+   "activityId": "100",
+   "activityType": {
+    "name": "ReviewPage"
+   },
+   "state": "PENDING_ACTIVITY_STATE_SCHEDULED",
+   "attempt": 1
+  },
+  {
+   "activityId": "101",
+   "activityType": {
+    "name": "ReviewPage"
+   },
+   "state": "PENDING_ACTIVITY_STATE_SCHEDULED",
+   "attempt": 1
+  },
+  {
+   "activityId": "102",
+   "activityType": {
+    "name": "ReviewPage"
+   },
+   "state": "PENDING_ACTIVITY_STATE_SCHEDULED",
+   "attempt": 1
+  }
+ ]
+}

@@ -1,0 +1,112 @@
+# Branch fixture for Workflow cache misses and replays: no cache at all.
+#
+# To save memory, Python Workers deployed at 01:00 UTC set max_cached_workflows
+# to 0. They no longer use sticky queues: every Workflow Task goes to the
+# normal queue with the whole history and is replayed from the first event.
+# The sticky cache counters have no series, so the operator declines those
+# requests, and History's completion counts show the change.
+#
+# The investigation must establish the replays, accept the declined cache
+# requests, rule out sticky timeouts, and find the completions without sticky
+# execution, which also rule out cache misses and a full cache.
+
+[fixture]
+id = "sticky-cache-disabled"
+title = "Cache turned off: Python Workers replay every Workflow Task"
+description = "Branch fixture for Workflow cache misses and replays. Two declined requests, then History's completion counts show Workers without a cache."
+investigation = "inv-branch-sticky-disabled"
+
+[open]
+at = 2026-10-10T01:35:00Z
+description = "Since the 01:00 UTC deploy our Python workers replay every workflow on every task: workflow task latency on the nightly task queue is over a second. Namespace analytics, Python SDK 1.25."
+server_version = "1.31.0"
+sdks = [{ language = "python", version = "1.25.0" }]
+namespaces = ["analytics"]
+task_queues = ["nightly"]
+window_start = 2026-10-10T01:00:00Z
+window_end = 2026-10-10T01:50:00Z
+
+[open.expect]
+next_request = "replay-latency"
+conclusion = "none"
+concluded = false
+
+# E1 — Replay latency (Core: milliseconds).
+[[step]]
+at = 2026-10-10T01:38:00Z
+answers = "replay-latency"
+file = "evidence/e1-replay-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_replay_latency_bucket{namespace="analytics", task_queue="nightly"}[1m])))'
+unit = "milliseconds"
+
+[step.expect]
+next_request = "cache-hits"
+findings = ["F-replay-elevated"]
+bound_signals = ["wft_replay_latency"]
+conclusion = "replay-pressure"
+concluded = false
+
+# The hit and miss counters have no series.
+[[step]]
+at = 2026-10-10T01:40:00Z
+answers = "cache-hits"
+action = "decline"
+reason = "temporal_sticky_cache_hit and temporal_sticky_cache_miss have no series for these workers."
+
+[step.expect]
+next_request = "cache-size"
+conclusion = "replay-pressure"
+concluded = false
+
+# Nor does the cache size.
+[[step]]
+at = 2026-10-10T01:41:00Z
+answers = "cache-size"
+action = "decline"
+reason = "temporal_sticky_cache_size has no series for these workers either."
+
+[step.expect]
+next_request = "sticky-timeouts"
+conclusion = "replay-pressure"
+concluded = false
+
+# E4 — Sticky Workflow Task timeouts: none.
+[[step]]
+at = 2026-10-10T01:44:00Z
+answers = "sticky-timeouts"
+file = "evidence/e4-sticky-timeouts.json"
+channel = "paste"
+query = 'sum(rate(schedule_to_start_timeout{operation="TimerActiveTaskWorkflowTaskTimeout", namespace="analytics"}[1m]))'
+
+[step.expect]
+next_request = "sticky-completions"
+findings = ["F-no-sticky-timeouts"]
+bound_signals = ["sticky_timeouts"]
+conclusion = "replay-pressure"
+concluded = false
+
+[step.expect.states]
+sticky-timeouts = "eliminated"
+
+# E5 — Completions with and without sticky execution (a CSV export with both queries).
+[[step]]
+at = 2026-10-10T01:47:00Z
+answers = "sticky-completions"
+file = "evidence/e5-sticky-completions.csv"
+channel = "upload"
+query = 'sum(rate(complete_workflow_task_sticky_enabled_count[1m])) and sum(rate(complete_workflow_task_sticky_disabled_count[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-sticky-off", "F-no-sticky-tasks-to-miss", "F-no-cache-to-fill"]
+bound_signals = ["sticky_enabled", "sticky_disabled"]
+conclusion = "sticky-disabled"
+concluded = true
+
+[step.expect.states]
+replay-pressure = "established"
+cache-misses = "eliminated"
+cache-full = "eliminated"
+sticky-timeouts = "eliminated"
+sticky-disabled = "established"

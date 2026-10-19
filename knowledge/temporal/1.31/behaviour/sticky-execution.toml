@@ -1,0 +1,77 @@
+# Sticky execution in Temporal Server 1.31.0 and the Core, Go and Java SDKs:
+# how a Workflow's tasks are routed to the Worker that caches it, what happens
+# when that Worker is gone, and when a Worker replays a whole history.
+
+[[statement]]
+id = "behaviour.sticky-queue-routing"
+category = "behaviour"
+title = "A Workflow's next task goes to the Worker that ran the last one"
+statement = "When a Worker completes a Workflow Task with sticky attributes, History sends the Workflow's next task to that Worker's own sticky queue, with the schedule-to-start timeout the Worker chose: 5 seconds by default in Go and Java, 10 seconds in Core. If no Worker has polled the sticky queue for 10 seconds, Matching refuses the task and History sends it to the Task Queue's normal queue at once. If the sticky queue accepts the task but no Worker starts it within the timeout, History times it out and schedules it again on the normal queue."
+notes = ["Only Workflow Tasks on a sticky queue, and speculative ones for Workflow Updates (5 seconds), have a schedule-to-start timeout."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"], sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 340, excerpt = "ms.SetStickyTaskQueue(request.StickyAttributes.WorkerTaskQueue.GetName(), request.StickyAttributes.GetScheduleToStartTimeout())" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/task_generator.go", line = 430, excerpt = "if r.mutableState.IsStickyTaskQueueSet() {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/task_generator.go", line = 435, excerpt = "VisibilityTimestamp: workflowTask.ScheduledTime.Add(scheduleToStartTimeout)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/task_generator.go", line = 436, excerpt = "TimeoutType:         enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/mutable_state_impl.go", line = 1366, excerpt = "// No WFT ScheduleToStart timeout for normal WFT on normal task queue." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 72, excerpt = "stickyPollerUnavailableWindow = 10 * time.Second" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 579, excerpt = "} else if sticky && !stickyWorkerAvailable(pm) {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 580, excerpt = "return \"\", false, serviceerrors.NewStickyWorkerUnavailable()" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/transfer_queue_active_task_executor.go", line = 320, excerpt = "if _, ok := err.(*serviceerrors.StickyWorkerUnavailable); ok {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/transfer_queue_active_task_executor.go", line = 324, excerpt = "Name: normalTaskQueueName," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 452, excerpt = "_, err := mutableState.AddWorkflowTaskScheduleToStartTimeoutEvent(workflowTask)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 456, excerpt = "scheduleWorkflowTask = true" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1014, excerpt = "m.ms.ClearStickyTaskQueue()" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 41, excerpt = "stickyWorkflowTaskScheduleToStartTimeoutSeconds = 5" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerOptions.java", line = 29, excerpt = "static final Duration DEFAULT_STICKY_SCHEDULE_TO_START_TIMEOUT = Duration.ofSeconds(5);" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/mod.rs", line = 187, excerpt = "#[builder(default = Duration::from_secs(10))]" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/mod.rs", line = 188, excerpt = "pub sticky_queue_schedule_to_start_timeout: Duration," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/mutable_state_impl.go", line = 1364, excerpt = "return normalTq, durationpb.New(tasks.SpeculativeWorkflowTaskScheduleToStartTimeout)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/tasks/workflow_task_timer.go", line = 18, excerpt = "SpeculativeWorkflowTaskScheduleToStartTimeout = 5 * time.Second" },
+]
+
+[[statement]]
+id = "sdk.full-history-replay"
+category = "behaviour"
+title = "A Workflow missing from the cache is replayed from its first event"
+statement = "A Workflow Task for a Workflow that is not in the Worker's cache is replayed from the start of the history. A task from the normal queue carries the whole history. A sticky task carries only the new events, so the Worker first fetches the whole history; Core, Go and Java count that as a sticky cache miss. A task that arrives with the whole history is never counted as a miss."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"], sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/recordworkflowtaskstarted/api.go", line = 274, excerpt = "if response.GetStickyExecutionEnabled() {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/recordworkflowtaskstarted/api.go", line = 276, excerpt = "firstEventID = response.GetPreviousStartedEventId() + 1" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/recordworkflowtaskstarted/api.go", line = 120, excerpt = "// Sending down partial history will cost the worker an extra fetch to server for the full history." },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 835, excerpt = "if !isFullHistory {" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 838, excerpt = "metricsHandler.Counter(metrics.StickyCacheMiss).Inc(1)" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 839, excerpt = "if _, err = resetHistory(task, historyIterator); err != nil {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 408, excerpt = "// Sticky workflow task with partial history." },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/replay/ReplayWorkflowTaskHandler.java", line = 419, excerpt = ".getWorkflowExecutionHistory(getHistoryRequest);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 70, excerpt = "if (isFullHistory(workflowTask)) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowExecutorCache.java", line = 91, excerpt = "workflowTypeScope.counter(MetricsType.STICKY_CACHE_MISS).inc(1);" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/workflow_stream.rs", line = 269, excerpt = "if !self.runs.has_run(&run_id) && pwft.work.is_incremental() {" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/workflow_stream.rs", line = 272, excerpt = "self.metrics.sticky_cache_miss();" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/workflow/history_update.rs", line = 184, excerpt = "next_page_token: NextPageToken::FetchFromStart," },
+]
+
+[[statement]]
+id = "sdk.workflow-cache-size"
+category = "sdk-configuration"
+title = "How many Workflows a Worker caches"
+statement = "Workers cache the Workflows they run, up to a configured number: 10,000 per process in Go (worker.SetStickyWorkflowCacheSize), 600 per worker factory in Java (WorkerFactoryOptions.workflowCacheSize), and 1,000 per Worker in Python (max_cached_workflows). With a size of 0, Go and Core-based Workers use no sticky queue, so every task carries and replays the whole history; Java treats 0 as its default."
+notes = ["In Java the number of Workflow threads, maxWorkflowThreadCount (600 by default), usually limits the cache before its size does."]
+scope = { sdk = [{ family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }, { family = "core", revision = "sdk-rust acac9e3f" }, { family = "core", revision = "sdk-python 1.25.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_handlers.go", line = 41, excerpt = "defaultStickyCacheSize = 10000" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_worker.go", line = 364, excerpt = "if taskProcessor.stickyCacheSize > 0 {" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 730, excerpt = "if request.StickyAttributes == nil && wtp.stickyCacheSize > 0 {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 25, excerpt = "private static final int DEFAULT_WORKFLOW_CACHE_SIZE = 600;" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 26, excerpt = "private static final int DEFAULT_MAX_WORKFLOW_THREAD_COUNT = 600;" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 68, excerpt = "* number of cached workflows is limited not by this value, but by the number of the threads" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/WorkerFactoryOptions.java", line = 239, excerpt = "if (workflowCacheSize <= 0) {" },
+  { source = "sdk-python-1.25.0", path = "temporalio/worker/_worker.py", line = 114, excerpt = "max_cached_workflows: int = 1000," },
+  { source = "sdk-python-1.25.0", path = "temporalio/worker/_worker.py", line = 206, excerpt = "max_cached_workflows: If nonzero, workflows will be cached and" },
+  { source = "sdk-core-acac9e3f", path = "crates/sdk-core/src/worker/mod.rs", line = 145, excerpt = "/// If set nonzero, workflows will be cached and sticky task queues will be used, meaning that" },
+]

@@ -1,0 +1,80 @@
+# Branch fixture for Workflow Task failures: an error in Workflow code.
+#
+# A build deployed at 09:20 UTC reads a payout's currency without checking
+# for null. SettlementWorkflow throws a NullPointerException for the payouts
+# that have none, and the Java SDK fails the Workflow Task rather than the
+# Workflow. History retries the tasks without limit and every retry throws
+# again, so about 40 settlements stop partway.
+#
+# The investigation must find the failures in the Workers' WorkflowError
+# reason, rule out nondeterminism and size, and show from History's attempt
+# histogram, since the operator cannot run the CLI, that the retries fail too.
+
+[fixture]
+id = "workflow-code-error"
+title = "Null currency: settlements stuck on a Workflow code error"
+description = "Branch fixture for Workflow Task failures. The Workers report errors in Workflow code, not nondeterminism, and the attempt histogram shows the retries failing."
+investigation = "inv-branch-workflow-code-error"
+
+[open]
+at = 2026-10-07T09:41:00Z
+description = "Since about 09:20 UTC some SettlementWorkflow executions stop partway and never finish. The Web UI shows a WorkflowTaskFailed event with a NullPointerException in SettlementWorkflow. We deployed a new build at 09:20. Namespace payments, Java SDK 1.40."
+server_version = "1.31.0"
+sdks = [{ language = "java", version = "1.40.0" }]
+namespaces = ["payments"]
+task_queues = ["settlement"]
+window_start = 2026-10-07T09:20:00Z
+window_end = 2026-10-07T09:50:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 2
+history_hosts = 4
+matching_hosts = 2
+worker_processes = 4
+persistence = "MySQL 8.0"
+
+[open.expect]
+next_request = "failures-by-reason"
+conclusion = "none"
+concluded = false
+
+# E1 — Failed Workflow Task attempts by failure reason.
+[[step]]
+at = 2026-10-07T09:47:00Z
+answers = "failures-by-reason"
+file = "evidence/e1-failures-by-reason.json"
+channel = "paste"
+query = 'sum by (failure_reason) (rate(temporal_workflow_task_execution_failed_total{namespace="payments", task_queue="settlement"}[1m]))'
+
+[step.expect]
+next_request = "retry-attempts"
+findings = ["F-code-errors-failing", "F-no-nondeterminism", "F-nothing-too-large"]
+bound_signals = ["workflow_error_failures", "nondeterminism_failures", "too_large_failures"]
+conclusion = "code-error"
+concluded = false
+
+[step.expect.states]
+nondeterminism = "eliminated"
+workflow-code-error = "established"
+completion-too-large = "eliminated"
+stuck-retrying = "candidate"
+
+# E2 — The operator cannot run the CLI, so History's attempt histogram instead.
+[[step]]
+at = 2026-10-07T09:51:00Z
+answers = "retry-attempts"
+file = "evidence/e2-attempt-bucket.json"
+channel = "paste"
+query = 'histogram_quantile(1, sum by (le) (rate(workflow_task_attempt_bucket{namespace="payments"}[5m])))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-attempts-past-second"]
+bound_signals = ["attempt_bucket"]
+conclusion = "code-error-stuck"
+concluded = true
+
+[step.expect.states]
+workflow-code-error = "established"
+stuck-retrying = "established"

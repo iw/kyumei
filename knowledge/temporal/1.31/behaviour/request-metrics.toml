@@ -1,0 +1,38 @@
+# When the counters of requests and their failures first appear, which decides
+# what a query that returns no series means.
+
+[[statement]]
+id = "sdk.long-poll-failures-counted-on-failure"
+category = "behaviour"
+title = "SDKs count a failed long poll only when one fails"
+statement = "Core, the Go SDK and the Java SDK count every long poll in long_request when they send it, and a failed one in long_request_failure, tagged with its gRPC status code, only when it fails. A Worker's long_request_failure therefore has no series until a poll fails: while the Worker's long_request has samples over a window and long_request_failure has none, none of those polls failed."
+scope = { sdk = [{ family = "core", revision = "sdk-rust acac9e3f" }, { family = "go", revision = "sdk-go v1.44.0" }, { family = "java", revision = "sdk-java v1.40.0" }] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 293, excerpt = "metrics.svc_request();" },
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 320, excerpt = "if code != Code::Ok {" },
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 155, excerpt = "self.instruments.long_svc_request_failed.add(1, kvs);" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/grpc.go", line = 71, excerpt = "handler.Counter(metric).Inc(1)" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/grpc.go", line = 92, excerpt = "handler = handler.WithTags(RequestFailureCodeTags(errStatus.Code()))" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/grpc.go", line = 94, excerpt = "handler.Counter(failureMetric).Inc(1)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 73, excerpt = "metricsScope.counter(MetricsType.TEMPORAL_LONG_REQUEST).inc(1);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 101, excerpt = "if (!status.isOk()) {" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 104, excerpt = "scope.counter(MetricsType.TEMPORAL_LONG_REQUEST_FAILURE).inc(1);" },
+]
+
+[[statement]]
+id = "server.request-errors-counted-on-error"
+category = "behaviour"
+title = "The server counts a rejected request only when one is rejected"
+statement = "Every service counts each gRPC request in service_requests when it arrives, and a request rejected with ResourceExhausted in service_errors_resource_exhausted, tagged with its cause and scope, only when one is rejected. Both metrics frameworks create a counter's series, with its label values, at its first record. An operation's service_errors_resource_exhausted in a namespace therefore has no series until a request is rejected: while service_requests has samples for the same operation and namespace and service_errors_resource_exhausted has none, none was rejected."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/telemetry.go", line = 177, excerpt = "metrics.ServiceRequests.With(metricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/telemetry.go", line = 194, excerpt = "ti.requestErrorHandler.HandleError(req, info.FullMethod, metricsHandler, logTags, err, nsName)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 103, excerpt = "if errors.As(err, &resourceExhaustedErr) {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 104, excerpt = "metrics.ServiceErrResourceExhaustedCounter.With(metricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tally_metrics_handler.go", line = 58, excerpt = "scope = tmh.scope.Tagged(tagsToMap(t, tmh.excludeTags))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tally_metrics_handler.go", line = 60, excerpt = "scope.Counter(counter).Inc(i)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/otel_metrics_handler.go", line = 96, excerpt = "c.Add(context.Background(), i, option)" },
+]

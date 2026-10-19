@@ -1,0 +1,46 @@
+# History's host-level Workflow (mutable state) cache in Temporal Server
+# 1.31.0: its size, what a miss costs, and what fills it.
+
+[[statement]]
+id = "behaviour.mutable-state-cache"
+category = "behaviour"
+title = "History caches Workflow state per host, and a miss reads the database"
+statement = "History keeps the state of Workflows it has loaded in one cache per host, of history.hostLevelCacheMaxSize entries (128,000 by default, read when the host starts). A request or task whose Workflow is not cached counts a cache miss and reads the Workflow's state from the database with GetWorkflowExecution. A full cache evicts the least recently used Workflow that nothing is using; if every entry is in use, the request fails with ResourceExhausted, \"cache capacity is fully occupied with pinned elements\"."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 93, excerpt = "func NewHostLevelCache(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 98, excerpt = "maxSize := config.HistoryHostLevelCacheMaxSize()" },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1612, excerpt = "\"history.hostLevelCacheMaxSize\"," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1618, excerpt = "\"history.hostLevelCacheMaxSize\"," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1623, excerpt = "\"history.hostLevelCacheMaxSize\"," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1637, excerpt = "\"history.hostLevelCacheMaxSize\"," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1613, excerpt = "128000," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1619, excerpt = "128000," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1624, excerpt = "128000," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1638, excerpt = "128000," },
+  { source = "temporal-server-v1.31.0", path = "common/dynamicconfig/constants.go", line = 1615, excerpt = "Requires service restart to take effect.`," },
+  { source = "temporal-server-v1.31.1", path = "common/dynamicconfig/constants.go", line = 1621, excerpt = "Requires service restart to take effect.`," },
+  { source = "temporal-server-v1.31.2", path = "common/dynamicconfig/constants.go", line = 1626, excerpt = "Requires service restart to take effect.`," },
+  { source = ["temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 1640, excerpt = "Requires service restart to take effect.`," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 279, excerpt = "item, cacheHit := c.Get(cacheKey).(*cacheItem)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 284, excerpt = "metrics.CacheMissCounter.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 145, excerpt = "if c.MutableState == nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/context.go", line = 146, excerpt = "response, err := getWorkflowExecution(ctx, shardContext, &persistence.GetWorkflowExecutionRequest{" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 349, excerpt = "c.tryEvictUntilEnoughSpaceWithSkipEntry(newEntrySize, nil)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 417, excerpt = "if entry.refCount == 0 {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 354, excerpt = "return nil, ErrCacheFull" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 22, excerpt = "Message: \"cache capacity is fully occupied with pinned elements\"," },
+]
+
+[[statement]]
+id = "behaviour.cache-key-per-shard-owner"
+category = "behaviour"
+title = "A shard that moves or reloads starts with a cold cache"
+statement = "A cached Workflow's key includes the owner of its shard, a value unique to each time a host takes the shard. When a shard moves to another host or reloads, its Workflows miss the cache until they are read again."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-13 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 277, excerpt = "shardContext.GetOwner()," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/context_impl.go", line = 2118, excerpt = "owner:                   fmt.Sprintf(\"%s-%v-%v\", hostIdentity, sequenceID, uuid.NewString())," },
+]

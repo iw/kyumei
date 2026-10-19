@@ -1,0 +1,4 @@
+[toolchain]
+# Topcoat 0.9 requires 1.98; Odori 0.1 requires 1.97.
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

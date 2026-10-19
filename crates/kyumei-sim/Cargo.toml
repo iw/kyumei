@@ -1,0 +1,21 @@
+[package]
+name = "kyumei-sim"
+description = "Simulated Temporal clusters for Kyumei: tempdes runs scraped as Prometheus scrapes a cluster, and the PromQL Kyumei's requests use, answered over the scrapes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+kyumei-samples.workspace = true
+regex.workspace = true
+tempdes.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+kyumei-knowledge.workspace = true
+
+[lints]
+workspace = true

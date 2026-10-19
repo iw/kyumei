@@ -1,0 +1,202 @@
+# How Temporal Server 1.32 keeps the visibility store up to date (the
+# records that listing, counting and searching Workflow Executions read),
+# how it limits calls to the store, and what happens when the store is slow
+# or failing.
+
+[[statement]]
+id = "behaviour.visibility-write-path"
+category = "behaviour"
+title = "History writes visibility records through a queue of its own"
+statement = "A Workflow Execution's visibility record, which listing, counting and searching read, is not written with the change itself. Starting the Workflow, upserting its search attributes or memo, and closing it each add a visibility task to the shard's visibility queue. The queue's tasks run on a scheduler of their own, with history.visibilityProcessorSchedulerWorkerCount (512) workers per History host, and each task writes the record with one call to the visibility store, built from the Workflow's state when the task runs. Until the task completes, lists and searches show the previous record, or none for a new Workflow."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/task_generator.go", line = 414, excerpt = "r.mutableState.AddTasks(&tasks.StartExecutionVisibilityTask{" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/task_generator.go", line = 706, excerpt = "r.mutableState.AddTasks(&tasks.UpsertExecutionVisibilityTask{" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/mutable_state_impl.go", line = 5251, excerpt = "if err := ms.taskGenerator.GenerateUpsertVisibilityTask(); err != nil {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/task_generator.go", line = 239, excerpt = "&tasks.CloseExecutionVisibilityTask{" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/tasks/category.go", line = 67, excerpt = "cType: CategoryTypeImmediate," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_factory.go", line = 41, excerpt = "HostScheduler: queues.NewScheduler(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_factory.go", line = 44, excerpt = "params.Config.VisibilityProcessorSchedulerWorkerCount," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 2418, excerpt = "\"history.visibilityProcessorSchedulerWorkerCount\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 2419, excerpt = "512," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_task_executor.go", line = 148, excerpt = "mutableState, err := weContext.LoadMutableState(ctx, t.shardContext)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_task_executor.go", line = 180, excerpt = "return t.visibilityMgr.RecordWorkflowExecutionStarted(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_task_executor.go", line = 228, excerpt = "return t.visibilityMgr.UpsertWorkflowExecution(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_task_executor.go", line = 289, excerpt = "err = t.visibilityMgr.RecordWorkflowExecutionClosed(ctx, closedRequest)" },
+]
+
+[[statement]]
+id = "behaviour.visibility-record-lag"
+category = "behaviour"
+title = "How late visibility records are written"
+statement = "For visibility tasks, task_type VisibilityTaskStartExecution, VisibilityTaskUpsertExecution, VisibilityTaskCloseExecution, VisibilityTaskDeleteExecution or VisibilityTaskUpsertChasmExecution, task_latency_queue runs from the change that created the task to the record's write completing, across every attempt and retry: it is how far lists and searches lagged behind the Workflows."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/metric_defs.go", line = 594, excerpt = "= \"VisibilityTaskStartExecution\"" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/metric_defs.go", line = 595, excerpt = "= \"VisibilityTaskUpsertExecution\"" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/metric_defs.go", line = 596, excerpt = "= \"VisibilityTaskCloseExecution\"" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/metric_defs.go", line = 597, excerpt = "= \"VisibilityTaskDeleteExecution\"" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/metrics/metric_defs.go", line = 598, excerpt = "= \"VisibilityTaskUpsertChasmExecution\"" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/metrics.go", line = 238, excerpt = "return GetVisibilityTaskTypeTagValue(task)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/task_key_generator.go", line = 70, excerpt = "taskScheduledTime := now" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/task_key_generator.go", line = 96, excerpt = "task.SetVisibilityTime(taskScheduledTime)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/workflow/task_generator.go", line = 236, excerpt = "should always be when the task is generated so that task_latency_queue/load" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 703, excerpt = "Record(time.Since(e.GetVisibilityTime()))" },
+]
+
+[[statement]]
+id = "limit.visibility-persistence-qps"
+category = "limit"
+title = "Each host limits its calls to the visibility store"
+statement = "Every server host limits its own calls to the visibility store, with no limit per namespace: writes at system.visibilityPersistenceMaxWriteQPS, and reads (listing, counting and getting records) at system.visibilityPersistenceMaxReadQPS, 9,000 per second each by default. History makes the writes; the Frontend makes the reads that listing and counting calls need. A call over the limit is refused at once with ResourceExhausted, cause PersistenceLimit and scope System (\"System Persistence Max QPS Reached.\"), and counted in visibility_persistence_resource_exhausted. History retries a refused visibility task after a backoff; the Frontend returns the error to the caller."
+notes = ["History's backoff after repeated refusals is at least 3 seconds (behaviour.history-task-retries)."]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 46, excerpt = "\"system.visibilityPersistenceMaxReadQPS\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 47, excerpt = "9000," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 51, excerpt = "\"system.visibilityPersistenceMaxWriteQPS\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 52, excerpt = "9000," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 36, excerpt = "readRateLimiter:  newPriorityRateLimiter(readMaxQPS, operatorRPSRatio)," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 37, excerpt = "writeRateLimiter: newPriorityRateLimiter(writeMaxQPS, operatorRPSRatio)," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 73, excerpt = "if ok := allow(ctx, \"RecordWorkflowExecutionStarted\", m.writeRateLimiter); !ok {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 114, excerpt = "if ok := allow(ctx, \"ListWorkflowExecutions\", m.readRateLimiter); !ok {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 74, excerpt = "return persistence.ErrPersistenceSystemLimitExceeded" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 176, excerpt = "// Currently only CallerType is used." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 177, excerpt = "return rateLimiter.Allow(time.Now().UTC(), quotas.NewRequest(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/fx.go", line = 453, excerpt = "serviceConfig.VisibilityPersistenceMaxWriteQPS," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/fx.go", line = 743, excerpt = "nil, // frontend visibility never write" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/fx.go", line = 748, excerpt = "serviceConfig.VisibilityPersistenceMaxReadQPS," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/persistence_rate_limited_clients.go", line = 25, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_PERSISTENCE_LIMIT," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/persistence_rate_limited_clients.go", line = 26, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_SYSTEM," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/persistence_rate_limited_clients.go", line = 27, excerpt = "Message: \"System Persistence Max QPS Reached.\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 253, excerpt = "case *serviceerror.ResourceExhausted:" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/workflow_handler.go", line = 2756, excerpt = "persistenceResp, err := wh.visibilityMgr.ListWorkflowExecutions(ctx, req)" },
+]
+
+[[statement]]
+id = "behaviour.visibility-store-writes"
+category = "behaviour"
+title = "How a visibility write reaches SQL or Elasticsearch"
+statement = "A visibility task's write runs under a 3-second timeout. With a SQL visibility store it is one statement on the database, within that timeout. With Elasticsearch, History's bulk processor gathers writes and sends them in bulks, when it holds worker.ESProcessorBulkActions (500) of them and every worker.ESProcessorFlushInterval (1 second) regardless; a write waits to join a bulk while the processor is busy sending the last one. The write then waits for Elasticsearch to acknowledge its bulk for up to worker.ESProcessorAckTimeout (30 seconds), ignoring the task's timeout. A write Elasticsearch rejects fails with Unavailable (\"visibility task received NACK\"), and one still unacknowledged after 30 seconds fails with a timeout error."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_task_executor.go", line = 133, excerpt = "ctx, cancel := context.WithTimeout(ctx, taskTimeout)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/transfer_queue_task_executor_base.go", line = 36, excerpt = "= time.Second * 3 * debug.TimeoutMultiplier" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/sql/visibility_store.go", line = 123, excerpt = "_, err = s.sqlStore.DB.InsertIntoVisibility(ctx, row)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/sql/visibility_store.go", line = 142, excerpt = "result, err := s.sqlStore.DB.ReplaceIntoVisibility(ctx, row)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/client/client_v7.go", line = 171, excerpt = "BulkActions(p.BulkActions)." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/client/client_v7.go", line = 173, excerpt = "FlushInterval(p.FlushInterval)." },
+  { source = "temporal-server-v1.32.0", path = "service/history/configs/config.go", line = 778, excerpt = "// Bulk processor will flush every this interval regardless of last flush due to bulk actions." },
+  { source = "temporal-server-v1.32.1", path = "service/history/configs/config.go", line = 780, excerpt = "// Bulk processor will flush every this interval regardless of last flush due to bulk actions." },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 3326, excerpt = "\"worker.ESProcessorBulkActions\"," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 3331, excerpt = "\"worker.ESProcessorBulkActions\"," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 3327, excerpt = "500," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 3332, excerpt = "500," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 3336, excerpt = "\"worker.ESProcessorFlushInterval\"," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 3341, excerpt = "\"worker.ESProcessorFlushInterval\"," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 3337, excerpt = "1*time.Second," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 3342, excerpt = "1*time.Second," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 3341, excerpt = "\"worker.ESProcessorAckTimeout\"," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 3346, excerpt = "\"worker.ESProcessorAckTimeout\"," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 3342, excerpt = "30*time.Second," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 3347, excerpt = "30*time.Second," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/visibility_store.go", line = 339, excerpt = "// Add method is blocking. If bulk processor is busy flushing previous bulk, request will wait here." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/visibility_store.go", line = 345, excerpt = "// Parent context is not respected here because it has shorter timeout (3s)," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/visibility_store.go", line = 347, excerpt = "ctx, cancel := context.WithTimeout(context.Background(), s.processorAckTimeout())" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/visibility_store.go", line = 353, excerpt = "return &persistence.TimeoutError{Msg: fmt.Sprintf(\"visibility task timed out waiting for ACK after %v\", s.processorAckTimeout())}" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/visibility_store.go", line = 364, excerpt = "return serviceerror.NewUnavailable(\"visibility task received NACK\")" },
+]
+
+[[statement]]
+id = "behaviour.es-bulk-latencies"
+category = "behaviour"
+title = "Where an Elasticsearch visibility write spends its time"
+statement = "History's Elasticsearch bulk processor times each write in stages, tagged operation ElasticsearchBulkProcessor: elasticsearch_bulk_processor_wait_add_latency, waiting to join a bulk; elasticsearch_bulk_processor_wait_start_latency, from joining until the bulk is sent; elasticsearch_bulk_processor_commit_latency, from sending the bulk until Elasticsearch answers; and elasticsearch_bulk_processor_request_latency, the whole. elasticsearch_bulk_processor_errors counts the writes in bulks that failed and the writes Elasticsearch rejected, tagged with the HTTP status."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/processor.go", line = 92, excerpt = "metricsHandler.WithTags(metrics.OperationTag(metrics.ElasticsearchBulkProcessor))," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/processor.go", line = 406, excerpt = "metrics.ElasticsearchBulkProcessorWaitAddLatency.With(metricsHandler).Record(addedAt.Sub(a.createdAt))" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/processor.go", line = 413, excerpt = "metrics.ElasticsearchBulkProcessorWaitStartLatency.With(metricsHandler).Record(a.startedAt.Sub(addedAt))" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/processor.go", line = 424, excerpt = "metrics.ElasticsearchBulkProcessorCommitLatency.With(metricsHandler).Record(doneAt.Sub(a.startedAt))" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/processor.go", line = 421, excerpt = "metrics.ElasticsearchBulkProcessorRequestLatency.With(metricsHandler).Record(doneAt.Sub(a.createdAt))" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/processor.go", line = 223, excerpt = "metrics.ElasticsearchBulkProcessorFailures.With(p.metricsHandler).Record(1, metrics.HttpStatusTag(httpStatus))" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/store/elasticsearch/processor.go", line = 265, excerpt = "metrics.ElasticsearchBulkProcessorFailures.With(p.metricsHandler).Record(1, metrics.HttpStatusTag(responseItem.Status))" },
+]
+
+[[statement]]
+id = "behaviour.visibility-task-dlq"
+category = "behaviour"
+title = "Failing visibility writes are retried for about an hour, then moved to the DLQ"
+statement = "A visibility task whose write fails with an unexpected error, such as the store being unavailable, rejecting the write or timing out, is counted in task_errors and logged, at Warn as \"Fail to process task\" and, once the task has failed 30 times, at Error as \"Critical error processing task, retrying.\". It is retried, after its tenth attempt with a backoff that grows by a tenth each attempt, to at most 3 minutes. After history.TaskDLQUnexpectedErrorAttempts (70) such failures, about an hour, History moves the task to the History task DLQ when history.TaskDLQEnabled is on (the default), counting it in dlq_writes with task_category visibility. Its record is then not written until the DLQ is merged back, with tdbg dlq merge and DLQ type 4. Refusals by a limit (ResourceExhausted) do not count toward the 70."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 581, excerpt = "e.unexpectedErrorAttempts++" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 582, excerpt = "metrics.TaskFailures.With(e.chasmMetricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 594, excerpt = "logger.Warn(\"Fail to process task\")" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 98, excerpt = "resubmitMaxAttempts = 10" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 799, excerpt = "if e.attempt.Load() > resubmitMaxAttempts {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/util.go", line = 70, excerpt = "taskRescheduleBackoffCoefficient = 1.1" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/util.go", line = 71, excerpt = "taskRescheduleMaxInterval        = 3 * time.Minute" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 614, excerpt = "if e.unexpectedErrorAttempts >= e.maxUnexpectedErrorAttempts() && e.dlqEnabled() {" },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 2861, excerpt = "\"history.TaskDLQEnabled\"," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 2866, excerpt = "\"history.TaskDLQEnabled\"," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 2862, excerpt = "true," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 2867, excerpt = "true," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 2867, excerpt = "\"history.TaskDLQUnexpectedErrorAttempts\"," },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 2872, excerpt = "\"history.TaskDLQUnexpectedErrorAttempts\"," },
+  { source = "temporal-server-v1.32.0", path = "common/dynamicconfig/constants.go", line = 2868, excerpt = "70, // 70 attempts takes about an hour" },
+  { source = "temporal-server-v1.32.1", path = "common/dynamicconfig/constants.go", line = 2873, excerpt = "70, // 70 attempts takes about an hour" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/visibility_queue_factory.go", line = 136, excerpt = "f.Config.TaskDLQUnexpectedErrorAttempts," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/dlq_writer.go", line = 125, excerpt = "metrics.DLQWrites.With(q.metricsHandler).Record(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/dlq_writer.go", line = 127, excerpt = "metrics.TaskCategoryTag(task.GetCategory().Name())," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "docs/admin/dlq.md", line = 37, excerpt = "4. visibility: 4" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "docs/admin/dlq.md", line = 61, excerpt = "To merge a message, execute the command `tdbg dlq merge --dlq-type {type} --last-message-id {message_id}`." },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 480, excerpt = "if errors.As(err, &resourceExhaustedErr) {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 104, excerpt = "taskCriticalLogMetricAttempts = 30" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 592, excerpt = 'logger.Error("Critical error processing task, retrying.", tag.OperationCritical)' },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/queues/executable.go", line = 594, excerpt = 'logger.Warn("Fail to process task")' },
+]
+
+[[statement]]
+id = "behaviour.visibility-slow-query-log"
+category = "behaviour"
+title = "Slow visibility queries are logged"
+statement = "When a visibility read takes longer than system.visibilityPersistenceSlowQueryThreshold (1 second), the host that made the call logs it at Warn, with the operation, its namespace and how long it took: \"List query exceeded threshold\" for listing Workflow Executions and \"Count query exceeded threshold\" for counting them, both with the query, and \"Get query exceeded threshold\" for getting one record."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 130, excerpt = "if elapsed > m.slowQueryThreshold() {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 131, excerpt = "m.logger.Warn(\"List query exceeded threshold\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 134, excerpt = "tag.String(\"visibility-query\", request.Query)," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 56, excerpt = "\"system.visibilityPersistenceSlowQueryThreshold\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 57, excerpt = "time.Second," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 171, excerpt = 'm.logger.Warn("Count query exceeded threshold",' },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 174, excerpt = 'tag.String("visibility-query", request.Query),' },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 211, excerpt = 'm.logger.Warn("Get query exceeded threshold",' },
+]
+
+[[statement]]
+id = "behaviour.visibility-api-rejections"
+category = "behaviour"
+title = "Listing calls over the visibility limit are rejected at once"
+statement = "A listing or counting call over the namespace's visibility limit on a Frontend host (limit.frontend-visibility-rps) fails at once with ResourceExhausted, cause RpsLimit and scope Namespace, message \"namespace rate limit exceeded\". The Frontend counts it in service_errors_resource_exhausted, with the API as its operation, such as ListWorkflowExecutions or CountWorkflowExecutions."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/configs/quotas.go", line = 290, excerpt = "mapping[api] = visibilityRateLimiter" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 92, excerpt = "if err := ni.Allow(ns, method, headers.NewGRPCHeaderGetter(ctx)); err != nil {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 156, excerpt = "return ErrNamespaceRateLimitServerBusy" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 26, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_RPS_LIMIT," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 27, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 28, excerpt = "Message: \"namespace rate limit exceeded\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/fx.go", line = 303, excerpt = "telemetryInterceptor.UnaryIntercept," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/frontend/fx.go", line = 307, excerpt = "namespaceRateLimiterInterceptor.Intercept," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/request_error_handler.go", line = 104, excerpt = "metrics.ServiceErrResourceExhaustedCounter.With(metricsHandler).Record(" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/telemetry.go", line = 380, excerpt = "return baseMetricsHandler.WithTags(metrics.OperationTag(overridedMethodName), metrics.NamespaceTag(nsName.String()))," },
+]

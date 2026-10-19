@@ -1,0 +1,941 @@
+# Diagnostic: elevated Workflow Task schedule-to-start latency.
+#
+# The investigation proceeds serially along the request path: Worker
+# execution capacity, Workflow Task polling, poll failures and throttling,
+# Matching's backlog and dispatch, Task Queue partitions, then upstream load.
+# It never concludes that more Workers are needed merely because
+# schedule-to-start is high.
+
+[diagnostic]
+id = "wft-schedule-to-start"
+title = "Elevated Workflow Task schedule-to-start latency"
+summary = "Workflow Tasks wait a long time between being scheduled and being started by a Worker."
+precedence = 10
+
+[diagnostic.path]
+description = "The path a signalled Workflow Task takes: from the clients sending Signals, through the Frontend, History and Matching, to the Workers."
+layers = ["clients", "frontend", "history", "matching", "workers"]
+labels = { clients = "Signal senders" }
+
+[[symptom]]
+id = "wft-schedule-to-start-elevated"
+title = "Workflow Task schedule-to-start latency is elevated"
+patterns = [
+  "schedule[- ]?to[- ]?start",
+  "workflow[- ]tasks?\\b.{0,80}\\b(wait|waiting|delayed|slow|latency|taking|backlog)",
+  "\\bwft\\b.{0,60}\\b(latency|delay|slow|wait)",
+  "workflow[- ]tasks?\\b.{0,80}\\b(takes?|took)\\b.{0,40}\\bto (start|be picked up|get picked up)",
+]
+signal = "wft_schedule_to_start"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "worker-capacity"
+order = 1
+title = "Worker execution capacity"
+question = "Are Workers out of Workflow Task execution slots?"
+
+[[stage]]
+id = "pollers"
+order = 2
+title = "Workflow Task polling"
+question = "Are enough Workflow Task polls outstanding?"
+
+[[stage]]
+id = "poll-throttling"
+order = 3
+title = "Poll failures and throttling"
+question = "Are Workflow Task polls failing or being throttled?"
+
+[[stage]]
+id = "matching-backlog"
+order = 4
+title = "Matching backlog and dispatch"
+question = "Are Workflow Tasks waiting in Matching?"
+
+[[stage]]
+id = "partitions"
+order = 5
+title = "Task Queue partitions and dispatch limit"
+question = "Is the Task Queue's dispatch capacity the constraint?"
+
+[[stage]]
+id = "upstream"
+order = 6
+title = "Upstream load"
+question = "What is driving the Workflow Task add rate?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "wft_schedule_to_start"
+title = "Workflow Task schedule-to-start latency"
+unit = "seconds"
+description = "Time from a Workflow Task being scheduled to a Worker starting it (a high quantile over the window)."
+source = [{ claim = "sdk.workflow_task_schedule_to_start_latency" }]
+
+[[signal]]
+id = "workflow_slots_available"
+title = "Free Workflow Task slots (all Workers)"
+unit = "count"
+description = "Workflow Task execution slots free across the Workers polling the Task Queue."
+combine = "sum"
+source = [{ claim = "sdk.worker_task_slots_available", labels = { worker_type = "WorkflowWorker" } }]
+
+[[signal]]
+id = "wft_pollers"
+title = "Normal-queue Workflow Task pollers"
+unit = "count"
+description = "Workflow Task pollers on the Task Queue's normal (non-sticky) queue, across Workers."
+combine = "sum"
+source = [{ claim = "sdk.num_pollers", labels = { poller_type = "workflow_task" } }]
+
+[[signal]]
+id = "listed_pollers"
+title = "Pollers DescribeTaskQueue lists"
+unit = "count"
+description = "Workers DescribeTaskQueue lists as having polled the Task Queue within matching.PollerHistoryTTL, 5 minutes by default."
+combine = "sum"
+source = [{ claim = "api.describe_task_queue.pollers" }]
+
+[[signal]]
+id = "ceiling_simulated_sts"
+title = "Schedule-to-start simulated with the dispatch limit alone"
+unit = "seconds"
+description = "Workflow Task schedule-to-start in a simulation of the Task Queue whose only constraint is its dispatch limit, calibrated on the observed add rate, limit and partitions over the incident window. A simulated fact."
+
+[[signal]]
+id = "wft_poll_succeed_rate"
+title = "Workflow Task polls returning a task"
+unit = "per_second"
+description = "Polls per second that returned a Workflow Task, across Workers."
+combine = "sum"
+source = [{ claim = "sdk.workflow_task_queue_poll_succeed", transform = "rate" }]
+
+[[signal]]
+id = "poll_failures_rate"
+title = "Failed Workflow Task polls (SDK)"
+unit = "per_second"
+description = "PollWorkflowTaskQueue attempts that failed, as seen by the Workers."
+combine = "sum"
+source = [{ claim = "sdk.long_request_failure", labels = { operation = "PollWorkflowTaskQueue" }, transform = "rate" }]
+
+[[signal]]
+id = "poll_rejections_rate"
+title = "Rejected Workflow Task polls (Frontend)"
+unit = "per_second"
+description = "PollWorkflowTaskQueue calls the Frontend rejected with ResourceExhausted."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { operation = "PollWorkflowTaskQueue" }, transform = "rate" }]
+
+[[signal]]
+id = "backlog_count"
+title = "Matching backlog (tasks)"
+unit = "count"
+description = "Workflow Tasks waiting in the Task Queue's backlog in Matching."
+combine = "sum"
+source = [
+  { claim = "api.task_queue_stats.approximate_backlog_count" },
+  { claim = "server.approximate_backlog_count", labels = { task_type = "Workflow" } },
+]
+
+[[signal]]
+id = "backlog_age"
+title = "Matching backlog age"
+unit = "seconds"
+description = "Age of the oldest Workflow Task waiting in Matching's backlog."
+source = [
+  { claim = "api.task_queue_stats.approximate_backlog_age" },
+  { claim = "server.approximate_backlog_age_seconds", labels = { task_type = "Workflow" } },
+]
+
+[[signal]]
+id = "tasks_add_rate"
+title = "Workflow Task add rate"
+unit = "per_second"
+description = "Workflow Tasks added to the Task Queue per second (30-second average)."
+source = [{ claim = "api.task_queue_stats.tasks_add_rate" }]
+
+[[signal]]
+id = "tasks_dispatch_rate"
+title = "Workflow Task dispatch rate"
+unit = "per_second"
+description = "Workflow Tasks dispatched to Workers per second (30-second average)."
+source = [{ claim = "api.task_queue_stats.tasks_dispatch_rate" }]
+
+[[signal]]
+id = "dispatch_rate_limit"
+title = "Effective dispatch rate limit"
+unit = "per_second"
+description = "The Task Queue's effective dispatch rate limit reported by DescribeTaskQueue."
+source = [{ claim = "api.describe_task_queue.effective_rate_limit" }]
+
+[[signal]]
+id = "read_partitions"
+title = "Read partitions"
+unit = "count"
+description = "matching.numTaskqueueReadPartitions in effect for the Task Queue."
+source = [{ claim = "dc.matching.numTaskqueueReadPartitions" }]
+
+[[signal]]
+id = "write_partitions"
+title = "Write partitions"
+unit = "count"
+description = "matching.numTaskqueueWritePartitions in effect for the Task Queue."
+source = [{ claim = "dc.matching.numTaskqueueWritePartitions" }]
+
+[[signal]]
+id = "signal_request_rate"
+title = "SignalWorkflowExecution rate"
+unit = "per_second"
+description = "SignalWorkflowExecution requests per second received by the Frontend for the namespace."
+combine = "sum"
+source = [{ claim = "server.service_requests", labels = { operation = "SignalWorkflowExecution" }, transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "worker-slot-exhaustion"
+stage = "worker-capacity"
+primary = true
+layer = "workers"
+title = "Workflow Worker slots exhausted"
+question = "Worker execution capacity exhausted?"
+statement = "Every Workflow Worker has used all of its Workflow Task slots, so Workers stop polling and tasks wait until a slot frees."
+implication = "Add Workers or Workflow Task slots, or reduce Workflow Task execution time."
+
+[[hypothesis]]
+id = "poller-starvation"
+stage = "pollers"
+primary = true
+layer = "workers"
+title = "Workflow Task poller starvation"
+question = "Poll rate the bottleneck?"
+statement = "Workers keep too few Workflow Task polls outstanding: tasks wait in Matching for the next poll even though execution slots are free."
+implication = "Raise the number of Workflow Task pollers per Worker."
+
+[[hypothesis]]
+id = "pollers-absent"
+stage = "pollers"
+layer = "workers"
+title = "No Workflow Task pollers"
+question = "Any Worker polling the Task Queue?"
+statement = "No Worker is polling the Task Queue's normal Workflow Task queue: Workers are down, disconnected, or polling a different Task Queue name."
+
+[[hypothesis]]
+id = "poll-throttling"
+stage = "poll-throttling"
+primary = true
+layer = "frontend"
+title = "Workflow Task polls throttled or failing"
+question = "Polls rejected or failing?"
+statement = "PollWorkflowTaskQueue calls fail or are rejected (for example ResourceExhausted from a namespace or host rate limit), so pollers back off while execution slots stay free."
+
+[[hypothesis]]
+id = "matching-backlog"
+stage = "matching-backlog"
+primary = true
+layer = "matching"
+title = "Workflow Tasks accumulating in Matching"
+question = "Latency accruing in Matching's backlog?"
+statement = "Workflow Tasks reach Matching promptly but wait in its backlog because Matching dispatches them more slowly than they are added."
+
+[[hypothesis]]
+id = "history-dispatch-delay"
+stage = "matching-backlog"
+layer = "history"
+title = "Workflow Tasks reaching Matching late"
+question = "Latency accruing before Matching?"
+statement = "The delay accrues between History scheduling the task and Matching receiving it, so Matching's backlog does not account for the schedule-to-start latency."
+
+[[hypothesis]]
+id = "dispatch-rate-ceiling"
+stage = "partitions"
+primary = true
+layer = "matching"
+title = "Task Queue dispatch rate limit reached"
+question = "Dispatch pinned at the rate limit?"
+statement = "Matching dispatches Workflow Tasks at the Task Queue's effective rate limit (per-partition limit × read partitions) while tasks are added faster, so the backlog grows whatever the Worker capacity."
+implication = "Reduce the Workflow Task add rate, or raise the dispatch ceiling by adding partitions."
+
+[[hypothesis]]
+id = "partition-write-read-mismatch"
+stage = "partitions"
+layer = "matching"
+title = "More write partitions than read partitions"
+question = "Tasks written where no poller reads?"
+statement = "The Task Queue has more write partitions than read partitions, so some tasks land on partitions no poller reads directly and must be forwarded."
+
+[[hypothesis]]
+id = "signal-flood"
+stage = "upstream"
+primary = true
+layer = "clients"
+title = "Signal flood driving Workflow Tasks"
+question = "Signal surge driving the add rate?"
+statement = "A surge of SignalWorkflowExecution calls across many idle Workflow Executions schedules a Workflow Task for each, raising the Workflow Task add rate."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "workflow-worker-slots"
+stage = "worker-capacity"
+title = "Free Workflow Task slots across Workers"
+why = "Schedule-to-start is how long a task waits for a Worker to start it. A Worker only polls when it can reserve a free Workflow Task slot, so if every Worker had used all its slots, tasks would wait — the one cause more Workers would fix. This single query confirms or rules that out."
+signals = ["workflow_slots_available"]
+distinguishes = ["worker-slot-exhaustion"]
+cost = 1
+group_by = ["task_queue"]
+window = { pad_before_minutes = 10, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Free Workflow Task slots, summed across Workers (range query, step {step})"
+body = "sum by (task_queue) (temporal_worker_task_slots_available{worker_type=\"WorkflowWorker\", namespace=\"{namespace}\", task_queue=\"{task_queue}\"})"
+unit = "count"
+claims = ["sdk.worker_task_slots_available"]
+note = "every SDK exports this gauge under this name; the Java SDK only when its slot supplier has a maximum"
+
+[[request]]
+id = "wft-schedule-to-start"
+stage = "worker-capacity"
+title = "Workflow Task schedule-to-start latency"
+why = "The symptom's magnitude is so far the operator's estimate. Measuring it lets every later comparison rest on telemetry."
+signals = ["wft_schedule_to_start"]
+distinguishes = ["worker-slot-exhaustion"]
+cost = 1
+group_by = ["task_queue"]
+
+[[request.collect]]
+method = "promql"
+label = "p95 schedule-to-start (Core-based SDKs: milliseconds by default)"
+sdk_family = "core"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_schedule_to_start_latency_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "milliseconds"
+claims = ["sdk.workflow_task_schedule_to_start_latency", "sdk.core-duration-unit"]
+
+[[request.collect]]
+method = "promql"
+label = "p95 schedule-to-start (Go SDK: seconds)"
+sdk_family = "go"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_schedule_to_start_latency_bucket{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m])))"
+unit = "seconds"
+claims = ["sdk.workflow_task_schedule_to_start_latency", "sdk.go-metrics-naming"]
+note = "with the OpenTelemetry handler, or tally's NewPrometheusNamingScope, the series is temporal_workflow_task_schedule_to_start_latency_seconds_bucket"
+
+[[request.collect]]
+method = "promql"
+label = "p95 schedule-to-start (Java SDK with Micrometer: seconds)"
+sdk_family = "java"
+body = "histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket{namespace=\"{namespace}\", task_queue=~\"{task_queue}(:sticky)?\"}[1m])))"
+unit = "seconds"
+claims = ["sdk.workflow_task_schedule_to_start_latency", "sdk.java-metrics-naming"]
+note = "includes sticky polls, which the Java SDK labels task_queue=\"{task_queue}:sticky\""
+
+[[request]]
+id = "workflow-pollers"
+stage = "pollers"
+title = "Workflow Task pollers and poll results"
+why = "The next question is whether polls reached Matching fast enough. Poller count against tasks received per second shows whether pollers were saturated or waiting for work, and whether any Worker was polling at all."
+signals = ["wft_pollers", "wft_poll_succeed_rate"]
+distinguishes = ["pollers-absent", "poller-starvation"]
+cost = 2
+group_by = ["task_queue"]
+
+[[request.collect]]
+method = "promql"
+label = "Normal-queue Workflow Task pollers, summed across Workers"
+body = "sum(temporal_num_pollers{poller_type=\"workflow_task\", namespace=\"{namespace}\", task_queue=\"{task_queue}\"})"
+unit = "count"
+claims = ["sdk.num_pollers"]
+
+[[request.collect]]
+method = "promql"
+label = "Workflow Task polls returning a task, per second"
+sdk_family = ["core", "go"]
+body = "sum(rate(temporal_workflow_task_queue_poll_succeed{namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.workflow_task_queue_poll_succeed"]
+note = "the name gains _total with Core's counters_total_suffix, tally's NewPrometheusNamingScope or OpenTelemetry's UseMonotonicCounters"
+
+[[request.collect]]
+method = "promql"
+label = "Workflow Task polls returning a task, per second"
+sdk_family = "java"
+body = "sum(rate(temporal_workflow_task_queue_poll_succeed_total{namespace=\"{namespace}\", task_queue=~\"{task_queue}(:sticky)?\"}[1m]))"
+unit = "per_second"
+claims = ["sdk.workflow_task_queue_poll_succeed", "sdk.java-metrics-naming"]
+note = "includes sticky polls, which the Java SDK labels task_queue=\"{task_queue}:sticky\""
+
+[[request]]
+id = "poll-failures"
+stage = "poll-throttling"
+title = "Failed Workflow Task polls"
+why = "A signal flood competes with polls for Frontend rate-limit capacity: Signals are admitted at a higher priority and reserve tokens polls depend on. Rejected polls make Workers back off while slots stay free. Poll failures seen by the Workers show whether that happened."
+signals = ["poll_failures_rate"]
+distinguishes = ["poll-throttling"]
+cost = 1
+group_by = ["status_code"]
+
+[[request.collect]]
+method = "promql"
+label = "Failed PollWorkflowTaskQueue attempts per second, by status code"
+sdk_family = ["core", "go"]
+body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollWorkflowTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+unit = "per_second"
+claims = ["sdk.long_request_failure", "behaviour.frontend-priorities", "sdk.long-poll-failures-counted-on-failure"]
+
+[[request.collect]]
+method = "promql"
+label = "Failed PollWorkflowTaskQueue attempts per second, by status code"
+sdk_family = "java"
+body = "sum by (status_code) (rate(temporal_long_request_failure_total{operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request_total{operation="PollWorkflowTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+unit = "per_second"
+claims = ["sdk.long_request_failure", "sdk.java-metrics-naming", "behaviour.frontend-priorities", "sdk.long-poll-failures-counted-on-failure"]
+
+[[request]]
+id = "poll-rejections"
+stage = "poll-throttling"
+title = "Workflow Task polls rejected by the Frontend"
+why = "The Frontend's own count of rejected polls, by cause, confirms or rules out rate-limit throttling of polls."
+signals = ["poll_rejections_rate"]
+distinguishes = ["poll-throttling"]
+cost = 2
+requires = ["server-metrics"]
+group_by = ["resource_exhausted_cause", "resource_exhausted_scope"]
+
+[[request.collect]]
+method = "promql"
+label = "PollWorkflowTaskQueue calls rejected with ResourceExhausted, per second"
+body = "sum by (resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name=\"frontend\", operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(service_requests{service_name="frontend", operation="PollWorkflowTaskQueue", namespace="{namespace}"}[1m]))', because = "server.request-errors-counted-on-error" }
+unit = "per_second"
+claims = ["server.service_errors_resource_exhausted", "server.request-errors-counted-on-error"]
+
+[[request]]
+id = "matching-queue-stats"
+stage = "matching-backlog"
+title = "Task Queue backlog, add and dispatch rates"
+why = "With Worker capacity free and polls not throttled, the question is where the wait accrues. DescribeTaskQueue reports Matching's backlog, the rates tasks are added and dispatched, and the effective dispatch rate limit, which together locate the constraint in Matching or before it. It also lists the Workers that polled in the last 5 minutes, which settles whether any did."
+signals = ["backlog_age", "backlog_count", "tasks_add_rate", "tasks_dispatch_rate", "dispatch_rate_limit", "listed_pollers"]
+distinguishes = ["matching-backlog", "history-dispatch-delay", "dispatch-rate-ceiling", "poller-starvation", "pollers-absent"]
+cost = 2
+window = { pad_before_minutes = 0, pad_after_minutes = 0, guidance = "Capture it while the latency is elevated, and note the time." }
+
+[[request.collect]]
+method = "temporal-api"
+label = "DescribeTaskQueue with statistics, through grpcurl, captured during the incident"
+body = '''grpcurl -plaintext -emit-defaults -d '{"namespace": "{namespace}", "taskQueue": {"name": "{task_queue}"}, "taskQueueType": "TASK_QUEUE_TYPE_WORKFLOW", "reportStats": true}' <frontend-host:7233> temporal.api.workflowservice.v1.WorkflowService/DescribeTaskQueue'''
+claims = ["behaviour.frontend-grpc-reflection", "api.task_queue_stats.approximate_backlog_age", "api.task_queue_stats.tasks_add_rate", "api.task_queue_stats.tasks_dispatch_rate", "api.describe_task_queue.effective_rate_limit", "api.describe_task_queue.pollers"]
+note = "point it at a Frontend, which answers gRPC reflection, so grpcurl needs no proto files; -emit-defaults keeps zero rates and an empty poller list, which protobuf JSON leaves out; with TLS, use -cacert, -cert and -key instead of -plaintext; record when you captured it"
+
+[[request.collect]]
+method = "temporal-cli"
+label = "If you cannot run grpcurl: the Temporal CLI's description, as JSON, without the rate limit"
+body = "temporal task-queue describe --namespace {namespace} --task-queue {task_queue} --task-queue-type workflow -o json"
+claims = ["cli.task-queue-describe", "api.task_queue_stats.approximate_backlog_age", "api.task_queue_stats.tasks_add_rate", "api.task_queue_stats.tasks_dispatch_rate", "api.describe_task_queue.pollers"]
+note = "CLI 1.7.0 to 1.9.1 print the backlog, rates and pollers but not the effective rate limit, and describe only the unversioned queue, or the default Build ID's, so with versioned Workers use grpcurl; record when you captured it"
+
+[[request.collect]]
+method = "promql"
+label = "If you can run neither: Matching's backlog age over the window"
+body = "max(approximate_backlog_age_seconds{namespace=\"{namespace}\", taskqueue=\"{task_queue}\", task_type=\"Workflow\"})"
+unit = "seconds"
+claims = ["server.approximate_backlog_age_seconds", "server.taskqueue-tag"]
+
+[[request]]
+id = "partition-config"
+stage = "partitions"
+title = "Task Queue partition configuration"
+why = "The effective dispatch limit is the per-partition limit multiplied by the read partitions. The partition settings in effect for {task_queue} show where the limit comes from, and whether tasks are written to partitions no poller reads."
+signals = ["read_partitions", "write_partitions"]
+distinguishes = ["partition-write-read-mismatch", "dispatch-rate-ceiling"]
+cost = 3
+
+[[request.collect]]
+method = "dynamic-config"
+label = "Every matching.numTaskqueueReadPartitions and matching.numTaskqueueWritePartitions entry in your dynamic config, with constraints"
+body = "grep -A 6 -E 'matching\\.numTaskqueue(Read|Write)Partitions' <your-dynamic-config.yaml>"
+claims = ["dc.matching.numTaskqueueReadPartitions", "dc.matching.numTaskqueueWritePartitions"]
+note = "if neither key is set, say so: Kyumei will not assume the default of 4 from an absent entry"
+
+[[request]]
+id = "signal-rate"
+stage = "upstream"
+title = "SignalWorkflowExecution rate before and during the incident"
+why = "Each Signal to an idle Workflow Execution schedules one Workflow Task. Comparing the Signal rate before and during the incident with the Workflow Task add rate shows whether the Signal flood drove it."
+signals = ["signal_request_rate"]
+distinguishes = ["signal-flood"]
+cost = 2
+requires = ["server-metrics"]
+window = { pad_before_minutes = 20, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Signals received by the Frontend per second (include at least 10 minutes before the incident)"
+body = "sum(rate(service_requests{service_name=\"frontend\", operation=\"SignalWorkflowExecution\", namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.service_requests", "server.metrics-framework"]
+note = "with the OpenTelemetry metrics framework the counter is named service_requests_total"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "slots-headroom"
+hypothesis = "worker-slot-exhaustion"
+effect = "eliminates"
+statement = "Worker execution saturation is not supported: at least {workflow_slots_available.min} Workflow Task slots stayed free across the Workers throughout the window while schedule-to-start reached {wft_schedule_to_start.max}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.slots-headroom", "heuristic.sts-elevated", "sdk.core-poll-needs-slot"]
+when = { all = [
+  { signal = "workflow_slots_available", stat = "min", op = "ge", value = 5 },
+  { signal = "workflow_slots_available", stat = "samples", op = "ge", value = 3 },
+  { signal = "wft_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "slots-ran-out"
+hypothesis = "worker-slot-exhaustion"
+effect = "supports"
+statement = "At times no Workflow Task slot was free across the Workers (minimum {workflow_slots_available.min})."
+claims = ["heuristic.slots-headroom"]
+when = { signal = "workflow_slots_available", stat = "min", op = "lt", value = 1 }
+
+[[rule]]
+id = "slots-exhausted"
+hypothesis = "worker-slot-exhaustion"
+effect = "establishes"
+statement = "Free Workflow Task slots across the Workers averaged {workflow_slots_available.mean} and never rose above {workflow_slots_available.max} while schedule-to-start reached {wft_schedule_to_start.max}: Workers could poll for more work only as running tasks finished."
+claims = ["heuristic.sustained-needs-samples", "heuristic.slots-exhausted", "sdk.core-poll-needs-slot", "heuristic.sts-elevated"]
+when = { all = [
+  { signal = "workflow_slots_available", stat = "mean", op = "lt", value = 1 },
+  { signal = "workflow_slots_available", stat = "max", op = "lt", value = 5 },
+  { signal = "workflow_slots_available", stat = "samples", op = "ge", value = 3 },
+  { signal = "wft_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "pollers-present"
+hypothesis = "pollers-absent"
+effect = "eliminates"
+statement = "Workers kept at least {wft_pollers.min} normal-queue Workflow Task pollers throughout the window."
+when = { signal = "wft_pollers", stat = "min", op = "ge", value = 1 }
+
+[[rule]]
+id = "no-pollers"
+hypothesis = "pollers-absent"
+effect = "establishes"
+statement = "No normal-queue Workflow Task poller was active at any sample (maximum {wft_pollers.max})."
+claims = ["heuristic.sustained-needs-samples"]
+when = { all = [
+  { signal = "wft_pollers", stat = "max", op = "lt", value = 1 },
+  { signal = "wft_pollers", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "none-listed"
+hypothesis = "pollers-absent"
+effect = "establishes"
+statement = "DescribeTaskQueue listed no pollers: no Worker had polled the Task Queue for at least matching.PollerHistoryTTL, 5 minutes by default, before it was captured."
+claims = ["behaviour.pollers-listed-for-ttl", "dc.matching.PollerHistoryTTL", "sdk.core-poll-needs-slot"]
+# Workers with no free slot stop polling too, so an empty list says no Worker is
+# polling only while their slots are not known to have run out.
+when = { all = [
+  { signal = "listed_pollers", stat = "last", op = "lt", value = 1 },
+  { not = { hypothesis = "worker-slot-exhaustion", state = ["supported", "established"] } },
+] }
+
+[[rule]]
+id = "slots-in-use"
+hypothesis = "pollers-absent"
+effect = "eliminates"
+statement = "Workers on the Task Queue used every Workflow Task slot at times (down to {workflow_slots_available.min} free): they are running and took its tasks by polling, and a Worker stops polling only while it has no free slot."
+claims = ["sdk.core-poll-needs-slot"]
+when = { signal = "workflow_slots_available", stat = "min", op = "lt", value = 1 }
+
+[[rule]]
+id = "pollers-listed"
+hypothesis = "pollers-absent"
+effect = "eliminates"
+statement = "DescribeTaskQueue listed {listed_pollers.last} pollers, each seen within matching.PollerHistoryTTL, 5 minutes by default, before it was captured: Workers were polling the Task Queue."
+claims = ["behaviour.pollers-listed-for-ttl", "dc.matching.PollerHistoryTTL"]
+when = { signal = "listed_pollers", stat = "last", op = "ge", value = 1 }
+
+[[rule]]
+id = "pollers-busy"
+hypothesis = "poller-starvation"
+effect = "supports"
+statement = "Pollers were rarely idle: Workers received {wft_poll_succeed_rate.mean} Workflow Tasks with only {wft_pollers.mean} normal-queue pollers, more than 50 per poller per second."
+claims = ["heuristic.poller-busy"]
+when = { all = [
+  { signal = "wft_pollers", stat = "min", op = "ge", value = 1 },
+  { ratio = { numerator = "wft_poll_succeed_rate.mean", denominator = "wft_pollers.mean" }, op = "ge", value = 50 },
+] }
+
+[[rule]]
+id = "pollers-waiting"
+hypothesis = "poller-starvation"
+effect = "weakens"
+statement = "Pollers were mostly waiting for work: {wft_poll_succeed_rate.mean} Workflow Tasks received across {wft_pollers.mean} normal-queue pollers, fewer than 10 per poller per second."
+claims = ["heuristic.poller-busy"]
+when = { all = [
+  { signal = "wft_pollers", stat = "min", op = "ge", value = 1 },
+  { ratio = { numerator = "wft_poll_succeed_rate.mean", denominator = "wft_pollers.mean" }, op = "le", value = 10 },
+] }
+
+[[rule]]
+id = "dispatch-capped-not-pollers"
+hypothesis = "poller-starvation"
+effect = "eliminates"
+statement = "Pollers were not the binding constraint: dispatch ran at {tasks_dispatch_rate.max}, pinned at the Task Queue's effective rate limit of {dispatch_rate_limit.last}, while tasks were added at {tasks_add_rate.max}."
+claims = ["heuristic.dispatch-at-limit", "behaviour.partition-dispatch-rate-limit"]
+when = { all = [
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 },
+  { ratio = { numerator = "tasks_add_rate.max", denominator = "tasks_dispatch_rate.max" }, op = "ge", value = 1.02 },
+] }
+
+[[rule]]
+id = "starved-below-limit"
+hypothesis = "poller-starvation"
+effect = "establishes"
+statement = "Tasks waited in Matching's backlog while dispatch ({tasks_dispatch_rate.max}) stayed well below the rate limit ({dispatch_rate_limit.last}) and each normal-queue poller was almost always busy ({wft_poll_succeed_rate.mean} across {wft_pollers.mean} pollers): the poll rate limited dispatch."
+claims = ["heuristic.poller-busy", "heuristic.dispatch-at-limit"]
+when = { all = [
+  { hypothesis = "matching-backlog", state = ["established"] },
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.7 },
+  { ratio = { numerator = "wft_poll_succeed_rate.mean", denominator = "wft_pollers.mean" }, op = "ge", value = 50 },
+] }
+
+[[rule]]
+id = "no-poll-failures"
+hypothesis = "poll-throttling"
+effect = "eliminates"
+statement = "No Workflow Task poll failed during the window (at most {poll_failures_rate.max}) while schedule-to-start reached {wft_schedule_to_start.max}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.effectively-zero-rate", "heuristic.sts-elevated"]
+when = { all = [
+  { signal = "poll_failures_rate", stat = "max", op = "le", value = 0.01 },
+  { signal = "poll_failures_rate", stat = "samples", op = "ge", value = 3 },
+  { signal = "wft_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "poll-failures"
+hypothesis = "poll-throttling"
+effect = "supports"
+statement = "Workflow Task polls failed at {poll_failures_rate.mean} on average (peak {poll_failures_rate.max})."
+claims = ["heuristic.effectively-zero-rate"]
+when = { signal = "poll_failures_rate", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-poll-rejections"
+hypothesis = "poll-throttling"
+effect = "eliminates"
+statement = "The Frontend rejected no Workflow Task polls during the window (at most {poll_rejections_rate.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.effectively-zero-rate"]
+when = { all = [
+  { signal = "poll_rejections_rate", stat = "max", op = "le", value = 0.01 },
+  { signal = "poll_rejections_rate", stat = "samples", op = "ge", value = 3 },
+  { signal = "wft_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "poll-rejections"
+hypothesis = "poll-throttling"
+effect = "establishes"
+statement = "The Frontend rejected Workflow Task polls with ResourceExhausted at {poll_rejections_rate.mean} on average (peak {poll_rejections_rate.max})."
+claims = ["heuristic.effectively-zero-rate", "behaviour.frontend-priorities"]
+when = { signal = "poll_rejections_rate", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "backlog-carries-latency"
+hypothesis = "matching-backlog"
+effect = "establishes"
+statement = "The latency accrues in Matching: its backlog reached {backlog_age.max} old ({backlog_count.max} tasks), comparable to the schedule-to-start latency of {wft_schedule_to_start.max}."
+claims = ["heuristic.backlog-carries-latency", "behaviour.schedule-to-start-measured-by-history"]
+when = { all = [
+  { ratio = { numerator = "backlog_age.max", denominator = "wft_schedule_to_start.max" }, op = "ge", value = 0.5 },
+  { signal = "backlog_count", stat = "max", op = "ge", value = 1 },
+] }
+
+[[rule]]
+id = "adds-exceed-dispatch"
+hypothesis = "matching-backlog"
+effect = "supports"
+statement = "Tasks were added faster than they were dispatched: up to {tasks_add_rate.max} added against {tasks_dispatch_rate.max} dispatched."
+when = { ratio = { numerator = "tasks_add_rate.max", denominator = "tasks_dispatch_rate.max" }, op = "ge", value = 1.02 }
+
+[[rule]]
+id = "no-backlog"
+hypothesis = "matching-backlog"
+effect = "eliminates"
+statement = "Matching's backlog stayed under a second old (at most {backlog_age.max}) while schedule-to-start reached {wft_schedule_to_start.max}: the wait is not in Matching's backlog."
+claims = ["heuristic.sustained-needs-samples", "heuristic.sts-elevated"]
+when = { all = [
+  { signal = "backlog_age", stat = "max", op = "lt", value = 1 },
+  { signal = "backlog_age", stat = "samples", op = "ge", value = 3 },
+  { signal = "wft_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "matching-accounts-for-latency"
+hypothesis = "history-dispatch-delay"
+effect = "eliminates"
+statement = "Matching's backlog age ({backlog_age.max}) accounts for most of the schedule-to-start latency ({wft_schedule_to_start.max}), leaving little room for delay before Matching."
+claims = ["heuristic.backlog-carries-latency", "behaviour.schedule-to-start-measured-by-history"]
+when = { ratio = { numerator = "backlog_age.max", denominator = "wft_schedule_to_start.max" }, op = "ge", value = 0.8 }
+
+[[rule]]
+id = "latency-before-matching"
+hypothesis = "history-dispatch-delay"
+effect = "supports"
+statement = "Matching's backlog age ({backlog_age.max}) explains less than a third of the schedule-to-start latency ({wft_schedule_to_start.max}); the rest accrues before Matching or on sticky queues."
+claims = ["heuristic.backlog-carries-latency", "behaviour.schedule-to-start-measured-by-history"]
+when = { all = [
+  { ratio = { numerator = "backlog_age.max", denominator = "wft_schedule_to_start.max" }, op = "lt", value = 0.3 },
+  { signal = "wft_schedule_to_start", stat = "max", op = "ge", value = 5 },
+] }
+
+[[rule]]
+id = "dispatch-at-limit"
+hypothesis = "dispatch-rate-ceiling"
+effect = "establishes"
+statement = "Dispatch was pinned at the Task Queue's effective rate limit: {tasks_dispatch_rate.max} dispatched against a limit of {dispatch_rate_limit.last}, while {tasks_add_rate.max} were added."
+claims = ["heuristic.dispatch-at-limit", "behaviour.partition-dispatch-rate-limit", "limit.task-queue-dispatch"]
+when = { all = [
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 },
+  { ratio = { numerator = "tasks_add_rate.max", denominator = "tasks_dispatch_rate.max" }, op = "ge", value = 1.02 },
+] }
+
+[[rule]]
+id = "dispatch-below-limit"
+hypothesis = "dispatch-rate-ceiling"
+effect = "eliminates"
+statement = "Dispatch ({tasks_dispatch_rate.max}) stayed well below the Task Queue's effective rate limit ({dispatch_rate_limit.last}), so the limit was not binding."
+claims = ["heuristic.sustained-needs-samples", "heuristic.dispatch-at-limit"]
+when = { all = [
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "lt", value = 0.7 },
+  { signal = "tasks_dispatch_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "limit-from-partitions"
+hypothesis = "dispatch-rate-ceiling"
+effect = "supports"
+statement = "Dispatch ({tasks_dispatch_rate.max}) reached the effective limit of {dispatch_rate_limit.last}, which matches {read_partitions.last} read partitions at Matching's default per-partition dispatch limit of 1,000 tasks/s: the ceiling comes from the partition count, not from an API or Worker rate limit."
+claims = ["limit.task-queue-dispatch", "dc.admin.matchingNamespaceTaskqueueToPartitionDispatchRate", "dc.matching.numTaskqueueReadPartitions"]
+when = { all = [
+  { ratio = { numerator = "tasks_dispatch_rate.max", denominator = "dispatch_rate_limit.last" }, op = "ge", value = 0.95 },
+  { ratio = { numerator = "dispatch_rate_limit.last", denominator = "read_partitions.last" }, op = "ge", value = 990 },
+  { ratio = { numerator = "dispatch_rate_limit.last", denominator = "read_partitions.last" }, op = "le", value = 1010 },
+] }
+
+[[rule]]
+id = "ceiling-big-enough"
+hypothesis = "dispatch-rate-ceiling"
+effect = "supports"
+statement = "Simulated with the observed add rate against the dispatch limit, and nothing else in the way, schedule-to-start reached {ceiling_simulated_sts.max} against {wft_schedule_to_start.max} observed: the limit alone is big enough to explain the latency."
+claims = ["heuristic.simulation-reproduces", "limit.task-queue-dispatch"]
+when = { all = [
+  { ratio = { numerator = "ceiling_simulated_sts.max", denominator = "wft_schedule_to_start.max" }, op = "ge", value = 0.5 },
+  { ratio = { numerator = "ceiling_simulated_sts.max", denominator = "wft_schedule_to_start.max" }, op = "le", value = 2 },
+] }
+
+[[rule]]
+id = "ceiling-falls-short"
+hypothesis = "dispatch-rate-ceiling"
+effect = "weakens"
+statement = "Simulated with the observed add rate against the dispatch limit, and nothing else in the way, schedule-to-start reached only {ceiling_simulated_sts.max} against {wft_schedule_to_start.max} observed: the limit alone falls well short of the latency."
+claims = ["heuristic.simulation-reproduces", "limit.task-queue-dispatch"]
+when = { ratio = { numerator = "ceiling_simulated_sts.max", denominator = "wft_schedule_to_start.max" }, op = "lt", value = 0.2 }
+
+[[rule]]
+id = "write-within-read"
+hypothesis = "partition-write-read-mismatch"
+effect = "eliminates"
+statement = "Write partitions ({write_partitions.last}) do not exceed read partitions ({read_partitions.last}): every partition tasks are written to is polled."
+claims = ["behaviour.write-partition-choice"]
+when = { ratio = { numerator = "write_partitions.last", denominator = "read_partitions.last" }, op = "le", value = 1 }
+
+[[rule]]
+id = "write-exceeds-read"
+hypothesis = "partition-write-read-mismatch"
+effect = "establishes"
+statement = "The Task Queue has {write_partitions.last} write partitions but only {read_partitions.last} read partitions: tasks written to the extra partitions are not polled directly."
+claims = ["behaviour.write-partition-choice"]
+when = { ratio = { numerator = "write_partitions.last", denominator = "read_partitions.last" }, op = "gt", value = 1 }
+
+[[rule]]
+id = "signal-surge"
+hypothesis = "signal-flood"
+effect = "supports"
+statement = "Signals surged: SignalWorkflowExecution rose from about {signal_request_rate.baseline} before the incident to {signal_request_rate.max}."
+claims = ["heuristic.signal-surge"]
+when = { all = [
+  { ratio = { numerator = "signal_request_rate.max", denominator = "signal_request_rate.baseline" }, op = "ge", value = 5 },
+  { signal = "signal_request_rate", stat = "max", op = "ge", value = 50 },
+] }
+
+[[rule]]
+id = "signals-drive-adds"
+hypothesis = "signal-flood"
+effect = "establishes"
+statement = "The Signal surge accounts for the Workflow Task add rate: Signals peaked at {signal_request_rate.max} (from about {signal_request_rate.baseline}) against up to {tasks_add_rate.max} Workflow Tasks added."
+claims = ["heuristic.signal-surge", "behaviour.signal-schedules-workflow-task"]
+when = { all = [
+  { ratio = { numerator = "signal_request_rate.max", denominator = "signal_request_rate.baseline" }, op = "ge", value = 5 },
+  { signal = "signal_request_rate", stat = "max", op = "ge", value = 50 },
+  { ratio = { numerator = "signal_request_rate.max", denominator = "tasks_add_rate.max" }, op = "ge", value = 0.8 },
+] }
+
+[[rule]]
+id = "no-signal-surge"
+hypothesis = "signal-flood"
+effect = "eliminates"
+statement = "There was no Signal surge: SignalWorkflowExecution peaked at {signal_request_rate.max} against a baseline of about {signal_request_rate.baseline}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.signal-surge"]
+when = { all = [
+  { ratio = { numerator = "signal_request_rate.max", denominator = "signal_request_rate.baseline" }, op = "lt", value = 1.5 },
+  { signal = "signal_request_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "pollers-absent"
+title = "No Worker polling the Task Queue"
+statement = "Workflow Task schedule-to-start rose because no Worker polled the Task Queue, so its Workflow Tasks waited in Matching for a poll that did not come."
+when = { hypothesis = "pollers-absent", state = ["established"] }
+
+[[conclusion.clause]]
+when = { signal = "listed_pollers", stat = "last", op = "lt", value = 1 }
+text = "DescribeTaskQueue listed no pollers, so none had polled for at least 5 minutes before it was captured."
+
+[[conclusion.clause]]
+when = { signal = "backlog_count", stat = "max", op = "ge", value = 1 }
+text = "Matching's backlog held up to {backlog_count.max} tasks."
+
+[[conclusion.recommendation]]
+text = "Check that the Workers for this Task Queue are running and can reach the Frontend, and that they poll this exact Task Queue name in this namespace: a Worker given another name polls another queue. If they are running, check their free Workflow Task slots: a Worker with none stops polling."
+claims = ["behaviour.pollers-listed-for-ttl", "sdk.core-poll-needs-slot"]
+
+[[conclusion]]
+id = "dispatch-ceiling-under-signal-flood"
+title = "Task Queue dispatch rate limit reached under a Signal flood"
+statement = "Workflow Task schedule-to-start rose because Matching dispatched Workflow Tasks at the Task Queue's effective rate limit ({dispatch_rate_limit.last}) while a Signal flood added them at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old — the schedule-to-start latency. Worker execution slots stayed free throughout (at least {workflow_slots_available.min}) and no Workflow Task polls failed, so more Workers would not have reduced the latency."
+when = { all = [
+  { hypothesis = "dispatch-rate-ceiling", state = ["established"] },
+  { hypothesis = "matching-backlog", state = ["established"] },
+  { hypothesis = "worker-slot-exhaustion", state = ["eliminated"] },
+  { hypothesis = "poll-throttling", state = ["eliminated"] },
+  { hypothesis = "signal-flood", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "read_partitions", stat = "last", op = "ge", value = 1 }
+text = "The limit follows from the Task Queue's {read_partitions.last} read partitions at Matching's default per-partition dispatch limit."
+
+[[conclusion.clause]]
+when = { signal = "signal_request_rate", stat = "max", op = "ge", value = 1 }
+text = "SignalWorkflowExecution rose from about {signal_request_rate.baseline} to {signal_request_rate.max}; each Signal to an idle execution schedules a Workflow Task."
+
+[[conclusion.recommendation]]
+text = "Pace the Signal-sending job so the Workflow Task add rate stays below the dispatch limit ({dispatch_rate_limit.last})."
+claims = ["behaviour.signal-schedules-workflow-task", "heuristic.signal-surge"]
+
+[[conclusion.recommendation]]
+text = "If this rate is expected, raise the Task Queue's partition count: increase matching.numTaskqueueReadPartitions first, then matching.numTaskqueueWritePartitions, never leaving more write than read partitions. Each read partition adds up to admin.matchingNamespaceTaskqueueToPartitionDispatchRate (1,000 tasks/s by default) of dispatch capacity."
+caution = "More partitions add load to Matching hosts and persistence; check their headroom first. Pollers were busy, so poller counts may need to rise with the dispatch limit."
+claims = ["dc.matching.numTaskqueueReadPartitions", "dc.matching.numTaskqueueWritePartitions", "dc.admin.matchingNamespaceTaskqueueToPartitionDispatchRate", "limit.task-queue-dispatch", "behaviour.write-partition-choice"]
+
+[[conclusion.recommendation]]
+text = "Do not add Workers or Workflow Task slots for this symptom: execution capacity was available throughout."
+claims = ["heuristic.slots-headroom"]
+
+[[conclusion]]
+id = "dispatch-ceiling"
+title = "Task Queue dispatch rate limit reached"
+statement = "Workflow Task schedule-to-start rose because Matching dispatched Workflow Tasks at the Task Queue's effective rate limit ({dispatch_rate_limit.last}) while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Worker execution slots stayed free (at least {workflow_slots_available.min}) and Workflow Task polls did not fail, so more Workers would not have reduced the latency."
+when = { all = [
+  { hypothesis = "dispatch-rate-ceiling", state = ["established"] },
+  { hypothesis = "matching-backlog", state = ["established"] },
+  { hypothesis = "worker-slot-exhaustion", state = ["eliminated"] },
+  { hypothesis = "poll-throttling", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "read_partitions", stat = "last", op = "ge", value = 1 }
+text = "The limit follows from the Task Queue's {read_partitions.last} read partitions at Matching's default per-partition dispatch limit."
+
+[[conclusion.recommendation]]
+text = "Find what raised the Workflow Task add rate and pace it below the dispatch limit ({dispatch_rate_limit.last}), or raise the partition count (read partitions first, then write)."
+caution = "More partitions add load to Matching hosts and persistence; check their headroom first."
+claims = ["limit.task-queue-dispatch", "dc.matching.numTaskqueueReadPartitions", "dc.matching.numTaskqueueWritePartitions"]
+
+[[conclusion]]
+id = "poll-throttling"
+title = "Workflow Task polls throttled"
+statement = "Workflow Task schedule-to-start rose because Workflow Task polls were rejected or failing while Workers still had free slots. Rejected pollers back off, so tasks wait for the next successful poll."
+when = { all = [
+  { hypothesis = "poll-throttling", state = ["established"] },
+  { hypothesis = "worker-slot-exhaustion", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Check the rejection cause. A namespace limit (RpsLimit with scope Namespace) points at frontend.namespaceRPS; Signals are admitted at a higher priority than polls and reserve capacity polls depend on, so pacing Signal senders relieves polls."
+claims = ["behaviour.frontend-priorities", "dc.frontend.namespaceRPS", "server.service_errors_resource_exhausted"]
+
+[[conclusion]]
+id = "poller-starvation"
+title = "Workflow Task poller starvation"
+statement = "Workflow Task schedule-to-start rose because Workers kept too few Workflow Task polls outstanding: tasks waited in Matching's backlog while dispatch ran below the rate limit and every poller was busy, even though execution slots were free."
+when = { all = [
+  { hypothesis = "poller-starvation", state = ["established"] },
+  { hypothesis = "worker-slot-exhaustion", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Raise the number of Workflow Task pollers per Worker (for example the Python SDK's workflow_task_poller_behavior maximum, 5 by default), or run more Worker processes."
+claims = ["sdk.python-default-wft-pollers", "heuristic.poller-busy"]
+
+[[conclusion]]
+id = "worker-slot-exhaustion"
+title = "Workflow Worker execution slots exhausted"
+statement = "Workflow Task schedule-to-start rose because Workers had no free Workflow Task slots, so they stopped polling and tasks waited for a slot."
+when = { hypothesis = "worker-slot-exhaustion", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Add Worker processes or Workflow Task slots, or reduce Workflow Task execution time."
+claims = ["sdk.core-poll-needs-slot"]
+
+[[conclusion]]
+id = "history-dispatch-delay"
+title = "Workflow Tasks reaching Matching late"
+statement = "Workflow Task schedule-to-start reached {wft_schedule_to_start.max} while Matching's backlog was at most {backlog_age.max} old: the wait accrues before Matching, between History scheduling each Workflow Task and Matching receiving it. Worker slots were free and polls did not fail."
+when = { all = [
+  { hypothesis = "history-dispatch-delay", state = ["supported", "established"] },
+  { hypothesis = "worker-slot-exhaustion", state = ["eliminated"] },
+  { hypothesis = "poll-throttling", state = ["eliminated"] },
+  { hypothesis = "pollers-absent", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Open a History task lag investigation for the same window: History hands each Workflow Task to Matching from its transfer queue, and that diagnostic finds where the queue falls behind."
+claims = ["behaviour.schedule-to-start-measured-by-history", "behaviour.history-task-pipeline"]
+
+# ------------------------------------------------------------- simulations
+# Is the cause big enough? Each runs once its inputs are known, and what it
+# finds is a simulated fact: it can support or weaken, never settle.
+
+[[simulation]]
+id = "dispatch-ceiling-size"
+title = "Schedule-to-start with the dispatch limit alone"
+hypothesis = "dispatch-rate-ceiling"
+model = "task-queue-dispatch"
+why = "A dispatch limit only explains the latency if adds exceed it by enough, for long enough. The simulation runs the Task Queue with its observed add rate against its observed limit and nothing else in the way, over the incident window, and compares the wait it gives with the one observed."
+inputs = { add_rate = "tasks_add_rate.max", dispatch_limit = "dispatch_rate_limit.last", read_partitions = "read_partitions.last", symptom = "wft_schedule_to_start.max" }
+produces = "ceiling_simulated_sts"
+claims = ["heuristic.simulation-reproduces", "limit.task-queue-dispatch", "behaviour.partition-dispatch-rate-limit"]

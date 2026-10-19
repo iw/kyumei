@@ -1,0 +1,77 @@
+# Branch fixture for shard ownership churn: a crashing host and slow leases.
+#
+# From 09:10 UTC one History host is OOM-killed every few minutes. Each time
+# it leaves and returns, its shards move, while the database is overloaded:
+# taking the moved shards takes seconds, and the errors last that long.
+#
+# The investigation must find the errors, the membership changes, and the
+# slow acquisition.
+
+[fixture]
+id = "history-crash-slow-acquire"
+title = "Crashing History host, overloaded database: shards slow to be taken"
+description = "Branch fixture for shard ownership churn. Shards move repeatedly and each move lasts seconds."
+investigation = "inv-branch-shard-slow-acquire"
+
+[open]
+at = 2026-10-19T09:45:00Z
+description = "Since about 09:10 UTC clients keep getting 'shard unavailable, please backoff and retry', in bursts every few minutes. One History pod keeps restarting. Namespace billing."
+server_version = "1.31.0"
+namespaces = ["billing"]
+window_start = 2026-10-19T09:10:00Z
+window_end = 2026-10-19T09:50:00Z
+
+[open.expect]
+next_request = "ownership-errors"
+conclusion = "none"
+concluded = false
+
+# E1 — ShardOwnershipLost errors at the Frontend.
+[[step]]
+at = 2026-10-19T09:48:00Z
+answers = "ownership-errors"
+file = "evidence/e1-ownership-errors.json"
+channel = "paste"
+query = 'sum by (error_type) (rate(service_error_with_type{service_name="frontend", error_type=~"serviceerror.ShardOwnershipLost", namespace="billing"}[1m]))'
+
+[step.expect]
+next_request = "membership-changes"
+findings = ["F-ownership-failing"]
+bound_signals = ["ownership_errors"]
+conclusion = "ownership-errors"
+concluded = false
+
+# E2 — Membership changes.
+[[step]]
+at = 2026-10-19T09:50:00Z
+answers = "membership-changes"
+file = "evidence/e2-membership-changes.json"
+channel = "paste"
+query = 'sum(rate(membership_changed_count{service_name="history"}[1m]))'
+
+[step.expect]
+next_request = "shard-acquisition"
+findings = ["F-membership-changed"]
+bound_signals = ["membership_changes"]
+conclusion = "membership-churn"
+concluded = false
+
+# E3 — Shard acquisition pass time.
+[[step]]
+at = 2026-10-19T09:52:00Z
+answers = "shard-acquisition"
+file = "evidence/e3-acquisition.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le) (rate(acquire_shards_latency_bucket{service_name="history"}[1m])))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-acquisition-slow"]
+bound_signals = ["acquire_latency"]
+conclusion = "churn-slow-acquisition"
+concluded = true
+
+[step.expect.states]
+ownership-errors = "established"
+membership-changes = "established"
+slow-acquisition = "established"

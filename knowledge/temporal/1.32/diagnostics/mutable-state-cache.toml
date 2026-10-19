@@ -1,0 +1,384 @@
+# Diagnostic: History's Workflow (mutable state) cache missing, raising
+# database reads and History latency.
+#
+# Every request and task History serves needs the Workflow's state, which it
+# keeps in a cache per host. A miss reads the state from the database. The
+# investigation confirms the extra reads, finds the misses, and then asks why
+# the cache misses: full and evicting Workflows still in use, full of
+# Workflows that are all in use, or emptied when shards moved.
+
+[diagnostic]
+id = "mutable-state-cache"
+title = "History Workflow cache pressure"
+summary = "History's Workflow cache misses, so it reads Workflow state from the database far more often and its latency rises."
+# Before persistence latency: a description that names History's cache or
+# its reads is about the cache, even if it also mentions latency.
+precedence = 18
+
+[diagnostic.path]
+description = "The path of a Workflow's state: a request or task looks it up in History's cache on the host; on a miss History reads it from the database, caches it, and evicts another Workflow if the cache is full."
+layers = ["history", "persistence"]
+labels = { history = "History's Workflow cache" }
+
+[[symptom]]
+id = "mutable-state-cache"
+title = "History's Workflow cache missing"
+patterns = [
+  "mutable[- ]state cache",
+  "history cache",
+  "\\bcache_(miss|usage|size|pinned_usage)\\b",
+  "GetWorkflowExecution",
+  "\\b(database|db|persistence)\\b.{0,40}\\breads?\\b.{0,40}\\b(high|rose|up|increased?|spiked?|doubled|tripled)\\b",
+]
+signal = "workflow_reads"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "reads"
+order = 1
+title = "Workflow state reads"
+question = "Did History's reads of Workflow state rise?"
+
+[[stage]]
+id = "hits"
+order = 2
+title = "Cache hits"
+question = "Do lookups miss History's Workflow cache?"
+
+[[stage]]
+id = "capacity"
+order = 3
+title = "Cache capacity"
+question = "Is the cache full?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "workflow_reads"
+title = "Workflow state reads"
+unit = "per_second"
+description = "History's GetWorkflowExecution persistence calls per second, which read a Workflow's state on a cache miss."
+combine = "sum"
+source = [{ claim = "server.persistence_requests", labels = { service_name = "history", operation = "GetWorkflowExecution" }, transform = "rate" }]
+
+[[signal]]
+id = "cache_lookups"
+title = "Workflow cache lookups"
+unit = "per_second"
+description = "Lookups of a Workflow's state in History's cache per second."
+combine = "sum"
+source = [{ claim = "server.cache_requests", labels = { cache_type = "mutablestate", operation = "HistoryCacheGetOrCreate" }, transform = "rate" }]
+
+[[signal]]
+id = "cache_misses"
+title = "Workflow cache misses"
+unit = "per_second"
+description = "Lookups per second that did not find the Workflow cached."
+combine = "sum"
+source = [{ claim = "server.cache_miss", labels = { cache_type = "mutablestate", operation = "HistoryCacheGetOrCreate" }, transform = "rate" }]
+
+[[signal]]
+id = "cache_usage"
+title = "Workflows cached (fullest host)"
+unit = "count"
+description = "Entries in the fullest History host's Workflow cache."
+source = [{ claim = "server.cache_usage", labels = { cache_type = "mutablestate" } }]
+
+[[signal]]
+id = "cache_capacity"
+title = "Workflow cache size"
+unit = "count"
+description = "The configured size of each History host's Workflow cache."
+source = [{ claim = "server.cache_size", labels = { cache_type = "mutablestate" } }]
+
+[[signal]]
+id = "cache_pinned"
+title = "Cached Workflows in use (fullest host)"
+unit = "count"
+description = "Entries of the Workflow cache in use by a request or task, which cannot be evicted, on the busiest History host."
+source = [{ claim = "server.cache_pinned_usage", labels = { cache_type = "mutablestate" } }]
+
+[[signal]]
+id = "cache_errors"
+title = "Workflow cache errors"
+unit = "per_second"
+description = "Lookups per second that failed: the cache refused a new entry, or the request gave up waiting for the Workflow's lock."
+combine = "sum"
+source = [{ claim = "server.cache_errors", labels = { cache_type = "mutablestate", operation = "HistoryCacheGetOrCreate" }, transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "read-load"
+stage = "reads"
+primary = true
+layer = "persistence"
+title = "More reads of Workflow state"
+question = "Workflow reads up?"
+statement = "History reads Workflow state from the database far more often than before the incident, adding load to the database and time to History's requests and tasks."
+
+[[hypothesis]]
+id = "cache-misses"
+stage = "hits"
+primary = true
+layer = "history"
+title = "Lookups missing the cache"
+question = "Lookups missing?"
+statement = "Lookups of Workflow state miss History's cache, so each one reads the Workflow from the database."
+
+[[hypothesis]]
+id = "cache-full"
+stage = "capacity"
+primary = true
+layer = "history"
+title = "Workflow cache full"
+question = "Cache full?"
+statement = "More Workflows are active on a History host than its cache holds (history.hostLevelCacheMaxSize, 128,000 by default), so the cache evicts Workflows that are read again soon."
+implication = "Give each host a larger cache, or add History hosts."
+
+[[hypothesis]]
+id = "pinned-full"
+stage = "capacity"
+layer = "history"
+title = "Cache full of Workflows in use"
+question = "Cache full of Workflows in use?"
+statement = "Every entry in the cache is in use by a request or task, so the cache can evict nothing and lookups for other Workflows fail with ResourceExhausted."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "workflow-reads"
+stage = "reads"
+title = "History's reads of Workflow state, before and during the incident"
+why = "History reads a Workflow's state from the database with GetWorkflowExecution each time its cache misses. The rate before and during the incident shows whether the database load comes from these reads."
+signals = ["workflow_reads"]
+distinguishes = ["read-load"]
+cost = 1
+requires = ["server-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "History's GetWorkflowExecution calls per second (include at least 15 minutes before the incident)"
+body = "sum(rate(persistence_requests{service_name=\"history\", operation=\"GetWorkflowExecution\"}[1m]))"
+unit = "per_second"
+claims = ["server.persistence_requests", "behaviour.mutable-state-cache"]
+note = "with the OpenTelemetry metrics framework the counter is named persistence_requests_total"
+
+[[request]]
+id = "cache-hits"
+stage = "hits"
+title = "Workflow cache lookups and misses"
+why = "History counts every lookup of a Workflow's state and every miss. The share that misses shows whether the cache is failing the requests and tasks that need it."
+signals = ["cache_lookups", "cache_misses"]
+distinguishes = ["cache-misses"]
+cost = 1
+requires = ["server-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Workflow cache lookups per second"
+body = "sum(rate(cache_requests{cache_type=\"mutablestate\", operation=\"HistoryCacheGetOrCreate\"}[1m]))"
+unit = "per_second"
+claims = ["server.cache_requests"]
+note = "with the OpenTelemetry metrics framework the counter is named cache_requests_total"
+
+[[request.collect]]
+method = "promql"
+label = "Workflow cache misses per second"
+body = "sum(rate(cache_miss{cache_type=\"mutablestate\", operation=\"HistoryCacheGetOrCreate\"}[1m]))"
+unit = "per_second"
+claims = ["server.cache_miss", "behaviour.mutable-state-cache"]
+note = "with the OpenTelemetry metrics framework the counter is named cache_miss_total"
+
+[[request]]
+id = "cache-capacity"
+stage = "capacity"
+title = "How full History's Workflow cache is"
+why = "A cache only drops Workflows still in use when it is full. Its usage against its size shows whether it is full; the entries in use show whether it can evict at all; and the cache's errors show lookups it refused."
+signals = ["cache_usage", "cache_capacity", "cache_pinned", "cache_errors"]
+distinguishes = ["cache-full", "pinned-full"]
+cost = 2
+requires = ["server-metrics"]
+
+[[request.collect]]
+method = "promql"
+label = "Entries in the fullest host's Workflow cache"
+body = "max(cache_usage{cache_type=\"mutablestate\", service_name=\"history\"})"
+unit = "count"
+claims = ["server.cache_usage"]
+
+[[request.collect]]
+method = "promql"
+label = "The Workflow cache's configured size"
+body = "max(cache_size{cache_type=\"mutablestate\", service_name=\"history\"})"
+unit = "count"
+claims = ["server.cache_size", "behaviour.mutable-state-cache"]
+
+[[request.collect]]
+method = "promql"
+label = "Entries in use in the fullest host's Workflow cache"
+body = "max(cache_pinned_usage{cache_type=\"mutablestate\", service_name=\"history\"})"
+unit = "count"
+claims = ["server.cache_pinned_usage"]
+
+[[request.collect]]
+method = "promql"
+label = "Workflow cache errors per second"
+body = "sum(rate(cache_errors{cache_type=\"mutablestate\", operation=\"HistoryCacheGetOrCreate\"}[1m]))"
+unit = "per_second"
+claims = ["server.cache_errors"]
+note = "with the OpenTelemetry metrics framework the counter is named cache_errors_total"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "reads-rose"
+hypothesis = "read-load"
+effect = "establishes"
+statement = "History's reads of Workflow state rose from about {workflow_reads.baseline} before the incident to {workflow_reads.max}."
+claims = ["heuristic.persistence-load-rise", "behaviour.mutable-state-cache"]
+when = { ratio = { numerator = "workflow_reads.max", denominator = "workflow_reads.baseline" }, op = "ge", value = 1.5 }
+
+[[rule]]
+id = "reads-steady"
+hypothesis = "read-load"
+effect = "eliminates"
+statement = "History's reads of Workflow state held steady: at most {workflow_reads.max} against about {workflow_reads.baseline} before the incident."
+claims = ["heuristic.sustained-needs-samples", "heuristic.persistence-load-rise"]
+when = { all = [
+  { ratio = { numerator = "workflow_reads.max", denominator = "workflow_reads.baseline" }, op = "lt", value = 1.2 },
+  { signal = "workflow_reads", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "misses-share-high"
+hypothesis = "cache-misses"
+effect = "establishes"
+statement = "Lookups missed the Workflow cache at {cache_misses.mean} on average, out of {cache_lookups.mean} lookups: each miss read the Workflow from the database."
+claims = ["heuristic.history-cache-miss-share", "behaviour.mutable-state-cache"]
+when = { ratio = { numerator = "cache_misses.mean", denominator = "cache_lookups.mean" }, op = "ge", value = 0.25 }
+
+[[rule]]
+id = "misses-share-low"
+hypothesis = "cache-misses"
+effect = "eliminates"
+statement = "The Workflow cache served its lookups: {cache_misses.mean} misses on average out of {cache_lookups.mean}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.history-cache-miss-share"]
+when = { all = [
+  { ratio = { numerator = "cache_misses.mean", denominator = "cache_lookups.mean" }, op = "le", value = 0.1 },
+  { signal = "cache_lookups", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "cache-at-size"
+hypothesis = "cache-full"
+effect = "establishes"
+statement = "The fullest host's Workflow cache held {cache_usage.max} entries of its {cache_capacity.max}: full, so it evicted Workflows to make room."
+claims = ["heuristic.history-cache-full", "behaviour.mutable-state-cache"]
+when = { ratio = { numerator = "cache_usage.max", denominator = "cache_capacity.max" }, op = "ge", value = 0.95 }
+
+[[rule]]
+id = "cache-has-room"
+hypothesis = "cache-full"
+effect = "eliminates"
+statement = "The Workflow cache had room: at most {cache_usage.max} entries of {cache_capacity.max} on the fullest host."
+claims = ["heuristic.sustained-needs-samples", "heuristic.history-cache-full"]
+when = { all = [
+  { ratio = { numerator = "cache_usage.max", denominator = "cache_capacity.max" }, op = "le", value = 0.8 },
+  { signal = "cache_usage", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "pinned-at-size"
+hypothesis = "pinned-full"
+effect = "establishes"
+statement = "Up to {cache_pinned.max} of the cache's {cache_capacity.max} entries were in use at once, while lookups failed at {cache_errors.mean} on average: the cache could evict nothing."
+claims = ["heuristic.history-cache-full", "heuristic.rejections-significant", "behaviour.mutable-state-cache"]
+when = { all = [
+  { ratio = { numerator = "cache_pinned.max", denominator = "cache_capacity.max" }, op = "ge", value = 0.95 },
+  { signal = "cache_errors", stat = "mean", op = "gt", value = 0.1 },
+] }
+
+[[rule]]
+id = "no-cache-errors"
+hypothesis = "pinned-full"
+effect = "eliminates"
+statement = "No Workflow cache lookup failed during the window (at most {cache_errors.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "cache_errors", stat = "max", op = "le", value = 0.01 },
+  { signal = "cache_errors", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "cache-too-small"
+title = "History's Workflow cache too small for the Workflows in flight"
+statement = "History's Workflow cache is full, {cache_usage.max} entries of {cache_capacity.max} on the fullest host, so it evicts Workflows that are soon needed again: lookups missed at {cache_misses.mean} on average out of {cache_lookups.mean}, and each miss read the Workflow's state from the database."
+when = { all = [
+  { hypothesis = "cache-misses", state = ["established"] },
+  { hypothesis = "cache-full", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { hypothesis = "read-load", state = ["established"] }
+text = "History's reads of Workflow state rose from about {workflow_reads.baseline} to {workflow_reads.max}."
+
+[[conclusion.recommendation]]
+text = "Raise history.hostLevelCacheMaxSize (128,000 entries per host by default), or add History hosts, each with its own cache, so the Workflows in flight fit."
+caution = "The setting takes effect only when a History host restarts, and every cached Workflow takes memory on the host; check the hosts' memory first."
+claims = ["behaviour.mutable-state-cache", "dc.history.hostLevelCacheMaxSize"]
+
+[[conclusion]]
+id = "pinned-full"
+title = "History's Workflow cache full of Workflows in use"
+statement = "History's Workflow cache can evict nothing: up to {cache_pinned.max} of its {cache_capacity.max} entries were in use at once, and lookups for other Workflows failed at {cache_errors.mean} on average with ResourceExhausted."
+when = { hypothesis = "pinned-full", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Find what holds so many Workflows at once: requests and tasks that wait long on persistence or on each other keep their Workflows in use. The persistence latency diagnostic covers slow database calls."
+claims = ["behaviour.mutable-state-cache", "server.cache_pinned_usage"]
+
+[[conclusion]]
+id = "misses-with-room"
+title = "Cached Workflows dropped while the cache had room"
+statement = "Lookups missed History's Workflow cache at {cache_misses.mean} on average out of {cache_lookups.mean}, while the cache had room (at most {cache_usage.max} of {cache_capacity.max}): cached Workflows were dropped rather than evicted for space. That happens when shards move between History hosts or reload, since each shard's cached Workflows are keyed to its owner."
+when = { all = [
+  { hypothesis = "cache-misses", state = ["established"] },
+  { hypothesis = "cache-full", state = ["eliminated"] },
+  { hypothesis = "pinned-full", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { hypothesis = "read-load", state = ["established"] }
+text = "History's reads of Workflow state rose from about {workflow_reads.baseline} to {workflow_reads.max}."
+
+[[conclusion.recommendation]]
+text = "Check whether History hosts restarted, joined or left around the onset: shards moving between hosts empty their part of the cache, and the misses settle once the Workflows are read again."
+claims = ["behaviour.cache-key-per-shard-owner", "behaviour.mutable-state-cache"]
+
+[[conclusion]]
+id = "cache-misses"
+title = "Lookups missing History's Workflow cache"
+statement = "Lookups missed History's Workflow cache at {cache_misses.mean} on average out of {cache_lookups.mean}; each miss read the Workflow's state from the database."
+when = { hypothesis = "cache-misses", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Compare the cache's usage with its size to see whether it is full."
+claims = ["behaviour.mutable-state-cache"]
+
+[[conclusion]]
+id = "read-load"
+title = "More reads of Workflow state"
+statement = "History's reads of Workflow state rose from about {workflow_reads.baseline} before the incident to {workflow_reads.max}."
+when = { hypothesis = "read-load", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Check whether the misses or the number of requests and tasks rose: the cache's lookups and misses separate them."
+claims = ["behaviour.mutable-state-cache"]

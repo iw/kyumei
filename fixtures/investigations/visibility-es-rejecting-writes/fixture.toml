@@ -1,0 +1,82 @@
+# Branch fixture for visibility lag and errors: Elasticsearch rejecting
+# writes.
+#
+# From 08:00 UTC the visibility Elasticsearch cluster's circuit breakers
+# reject most bulk requests. History's visibility writes fail (the bulk
+# processor NACKs them, Unavailable) and are retried with a growing
+# backoff. Most get through after many attempts, so records fall about ten
+# minutes behind; from 09:05 the unluckiest tasks reach 70 failed attempts,
+# about an hour, and History moves them to its DLQ.
+#
+# The investigation must find the records late, rule out the write limit,
+# and find the store failing, with the DLQ writes.
+
+[fixture]
+id = "visibility-es-rejecting-writes"
+title = "Elasticsearch rejecting writes: retries, then the DLQ"
+description = "Branch fixture for visibility lag and errors. Elasticsearch rejects most bulks; visibility tasks retry for minutes, and some reach the DLQ."
+investigation = "inv-branch-visibility-store-errors"
+
+[open]
+at = 2026-10-18T09:38:00Z
+description = "Since about 08:00 UTC Elasticsearch has been rejecting most bulk requests from our History hosts with circuit_breaking_exception. Workflows in the payments namespace started since then are missing from temporal workflow list, and the search attributes we upsert are out of date."
+server_version = "1.31.0"
+namespaces = ["payments"]
+window_start = 2026-10-18T08:00:00Z
+window_end = 2026-10-18T09:40:00Z
+
+[open.expect]
+next_request = "visibility-lag"
+conclusion = "none"
+concluded = false
+
+# E1 — Visibility record lag by task type.
+[[step]]
+at = 2026-10-18T09:40:00Z
+answers = "visibility-lag"
+file = "evidence/e1-record-lag.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_queue_bucket{namespace="payments", task_type=~"VisibilityTask.*"}[1m])))'
+
+[step.expect]
+next_request = "visibility-persistence-refusals"
+findings = ["F-records-late"]
+bound_signals = ["visibility_task_latency"]
+conclusion = "records-late"
+concluded = false
+
+# E2 — Refusals by the visibility persistence limits: none.
+[[step]]
+at = 2026-10-18T09:43:00Z
+answers = "visibility-persistence-refusals"
+file = "evidence/e2-refusals.json"
+channel = "paste"
+query = 'sum by (operation) (rate(visibility_persistence_resource_exhausted[1m]))'
+
+[step.expect]
+next_request = "visibility-persistence-errors"
+findings = ["F-records-late", "F-no-write-refusals"]
+bound_signals = ["write_refusals"]
+conclusion = "records-late"
+concluded = false
+
+# E3 — Store errors by call, and visibility tasks moved to the DLQ.
+[[step]]
+at = 2026-10-18T09:46:00Z
+answers = "visibility-persistence-errors"
+file = "evidence/e3-errors.csv"
+channel = "upload"
+query = 'sum by (operation) (rate(visibility_persistence_errors[1m])) and sum(rate(dlq_writes{task_category="visibility"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-records-late", "F-no-write-refusals", "F-store-failing"]
+bound_signals = ["store_errors", "visibility_dlq_writes"]
+conclusion = "store-errors"
+concluded = true
+
+[step.expect.states]
+records-late = "established"
+write-limit = "eliminated"
+store-errors = "established"
+slow-writes = "candidate"

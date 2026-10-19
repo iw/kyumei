@@ -1,0 +1,705 @@
+# Diagnostic: lists and searches of Workflow Executions are stale, or
+# listing and counting calls fail or are slow.
+#
+# History writes each Workflow's visibility record through a queue of its
+# own, after the change commits; the Frontend reads the records for
+# listing and counting calls. The investigation first asks whether records
+# are written late. If they are, it follows the write path: the visibility
+# persistence write limit, the store's errors and write latency, and
+# History's visibility workers. If they are not, the listing calls
+# themselves fail or are slow: the Frontend's visibility rate limit, the
+# read limit, the store's errors and slow queries.
+
+[diagnostic]
+id = "visibility"
+title = "Visibility lag and errors"
+summary = "Lists and searches of Workflow Executions are stale, or listing and counting calls fail or are slow."
+# After the Workflow Task diagnostics and before History task lag, whose
+# patterns would take a lagging visibility queue for History's queues in
+# general; well before ResourceExhausted, which would send a rate-limited
+# listing call to the namespace's general limit.
+precedence = 11
+
+[diagnostic.path]
+description = "The path of a visibility record: History writes it through its visibility queue to the visibility store after each change, and the Frontend reads the store for listing and counting calls."
+layers = ["clients", "frontend", "history", "persistence"]
+labels = { clients = "Callers listing Workflows", persistence = "Visibility store" }
+
+[[symptom]]
+id = "visibility-lag"
+title = "Lists and searches stale"
+patterns = [
+  "\\bvisibility\\b.{0,40}\\b(lag|lags|lagging|delay|delays|delayed|stale|behind|late|out of date)\\b",
+  "(\\bnot|n[’']t|\\bnever)\\b.{0,30}\\b(show|shows|showing|shown|appear|appears|appearing|listed|visible)\\b.{0,40}\\b(ui|list|lists|listing|search|searches|results|visibility)\\b",
+  "\\b(still|keeps?)\\b.{0,20}\\b(show|shows|showing|listed|appear|appears)\\b.{0,30}\\brunning\\b",
+  "\\bsearch attributes?\\b.{0,40}\\b(stale|late|delayed|lag|lagging|behind|out of date|not updat\\w*)",
+  "\\b(lists?|listing|search|searches)\\b.{0,40}\\b(stale|out of date|outdated)\\b",
+]
+signal = "visibility_task_latency"
+
+[[symptom]]
+id = "visibility-errors"
+title = "Listing Workflows failing or slow"
+patterns = [
+  "\\b(List|Count|Scan)WorkflowExecutions\\b",
+  "\\b(list|lists|listing|count|counting|search|searching)\\b.{0,30}\\bworkflows?\\b.{0,40}\\b(fail|fails|failing|failed|error|errors|slow|timeout|timeouts|timing out|times out|rate[- ]?limit(ed)?|unavailable)",
+  "\\bworkflow list\\b.{0,40}\\b(fail|fails|failing|failed|error|errors|slow|timeout|timing out|times out|rate[- ]?limit(ed)?)",
+  "\\bvisibility\\b.{0,40}\\b(error|errors|fail|fails|failing|failed|unavailable|timeout|timeouts|timing out|rate[- ]?limit(ed)?)",
+  "\\b(elasticsearch|opensearch)\\b.{0,60}\\b(error|errors|fail|failing|failed|slow|timeout|timeouts|down|unavailable|nack|reject|rejected|rejecting|overloaded)",
+  "visibility_persistence_",
+]
+signal = "query_latency"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "records"
+order = 1
+title = "Records"
+question = "Are visibility records written late?"
+
+[[stage]]
+id = "api"
+order = 2
+title = "Listing calls"
+question = "Does the Frontend reject listing calls?"
+
+[[stage]]
+id = "limits"
+order = 3
+title = "Persistence limits"
+question = "Do the visibility persistence limits refuse calls?"
+
+[[stage]]
+id = "store"
+order = 4
+title = "Visibility store"
+question = "Is the visibility store failing or slow?"
+
+[[stage]]
+id = "queue"
+order = 5
+title = "Visibility workers"
+question = "Do visibility tasks wait for History's workers?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "visibility_task_latency"
+title = "Visibility record lag"
+unit = "seconds"
+description = "Time from a change to a Workflow until History finished writing its visibility record (a high quantile over the window)."
+source = [
+  { claim = "server.task_latency_queue", labels = { task_type = "VisibilityTaskStartExecution" } },
+  { claim = "server.task_latency_queue", labels = { task_type = "VisibilityTaskUpsertExecution" } },
+  { claim = "server.task_latency_queue", labels = { task_type = "VisibilityTaskCloseExecution" } },
+  { claim = "server.task_latency_queue", labels = { task_type = "VisibilityTaskDeleteExecution" } },
+  { claim = "server.task_latency_queue", labels = { task_type = "VisibilityTaskUpsertChasmExecution" } },
+]
+
+[[signal]]
+id = "api_rejections"
+title = "Listing calls rejected by the visibility rate limit"
+unit = "per_second"
+description = "The namespace's listing and counting calls per second that the Frontend rejected at its visibility rate limit (ResourceExhausted, cause RpsLimit, scope Namespace)."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { resource_exhausted_cause = "RpsLimit", resource_exhausted_scope = "Namespace" }, transform = "rate" }]
+
+[[signal]]
+id = "write_refusals"
+title = "Visibility writes refused by the write limit"
+unit = "per_second"
+description = "History's writes to the visibility store per second refused by system.visibilityPersistenceMaxWriteQPS."
+combine = "sum"
+source = [
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "RecordWorkflowExecutionStarted" }, transform = "rate" },
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "UpsertWorkflowExecution" }, transform = "rate" },
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "RecordWorkflowExecutionClosed" }, transform = "rate" },
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "DeleteWorkflowExecution" }, transform = "rate" },
+]
+
+[[signal]]
+id = "read_refusals"
+title = "Visibility queries refused by the read limit"
+unit = "per_second"
+description = "Listing, counting and other reads of the visibility store per second refused by system.visibilityPersistenceMaxReadQPS."
+combine = "sum"
+source = [
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "ListWorkflowExecutions" }, transform = "rate" },
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "CountWorkflowExecutions" }, transform = "rate" },
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "ListChasmExecutions" }, transform = "rate" },
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "CountChasmExecutions" }, transform = "rate" },
+  { claim = "server.visibility_persistence_resource_exhausted", labels = { operation = "GetWorkflowExecution" }, transform = "rate" },
+]
+
+[[signal]]
+id = "store_errors"
+title = "Visibility store calls failing"
+unit = "per_second"
+description = "Calls to the visibility store per second that failed unexpectedly, such as with the store unavailable or rejecting them."
+combine = "sum"
+source = [{ claim = "server.visibility_persistence_errors", transform = "rate" }]
+
+[[signal]]
+id = "visibility_dlq_writes"
+title = "Visibility tasks moved to the DLQ"
+unit = "per_second"
+description = "Visibility tasks per second that History moved to its DLQ after about an hour of failures."
+combine = "sum"
+source = [{ claim = "server.dlq_writes", labels = { task_category = "visibility" }, transform = "rate" }]
+
+[[signal]]
+id = "write_latency"
+title = "Visibility write latency"
+unit = "seconds"
+description = "How long History's writes to the visibility store took (a high quantile over the window)."
+source = [
+  { claim = "server.visibility_persistence_latency", labels = { operation = "RecordWorkflowExecutionStarted" } },
+  { claim = "server.visibility_persistence_latency", labels = { operation = "UpsertWorkflowExecution" } },
+  { claim = "server.visibility_persistence_latency", labels = { operation = "RecordWorkflowExecutionClosed" } },
+  { claim = "server.visibility_persistence_latency", labels = { operation = "DeleteWorkflowExecution" } },
+]
+
+[[signal]]
+id = "query_latency"
+title = "Visibility query latency"
+unit = "seconds"
+description = "How long listing and counting queries to the visibility store took (a high quantile over the window)."
+source = [
+  { claim = "server.visibility_persistence_latency", labels = { operation = "ListWorkflowExecutions" } },
+  { claim = "server.visibility_persistence_latency", labels = { operation = "CountWorkflowExecutions" } },
+  { claim = "server.visibility_persistence_latency", labels = { operation = "ListChasmExecutions" } },
+  { claim = "server.visibility_persistence_latency", labels = { operation = "CountChasmExecutions" } },
+]
+
+[[signal]]
+id = "visibility_schedule_latency"
+title = "Visibility task scheduler wait"
+unit = "seconds"
+description = "Time visibility tasks waited for a worker of History's visibility scheduler (a high quantile over the window)."
+source = [
+  { claim = "server.task_latency_schedule", labels = { task_type = "VisibilityTaskStartExecution" } },
+  { claim = "server.task_latency_schedule", labels = { task_type = "VisibilityTaskUpsertExecution" } },
+  { claim = "server.task_latency_schedule", labels = { task_type = "VisibilityTaskCloseExecution" } },
+  { claim = "server.task_latency_schedule", labels = { task_type = "VisibilityTaskDeleteExecution" } },
+  { claim = "server.task_latency_schedule", labels = { task_type = "VisibilityTaskUpsertChasmExecution" } },
+]
+
+# -------------------------------------------------------------- hypotheses
+# Records written late explain stale lists and missing Workflows on their
+# own, so the read path is followed only while they are not; the write path
+# only while they could be.
+
+[[hypothesis]]
+id = "records-late"
+stage = "records"
+primary = true
+layer = "history"
+title = "Visibility records written late"
+question = "Records written late?"
+statement = "History writes visibility records late, so lists, counts and searches show Workflows as they were: new ones missing, closed ones still running, search attributes out of date."
+
+[[hypothesis]]
+id = "api-rate-limit"
+stage = "api"
+primary = true
+layer = "frontend"
+title = "Frontend visibility rate limit reached"
+question = "Listing calls rate limited?"
+statement = "The Frontend rejects the namespace's listing and counting calls at frontend.namespaceRPS.visibility, 10 per second per Frontend host by default: callers such as dashboards, scripts or the Web UI list or count more often than that."
+activation = { not = { hypothesis = "records-late", state = ["established"] } }
+
+[[hypothesis]]
+id = "write-limit"
+stage = "limits"
+primary = true
+layer = "persistence"
+title = "Visibility write limit refusing History's writes"
+question = "Writes refused by the limit?"
+statement = "system.visibilityPersistenceMaxWriteQPS refuses History's writes to the visibility store, so visibility tasks wait seconds to minutes before each retry and records fall behind."
+activation = { not = { hypothesis = "records-late", state = ["eliminated"] } }
+
+[[hypothesis]]
+id = "read-limit"
+stage = "limits"
+layer = "persistence"
+title = "Visibility read limit refusing queries"
+question = "Queries refused by the limit?"
+statement = "system.visibilityPersistenceMaxReadQPS refuses the Frontend's queries to the visibility store, so the listing and counting calls that need them fail with ResourceExhausted."
+activation = { not = { hypothesis = "records-late", state = ["established"] } }
+
+[[hypothesis]]
+id = "store-errors"
+stage = "store"
+primary = true
+layer = "persistence"
+title = "Visibility store failing calls"
+question = "Store failing calls?"
+statement = "The visibility store fails calls, for example because it is unavailable or rejecting them: History retries the writes it fails, and the Frontend returns the failed queries to their callers."
+
+[[hypothesis]]
+id = "slow-writes"
+stage = "store"
+layer = "persistence"
+title = "Visibility store slow to write"
+question = "Writes slow?"
+statement = "The visibility store takes long to write records. Each visibility task holds one of History's visibility workers while it waits, so the tasks behind it wait too."
+activation = { not = { hypothesis = "records-late", state = ["eliminated"] } }
+
+[[hypothesis]]
+id = "slow-queries"
+stage = "store"
+layer = "persistence"
+title = "Visibility queries slow"
+question = "Queries slow?"
+statement = "Listing and counting queries take long in the visibility store, so the calls that need them are slow or time out."
+activation = { not = { hypothesis = "records-late", state = ["established"] } }
+
+[[hypothesis]]
+id = "queue-backlog"
+stage = "queue"
+primary = true
+layer = "history"
+title = "History's visibility workers all busy"
+question = "Waiting for visibility workers?"
+statement = "Visibility tasks wait for a worker of History's visibility scheduler: the hosts have more visibility tasks than their workers get through, from a burst of starts, closes or search attribute upserts."
+activation = { hypothesis = "records-late", state = ["established"] }
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "visibility-lag"
+stage = "records"
+title = "How late visibility records are written, before and during the incident"
+why = "History writes each Workflow's visibility record after the change, through a queue of its own. The time from the change to the record's write is how far lists and searches lag behind the Workflows; if records keep up, it is the listing calls themselves that fail or are slow."
+signals = ["visibility_task_latency"]
+distinguishes = ["records-late"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["task_type"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p99 visibility record lag, by task type (include at least 15 minutes before the incident)"
+body = "histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_queue_bucket{namespace=\"{namespace}\", task_type=~\"VisibilityTask.*\"}[1m])))"
+unit = "seconds"
+claims = ["server.task_latency_queue", "behaviour.visibility-record-lag"]
+note = "with the OpenTelemetry metrics framework the histogram is task_latency_queue_milliseconds_bucket, in milliseconds"
+
+[[request]]
+id = "visibility-api-rejections"
+stage = "api"
+title = "Listing and counting calls rejected by the Frontend"
+why = "Listing, counting and other visibility calls have a namespace rate limit of their own on each Frontend host, 10 per second by default, far below the namespace's limit for other calls. A call over it is rejected at once with ResourceExhausted, cause RpsLimit and scope Namespace, which the Frontend counts by API. Causes missing from the breakdown did not occur."
+signals = ["api_rejections"]
+distinguishes = ["api-rate-limit"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["operation", "resource_exhausted_cause", "resource_exhausted_scope"]
+
+[[request.collect]]
+method = "promql"
+label = "The namespace's visibility calls rejected with ResourceExhausted per second, by API, cause and scope"
+body = "sum by (operation, resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name=\"frontend\", namespace=\"{namespace}\", operation=~\"ListWorkflowExecutions|CountWorkflowExecutions|ScanWorkflowExecutions|ListOpenWorkflowExecutions|ListClosedWorkflowExecutions|ListArchivedWorkflowExecutions|ListSchedules|CountSchedules|ListBatchOperations\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(service_requests{service_name="frontend", namespace="{namespace}", operation=~"ListWorkflowExecutions|CountWorkflowExecutions|ScanWorkflowExecutions|ListOpenWorkflowExecutions|ListClosedWorkflowExecutions|ListArchivedWorkflowExecutions|ListSchedules|CountSchedules|ListBatchOperations"}[1m]))', because = "server.request-errors-counted-on-error" }
+unit = "per_second"
+claims = ["server.service_errors_resource_exhausted", "behaviour.visibility-api-rejections", "limit.frontend-visibility-rps", "server.request-errors-counted-on-error"]
+note = "keep the breakdown by cause and scope: a cause with no series did not occur, and Kyumei reads it as zero"
+
+[[request]]
+id = "visibility-persistence-refusals"
+stage = "limits"
+title = "Calls to the visibility store refused by the visibility persistence limits"
+why = "Each host limits its own calls to the visibility store, History's writes and the Frontend's reads, 9,000 per second each by default for every namespace together. A refused write is retried after a backoff, so records fall behind; a refused read fails the caller's call. Calls missing from the breakdown were not refused."
+signals = ["write_refusals", "read_refusals"]
+distinguishes = ["write-limit", "read-limit"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["operation"]
+
+[[request.collect]]
+method = "promql"
+label = "Calls to the visibility store refused per second, by call"
+body = "sum by (operation) (rate(visibility_persistence_resource_exhausted[1m]))"
+unit = "per_second"
+claims = ["server.visibility_persistence_resource_exhausted", "limit.visibility-persistence-qps"]
+note = "the visibility store's metrics have no namespace label, so this covers every namespace; with the OpenTelemetry metrics framework the counter is named visibility_persistence_resource_exhausted_total"
+
+[[request]]
+id = "visibility-persistence-errors"
+stage = "store"
+title = "Calls to the visibility store that failed, and visibility tasks moved to the DLQ"
+why = "A write the store fails is retried with a growing backoff, and after about an hour of failures History moves the task to its DLQ, where the record stays unwritten until the DLQ is merged. A query the store fails reaches the caller as an error."
+signals = ["store_errors", "visibility_dlq_writes"]
+distinguishes = ["store-errors"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["operation"]
+
+[[request.collect]]
+method = "promql"
+label = "Calls to the visibility store failing per second, by call"
+body = "sum by (operation) (rate(visibility_persistence_errors[1m]))"
+unit = "per_second"
+claims = ["server.visibility_persistence_errors", "behaviour.visibility-task-dlq"]
+note = "the visibility store's metrics have no namespace label, so this covers every namespace; with the OpenTelemetry metrics framework the counter is named visibility_persistence_errors_total"
+
+[[request.collect]]
+method = "promql"
+label = "Visibility tasks moved to History's DLQ per second"
+body = "sum(rate(dlq_writes{task_category=\"visibility\"}[1m]))"
+unit = "per_second"
+claims = ["server.dlq_writes", "behaviour.visibility-task-dlq"]
+note = "with the OpenTelemetry metrics framework the counter is named dlq_writes_total"
+
+[[request]]
+id = "visibility-persistence-latency"
+stage = "store"
+title = "How long calls to the visibility store take, before and during the incident"
+why = "A visibility task holds one of History's visibility workers for the whole of its write, so slow writes hold up the records behind them; listing and counting calls wait for their queries. The latency by call separates a store slow to write from one slow to query."
+signals = ["write_latency", "query_latency"]
+distinguishes = ["slow-writes", "slow-queries"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["operation"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p99 visibility store latency, by call (include at least 15 minutes before the incident)"
+body = "histogram_quantile(0.99, sum by (le, operation) (rate(visibility_persistence_latency_bucket[1m])))"
+unit = "seconds"
+claims = ["server.visibility_persistence_latency", "behaviour.visibility-store-writes"]
+note = "with the OpenTelemetry metrics framework the histogram is visibility_persistence_latency_milliseconds_bucket, in milliseconds"
+
+[[request]]
+id = "visibility-schedule-latency"
+stage = "queue"
+title = "Time visibility tasks wait for a worker of History's visibility scheduler"
+why = "Visibility tasks run on a scheduler of their own on each History host, 512 workers by default. If writes are fast but the tasks still wait for a worker, the hosts have more visibility tasks than the workers get through, from a burst of starts, closes or search attribute upserts."
+signals = ["visibility_schedule_latency"]
+distinguishes = ["queue-backlog"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["task_type"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "p99 visibility scheduler wait, by task type (include at least 15 minutes before the incident)"
+body = "histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_schedule_bucket{namespace=\"{namespace}\", task_type=~\"VisibilityTask.*\"}[1m])))"
+unit = "seconds"
+claims = ["server.task_latency_schedule", "behaviour.visibility-write-path"]
+note = "with the OpenTelemetry metrics framework the histogram is task_latency_schedule_milliseconds_bucket, in milliseconds"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "records-late"
+hypothesis = "records-late"
+effect = "establishes"
+statement = "Visibility records were written up to {visibility_task_latency.max} after the changes they record, against about {visibility_task_latency.baseline} before the incident."
+claims = ["heuristic.visibility-lag-significant", "behaviour.visibility-record-lag"]
+when = { signal = "visibility_task_latency", stat = "max", op = "ge", value = 10 }
+
+[[rule]]
+id = "records-on-time"
+hypothesis = "records-late"
+effect = "eliminates"
+statement = "Visibility records kept up with the Workflows: each was written at most {visibility_task_latency.max} after its change."
+claims = ["heuristic.sustained-needs-samples", "heuristic.visibility-lag-significant"]
+when = { all = [
+  { signal = "visibility_task_latency", stat = "max", op = "lt", value = 3 },
+  { signal = "visibility_task_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "api-limit-rejecting"
+hypothesis = "api-rate-limit"
+effect = "establishes"
+statement = "The Frontend rejected the namespace's listing and counting calls at its visibility rate limit: {api_rejections.mean} on average, peaking at {api_rejections.max}."
+claims = ["heuristic.rejections-significant", "behaviour.visibility-api-rejections"]
+when = { signal = "api_rejections", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-api-rejections"
+hypothesis = "api-rate-limit"
+effect = "eliminates"
+statement = "The visibility rate limit rejected no listing or counting call during the window (at most {api_rejections.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "api_rejections", stat = "max", op = "le", value = 0.01 },
+  { signal = "api_rejections", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "write-limit-refusing"
+hypothesis = "write-limit"
+effect = "establishes"
+statement = "The visibility write limit refused History's writes at {write_refusals.mean} on average, peaking at {write_refusals.max}."
+claims = ["heuristic.rejections-significant", "limit.visibility-persistence-qps"]
+when = { signal = "write_refusals", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-write-refusals"
+hypothesis = "write-limit"
+effect = "eliminates"
+statement = "The visibility write limit refused no write during the window (at most {write_refusals.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "write_refusals", stat = "max", op = "le", value = 0.01 },
+  { signal = "write_refusals", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "read-limit-refusing"
+hypothesis = "read-limit"
+effect = "establishes"
+statement = "The visibility read limit refused queries at {read_refusals.mean} on average, peaking at {read_refusals.max}."
+claims = ["heuristic.rejections-significant", "limit.visibility-persistence-qps"]
+when = { signal = "read_refusals", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-read-refusals"
+hypothesis = "read-limit"
+effect = "eliminates"
+statement = "The visibility read limit refused no query during the window (at most {read_refusals.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "read_refusals", stat = "max", op = "le", value = 0.01 },
+  { signal = "read_refusals", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "store-failing"
+hypothesis = "store-errors"
+effect = "establishes"
+statement = "Calls to the visibility store failed at {store_errors.mean} on average, peaking at {store_errors.max}."
+claims = ["heuristic.visibility-errors-significant", "server.visibility_persistence_errors"]
+when = { signal = "store_errors", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "store-not-failing"
+hypothesis = "store-errors"
+effect = "eliminates"
+statement = "No call to the visibility store failed unexpectedly during the window (at most {store_errors.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.visibility-errors-significant"]
+when = { all = [
+  { signal = "store_errors", stat = "max", op = "le", value = 0.01 },
+  { signal = "store_errors", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "writes-slow"
+hypothesis = "slow-writes"
+effect = "establishes"
+statement = "Writes to the visibility store took up to {write_latency.max}, against about {write_latency.baseline} before the incident."
+claims = ["heuristic.visibility-write-slow", "behaviour.visibility-store-writes"]
+when = { any = [
+  { signal = "write_latency", stat = "max", op = "ge", value = 2 },
+  { all = [
+    { signal = "write_latency", stat = "max", op = "ge", value = 0.25 },
+    { ratio = { numerator = "write_latency.max", denominator = "write_latency.baseline" }, op = "ge", value = 5 },
+  ] },
+] }
+
+[[rule]]
+id = "writes-fast"
+hypothesis = "slow-writes"
+effect = "eliminates"
+statement = "Writes to the visibility store stayed fast: at most {write_latency.max}, against about {write_latency.baseline} before the incident."
+claims = ["heuristic.sustained-needs-samples", "heuristic.visibility-write-slow"]
+when = { all = [
+  { signal = "write_latency", stat = "samples", op = "ge", value = 3 },
+  { any = [
+    { signal = "write_latency", stat = "max", op = "lt", value = 0.25 },
+    { all = [
+      { signal = "write_latency", stat = "max", op = "lt", value = 1.5 },
+      { ratio = { numerator = "write_latency.max", denominator = "write_latency.baseline" }, op = "lt", value = 2 },
+    ] },
+  ] },
+] }
+
+[[rule]]
+id = "queries-slow"
+hypothesis = "slow-queries"
+effect = "establishes"
+statement = "Listing and counting queries took up to {query_latency.max}, against about {query_latency.baseline} before the incident."
+claims = ["heuristic.visibility-query-slow", "behaviour.visibility-slow-query-log"]
+when = { signal = "query_latency", stat = "max", op = "ge", value = 1 }
+
+[[rule]]
+id = "queries-fast"
+hypothesis = "slow-queries"
+effect = "eliminates"
+statement = "Listing and counting queries stayed fast: at most {query_latency.max} at any sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.visibility-query-slow"]
+when = { all = [
+  { signal = "query_latency", stat = "max", op = "lt", value = 0.5 },
+  { signal = "query_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "workers-busy"
+hypothesis = "queue-backlog"
+effect = "establishes"
+statement = "Visibility tasks waited up to {visibility_schedule_latency.max} for one of History's visibility workers, against about {visibility_schedule_latency.baseline} before the incident."
+claims = ["heuristic.task-stage-delay", "behaviour.visibility-write-path"]
+when = { signal = "visibility_schedule_latency", stat = "max", op = "ge", value = 1 }
+
+[[rule]]
+id = "workers-free"
+hypothesis = "queue-backlog"
+effect = "eliminates"
+statement = "Visibility tasks got one of History's visibility workers promptly: at most {visibility_schedule_latency.max} at any sample."
+claims = ["heuristic.sustained-needs-samples", "heuristic.task-stage-delay"]
+when = { all = [
+  { signal = "visibility_schedule_latency", stat = "max", op = "lt", value = 0.2 },
+  { signal = "visibility_schedule_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis: limits and
+# failures before slowness, the write path before the read path, and the
+# lag itself last.
+
+[[conclusion]]
+id = "api-rate-limit"
+title = "Listing calls rejected by the Frontend's visibility rate limit"
+statement = "Listing and counting calls fail because the namespace's calls exceed its visibility rate limit on the Frontend: {api_rejections.mean} rejected on average, peaking at {api_rejections.max}, with ResourceExhausted (\"namespace rate limit exceeded\")."
+when = { hypothesis = "api-rate-limit", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "records-late", state = ["eliminated"] }
+text = "The records themselves are written on time, at most {visibility_task_latency.max} after each change."
+
+[[conclusion.recommendation]]
+text = "Find who lists or counts so often: the breakdown by API shows which calls, and the callers' own metrics or logs show who makes them. Dashboards, scripts and automation that poll ListWorkflowExecutions or CountWorkflowExecutions in a loop are the usual source: have them poll less often, or keep track of the Workflows they need another way."
+claims = ["behaviour.visibility-api-rejections", "limit.frontend-visibility-rps"]
+
+[[conclusion.recommendation]]
+text = "If the load is expected, raise the namespace's visibility limit: frontend.namespaceRPS.visibility per Frontend host (10 per second by default), or frontend.globalNamespaceRPS.visibility for a limit across the cluster, divided among the Frontend hosts."
+caution = "Every listing call is a query to the visibility store; raise the limit only if the store has headroom for more queries."
+claims = ["limit.frontend-visibility-rps", "dc.frontend.namespaceRPS.visibility", "dc.frontend.globalNamespaceRPS.visibility"]
+
+[[conclusion]]
+id = "write-limit"
+title = "Visibility write limit refusing History's writes"
+statement = "Visibility records fall behind because the visibility persistence write limit refuses History's writes: {write_refusals.mean} refused on average, peaking at {write_refusals.max}. Refused tasks wait seconds to minutes before they are tried again, and the tasks behind them wait too."
+when = { hypothesis = "write-limit", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "records-late", state = ["established"] }
+text = "Records were written up to {visibility_task_latency.max} after their changes."
+
+[[conclusion.recommendation]]
+text = "The limit is per History host, system.visibilityPersistenceMaxWriteQPS (9,000 per second by default). Check whether it was lowered, and what raised the writes: a burst of Workflow starts or closes, such as a batch job, or Workflows that upsert search attributes or memo many times."
+claims = ["limit.visibility-persistence-qps", "dc.system.visibilityPersistenceMaxWriteQPS", "behaviour.visibility-write-path"]
+
+[[conclusion.recommendation]]
+text = "If the visibility store has headroom, raise system.visibilityPersistenceMaxWriteQPS."
+caution = "The limit protects the visibility store: raising it passes more writes to a store that may not keep up."
+claims = ["limit.visibility-persistence-qps", "dc.system.visibilityPersistenceMaxWriteQPS"]
+
+[[conclusion]]
+id = "store-errors"
+title = "Visibility store failing"
+statement = "The visibility store is failing calls: {store_errors.mean} on average, peaking at {store_errors.max}. History retries the writes it fails with a growing backoff, so records fall behind, and listing calls that fail return errors to their callers."
+when = { hypothesis = "store-errors", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "records-late", state = ["established"] }
+text = "Records were written up to {visibility_task_latency.max} after their changes."
+
+[[conclusion.clause]]
+when = { signal = "visibility_dlq_writes", stat = "max", op = "gt", value = 0 }
+text = "History has also moved visibility tasks to its DLQ, up to {visibility_dlq_writes.max}, after about an hour of failures each: their records stay unwritten until the DLQ is merged."
+
+[[conclusion.recommendation]]
+text = "Find the errors: visibility_persistence_error_with_type breaks the failures down by type, and History logs each failed task as \"Fail to process task\" with the error. With Elasticsearch, elasticsearch_bulk_processor_errors gives the HTTP status of each failed write; check the cluster's health and resources. With SQL, check the visibility database's availability."
+claims = ["server.visibility_persistence_error_with_type", "behaviour.visibility-task-dlq", "behaviour.es-bulk-latencies"]
+
+[[conclusion.recommendation]]
+text = "If History moved visibility tasks to its DLQ, merge them back once the store recovers, or their records stay stale: tdbg dlq read --dlq-type 4 lists them, and tdbg dlq merge --dlq-type 4 puts them back on the visibility queue."
+claims = ["behaviour.visibility-task-dlq", "server.dlq_writes"]
+
+[[conclusion]]
+id = "slow-writes"
+title = "Visibility store slow to write"
+statement = "Visibility records fall behind because the visibility store is slow to write them: writes took up to {write_latency.max}, against about {write_latency.baseline} before the incident. Each visibility task holds one of History's visibility workers while it waits, so the tasks behind it wait too."
+when = { hypothesis = "slow-writes", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "records-late", state = ["established"] }
+text = "Records were written up to {visibility_task_latency.max} after their changes."
+
+[[conclusion.clause]]
+when = { signal = "write_latency", stat = "max", op = "ge", value = 25 }
+text = "Writes that wait 30 seconds for Elasticsearch to acknowledge them fail with a timeout and are tried again, which adds to the lag."
+
+[[conclusion.recommendation]]
+text = "With Elasticsearch, split the write time with the bulk processor's own timers: elasticsearch_bulk_processor_commit_latency is Elasticsearch's time to process each bulk, and elasticsearch_bulk_processor_wait_add_latency the time writes waited to join one. A slow commit is Elasticsearch itself: check the cluster's health, indexing load and resources."
+claims = ["behaviour.es-bulk-latencies", "server.elasticsearch_bulk_processor_commit_latency", "server.elasticsearch_bulk_processor_wait_add_latency"]
+
+[[conclusion.recommendation]]
+text = "With SQL, check the visibility database's own latency and its connection pool: persistence_sql_in_use against persistence_sql_max_open_conn, with db_kind visibility."
+claims = ["limit.sql-connection-pool", "behaviour.sql-pool-wait"]
+
+[[conclusion]]
+id = "read-limit"
+title = "Visibility read limit refusing queries"
+statement = "Listing and counting calls fail because the visibility persistence read limit refuses their queries: {read_refusals.mean} refused on average, peaking at {read_refusals.max}, with ResourceExhausted (\"System Persistence Max QPS Reached.\")."
+when = { hypothesis = "read-limit", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "The limit is per host, for every namespace together: system.visibilityPersistenceMaxReadQPS, 9,000 per second by default. Check whether it was lowered, and which namespaces' callers list or count so often."
+caution = "The limit protects the visibility store: raise it only if the store has headroom for more queries."
+claims = ["limit.visibility-persistence-qps", "dc.system.visibilityPersistenceMaxReadQPS"]
+
+[[conclusion]]
+id = "slow-queries"
+title = "Visibility queries slow"
+statement = "Listing and counting calls are slow because their queries take long in the visibility store: up to {query_latency.max}, against about {query_latency.baseline} before the incident."
+when = { hypothesis = "slow-queries", state = ["established"] }
+
+[[conclusion.clause]]
+when = { hypothesis = "records-late", state = ["eliminated"] }
+text = "Writes keep up: records are written at most {visibility_task_latency.max} after each change."
+
+[[conclusion.recommendation]]
+text = "Find the slow queries in the Frontend's logs: each list query slower than system.visibilityPersistenceSlowQueryThreshold (1 second) is logged as \"List query exceeded threshold\", with the query and its namespace. Narrow those queries, for example to a time range or an execution status, or have their callers run them less often."
+claims = ["behaviour.visibility-slow-query-log", "dc.system.visibilityPersistenceSlowQueryThreshold"]
+
+[[conclusion.recommendation]]
+text = "Check the visibility store's own load and resources over the window: a store short of resources slows every query, not only the logged ones."
+claims = ["server.visibility_persistence_latency"]
+
+[[conclusion]]
+id = "queue-backlog"
+title = "History's visibility workers saturated"
+statement = "Visibility records fall behind because visibility tasks wait for a worker of History's visibility scheduler, up to {visibility_schedule_latency.max} against about {visibility_schedule_latency.baseline} before the incident, while writes to the store stay fast: the hosts have more visibility tasks than their workers get through."
+when = { all = [
+  { hypothesis = "queue-backlog", state = ["established"] },
+  { hypothesis = "slow-writes", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Find what created the tasks: a burst of Workflow starts or closes, such as a batch job, or Workflows that upsert search attributes or memo many times. Spread the burst over time, or upsert less often."
+claims = ["behaviour.visibility-write-path"]
+
+[[conclusion.recommendation]]
+text = "If the load is lasting, raise history.visibilityProcessorSchedulerWorkerCount (512 by default), or add History hosts."
+caution = "More workers write to the visibility store at once; check its headroom first."
+claims = ["behaviour.visibility-write-path", "dc.history.visibilityProcessorSchedulerWorkerCount"]
+
+[[conclusion]]
+id = "records-late"
+title = "Visibility records written late"
+statement = "Visibility records fall behind the Workflows: they were written up to {visibility_task_latency.max} after the changes they record, against about {visibility_task_latency.baseline} before the incident."
+when = { hypothesis = "records-late", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Follow the remaining requests to find why: a limit refusing the writes, the store failing or slow, or History's visibility workers all busy."
+claims = ["behaviour.visibility-write-path"]

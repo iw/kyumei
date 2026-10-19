@@ -1,0 +1,83 @@
+# Branch: a queue rate limit set through UpdateTaskQueueConfig months ago, to
+# protect a carrier's API during an incident, and never removed. Normal load
+# has since grown past it. The Java Workers have free slots and idle pollers;
+# DescribeTaskQueue reports the limit with source API, which overrides any
+# rate the Workers send.
+
+[fixture]
+id = "activity-api-rate-limit"
+title = "Forgotten API rate limit: Activity schedule-to-start ~45 s with Workers idle"
+description = "Branch fixture: Worker capacity, polling and throttling are ruled out, and DescribeTaskQueue traces the ceiling to a limit set through the API."
+investigation = "inv-branch-activity-api-limit"
+
+[open]
+at = 2026-10-01T14:31:00Z
+description = "Since 14:20 UTC, activity tasks on shipment-activities (namespace logistics) wait around 45 seconds before they start; normally it is well under a second. Nothing changed on our side and the Java workers have plenty of capacity."
+server_version = "1.31.0"
+sdks = [{ language = "java", version = "1.40.0" }]
+namespaces = ["logistics"]
+task_queues = ["shipment-activities"]
+window_start = 2026-10-01T14:20:00Z
+window_end = 2026-10-01T14:35:00Z
+
+[open.expect]
+next_request = "activity-worker-slots"
+
+[[step]]
+at = 2026-10-01T14:34:00Z
+answers = "activity-worker-slots"
+file = "evidence/e1-activity-slots.json"
+query = 'sum by (task_queue) (temporal_worker_task_slots_available{worker_type="ActivityWorker", namespace="logistics", task_queue="shipment-activities"})'
+
+[step.expect]
+next_request = "activity-pollers"
+findings = ["F-slots-headroom"]
+
+[step.expect.states]
+activity-slot-exhaustion = "eliminated"
+
+[[step]]
+at = 2026-10-01T14:36:00Z
+answers = "activity-pollers"
+file = "evidence/e2-activity-pollers.json"
+query = 'sum(temporal_num_pollers{poller_type="activity_task", namespace="logistics", task_queue="shipment-activities"})'
+
+[step.expect]
+next_request = "activity-poll-failures"
+
+[step.expect.states]
+activity-pollers-absent = "eliminated"
+
+[[step]]
+at = 2026-10-01T14:38:00Z
+answers = "activity-poll-failures"
+file = "evidence/e3-poll-failures.json"
+query = 'sum by (status_code) (rate(temporal_long_request_failure_total{operation="PollActivityTaskQueue", namespace="logistics"}[1m]))'
+
+[step.expect]
+next_request = "activity-queue-stats"
+bound_signals = ["activity_poll_failures_rate"]
+
+[step.expect.states]
+activity-poll-throttling = "eliminated"
+
+[[step]]
+at = 2026-10-01T14:40:00Z
+answers = "activity-queue-stats"
+file = "evidence/e4-describe-task-queue.json"
+window_start = 2026-10-01T14:32:00Z
+note = "Captured at 14:32 UTC with DescribeTaskQueue (report_stats, Activity type) through grpcurl, as JSON"
+
+[step.expect]
+next_request = "none"
+findings = ["F-dispatch-at-limit", "F-limit-from-api", "F-limit-not-from-workers", "F-limit-not-from-system", "F-backlog-carries-latency"]
+conclusion = "api-rate-limit"
+concluded = true
+
+[step.expect.states]
+dispatch-rate-limited = "established"
+api-rate-limit = "established"
+worker-rate-limit = "eliminated"
+system-rate-limit = "eliminated"
+activity-matching-backlog = "established"
+activity-poller-starvation = "eliminated"

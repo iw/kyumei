@@ -1,0 +1,83 @@
+# Reference fixture for ResourceExhausted.
+#
+# A one-off migration job starts Workflows in `orders-prod` at about
+# 10,500/s, on top of the namespace's usual 1,500 requests a second. The
+# four Frontend hosts each admit the namespace at the default 2,400/s, so the
+# Frontend rejects the excess with ResourceExhausted, cause RpsLimit and
+# scope Namespace.
+#
+# The investigation must tell the namespace limit from the host limit, the
+# long-running request cap and persistence limits from one breakdown, and
+# attribute the load to a surge rather than to normal growth.
+
+[fixture]
+id = "namespace-rate-limit-surge"
+title = "Namespace rate limit: ResourceExhausted under a surge of Workflow starts"
+description = "Reference fixture for ResourceExhausted. Two evidence submissions find the limit and the surge behind it."
+investigation = "inv-golden-namespace-rate-limit"
+
+[open]
+at = 2026-10-02T16:52:00Z
+description = "Since 16:40 UTC our order-import service gets ResourceExhausted errors (namespace rate limit exceeded) on StartWorkflowExecution in namespace orders-prod, about 2,000 per second. A one-off migration job started at 16:40."
+server_version = "1.31.0"
+sdks = [{ language = "go", version = "1.44.0" }]
+namespaces = ["orders-prod"]
+window_start = 2026-10-02T16:40:00Z
+window_end = 2026-10-02T16:55:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 4
+history_hosts = 8
+matching_hosts = 4
+persistence = "Cassandra 4.1"
+
+[open.expect]
+next_request = "rejections-by-cause"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+namespace-rate-limit = "candidate"
+request-surge = "candidate"
+
+# E1 — ResourceExhausted errors by cause and scope.
+[[step]]
+at = 2026-10-02T16:55:00Z
+answers = "rejections-by-cause"
+file = "evidence/e1-rejections-by-cause.json"
+channel = "paste"
+query = 'sum by (resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name="frontend", namespace="orders-prod"}[1m]))'
+
+[step.expect]
+next_request = "frontend-requests"
+findings = ["F-namespace-limit-rejecting", "F-no-host-limit-rejections", "F-no-concurrency-limit-rejections", "F-no-persistence-namespace-refusals", "F-no-persistence-host-refusals"]
+bound_signals = ["namespace_rps_rejections", "host_rps_rejections", "concurrency_rejections", "persistence_namespace_rejections", "persistence_host_rejections"]
+conclusion = "namespace-limit"
+concluded = false
+
+[step.expect.states]
+namespace-rate-limit = "established"
+host-rate-limit = "eliminated"
+concurrency-limit = "eliminated"
+persistence-namespace-limit = "eliminated"
+persistence-host-limit = "eliminated"
+
+# E2 — The namespace's requests before and during the incident, by operation.
+[[step]]
+at = 2026-10-02T16:58:00Z
+answers = "frontend-requests"
+file = "evidence/e2-frontend-requests.json"
+channel = "paste"
+query = 'sum by (operation) (rate(service_requests{service_name="frontend", namespace="orders-prod"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-requests-surged"]
+bound_signals = ["frontend_request_rate"]
+conclusion = "namespace-limit-under-surge"
+concluded = true
+
+[step.expect.states]
+namespace-rate-limit = "established"
+request-surge = "established"

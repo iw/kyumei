@@ -1,0 +1,34 @@
+{
+ "executionConfig": {
+  "taskQueue": {
+   "name": "ingest",
+   "kind": "TASK_QUEUE_KIND_NORMAL"
+  },
+  "workflowExecutionTimeout": "0s",
+  "workflowRunTimeout": "0s",
+  "defaultWorkflowTaskTimeout": "10s"
+ },
+ "workflowExecutionInfo": {
+  "execution": {
+   "workflowId": "import-batch-20261009-0412",
+   "runId": "0199c6a1-3e0d-7f4b-b8a2-90d1c4e7a5f3"
+  },
+  "type": {
+   "name": "ImportBatchWorkflow"
+  },
+  "startTime": "2026-10-09T04:12:44.302Z",
+  "status": "WORKFLOW_EXECUTION_STATUS_TERMINATED",
+  "historyLength": "9412",
+  "executionTime": "2026-10-09T04:12:44.302Z",
+  "memo": {},
+  "taskQueue": "ingest",
+  "stateTransitionCount": "9401",
+  "historySizeBytes": "52611207",
+  "rootExecution": {
+   "workflowId": "import-batch-20261009-0412",
+   "runId": "0199c6a1-3e0d-7f4b-b8a2-90d1c4e7a5f3"
+  },
+  "firstRunId": "0199c6a1-3e0d-7f4b-b8a2-90d1c4e7a5f3",
+  "closeTime": "2026-10-09T10:58:03.117Z"
+ }
+}

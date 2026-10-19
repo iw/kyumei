@@ -1,0 +1,10 @@
+{
+ "eventId": "51203",
+ "eventTime": "2026-10-10T15:40:31.882Z",
+ "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED",
+ "taskId": "184683594",
+ "workflowExecutionTerminatedEventAttributes": {
+  "reason": "Workflow history count exceeds limit.",
+  "identity": "history-service"
+ }
+}

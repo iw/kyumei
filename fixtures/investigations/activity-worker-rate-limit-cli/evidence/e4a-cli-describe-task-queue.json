@@ -1,0 +1,72 @@
+{
+  "reachability": null,
+  "pollers": [
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5100@invoice-worker-6c8d9f7b5-a1kq",
+      "lastAccessTime": "2026-10-01T09:05:59.812Z",
+      "ratePerSecond": 100
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5107@invoice-worker-6c8d9f7b5-b2mr",
+      "lastAccessTime": "2026-10-01T09:05:58.775Z",
+      "ratePerSecond": 100
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5114@invoice-worker-6c8d9f7b5-c3ns",
+      "lastAccessTime": "2026-10-01T09:05:57.738Z",
+      "ratePerSecond": 100
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5121@invoice-worker-6c8d9f7b5-d4pt",
+      "lastAccessTime": "2026-10-01T09:05:59.701Z",
+      "ratePerSecond": 100
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5128@invoice-worker-6c8d9f7b5-e5qv",
+      "lastAccessTime": "2026-10-01T09:05:58.664Z",
+      "ratePerSecond": 100
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5135@invoice-worker-6c8d9f7b5-f6rw",
+      "lastAccessTime": "2026-10-01T09:05:57.627Z",
+      "ratePerSecond": 100
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5142@invoice-worker-6c8d9f7b5-g7sx",
+      "lastAccessTime": "2026-10-01T09:05:59.590Z",
+      "ratePerSecond": 100
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "5149@invoice-worker-6c8d9f7b5-h8ty",
+      "lastAccessTime": "2026-10-01T09:05:58.553Z",
+      "ratePerSecond": 100
+    }
+  ],
+  "stats": [
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "approximateBacklogCount": 17980,
+      "approximateBacklogAge": "2m 0.402s",
+      "backlogIncreaseRate": 50.40001,
+      "tasksAddRate": 150.1,
+      "tasksDispatchRate": 99.7
+    }
+  ]
+}

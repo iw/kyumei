@@ -1,0 +1,64 @@
+{
+ "pollers": [
+  {
+   "lastAccessTime": "2026-10-01T09:06:29.812Z",
+   "identity": "5100@invoice-worker-6c8d9f7b5-a1kq",
+   "ratePerSecond": 100
+  },
+  {
+   "lastAccessTime": "2026-10-01T09:06:28.775Z",
+   "identity": "5107@invoice-worker-6c8d9f7b5-b2mr",
+   "ratePerSecond": 100
+  },
+  {
+   "lastAccessTime": "2026-10-01T09:06:27.738Z",
+   "identity": "5114@invoice-worker-6c8d9f7b5-c3ns",
+   "ratePerSecond": 100
+  },
+  {
+   "lastAccessTime": "2026-10-01T09:06:29.701Z",
+   "identity": "5121@invoice-worker-6c8d9f7b5-d4pt",
+   "ratePerSecond": 100
+  },
+  {
+   "lastAccessTime": "2026-10-01T09:06:28.664Z",
+   "identity": "5128@invoice-worker-6c8d9f7b5-e5qv",
+   "ratePerSecond": 100
+  },
+  {
+   "lastAccessTime": "2026-10-01T09:06:27.627Z",
+   "identity": "5135@invoice-worker-6c8d9f7b5-f6rw",
+   "ratePerSecond": 100
+  },
+  {
+   "lastAccessTime": "2026-10-01T09:06:29.590Z",
+   "identity": "5142@invoice-worker-6c8d9f7b5-g7sx",
+   "ratePerSecond": 100
+  },
+  {
+   "lastAccessTime": "2026-10-01T09:06:28.553Z",
+   "identity": "5149@invoice-worker-6c8d9f7b5-h8ty",
+   "ratePerSecond": 100
+  }
+ ],
+ "stats": {
+  "approximateBacklogCount": "19480",
+  "approximateBacklogAge": "130.402s",
+  "tasksAddRate": 150.2,
+  "tasksDispatchRate": 99.6,
+  "rateLimitingActive": true
+ },
+ "statsByPriorityKey": {
+  "3": {
+   "approximateBacklogCount": "19480",
+   "approximateBacklogAge": "130.402s",
+   "tasksAddRate": 150.2,
+   "tasksDispatchRate": 99.6,
+   "rateLimitingActive": true
+  }
+ },
+ "effectiveRateLimit": {
+  "requestsPerSecond": 100,
+  "rateLimitSource": "RATE_LIMIT_SOURCE_WORKER"
+ }
+}

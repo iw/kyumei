@@ -1,0 +1,75 @@
+# Branch: overnight storage maintenance slows the MySQL database. History's
+# pools keep connections to spare and its call rate holds steady, so the
+# latency is the database's own.
+
+[fixture]
+id = "persistence-database-slow"
+title = "Database slower: History persistence latency ~600 ms with pools to spare"
+description = "Branch fixture: pools, errors and load are ruled out before the latency against its baseline establishes slower database calls."
+investigation = "inv-branch-persistence-database"
+
+[open]
+at = 2026-10-03T03:24:00Z
+description = "Persistence latency on History climbed to about 600ms at p99 from around 10ms at 03:10 UTC. MySQL 8.0; the storage team had maintenance scheduled overnight."
+server_version = "1.31.0"
+window_start = 2026-10-03T03:10:00Z
+window_end = 2026-10-03T03:25:00Z
+
+[open.expect]
+next_request = "sql-pool"
+
+[[step]]
+at = 2026-10-03T03:27:00Z
+answers = "sql-pool"
+file = "evidence/e1-sql-pool.csv"
+channel = "upload"
+query = 'max(persistence_sql_in_use{service_name="history", db_kind="main"}) and max(persistence_sql_max_open_conn{service_name="history", db_kind="main"})'
+
+[step.expect]
+next_request = "persistence-errors"
+findings = ["F-pool-headroom"]
+
+[step.expect.states]
+pool-saturated = "eliminated"
+
+[[step]]
+at = 2026-10-03T03:29:00Z
+answers = "persistence-errors"
+file = "evidence/e2-persistence-errors.json"
+query = 'sum(rate(persistence_errors{service_name="history"}[1m]))'
+
+[step.expect]
+next_request = "persistence-requests"
+
+[step.expect.states]
+persistence-errors = "eliminated"
+
+[[step]]
+at = 2026-10-03T03:31:00Z
+answers = "persistence-requests"
+file = "evidence/e3-persistence-requests.json"
+query = 'sum by (operation) (rate(persistence_requests{service_name="history"}[1m]))'
+
+[step.expect]
+next_request = "persistence-latency"
+findings = ["F-load-steady"]
+
+[step.expect.states]
+load-rise = "eliminated"
+
+[[step]]
+at = 2026-10-03T03:33:00Z
+answers = "persistence-latency"
+file = "evidence/e4-persistence-latency.json"
+query = 'histogram_quantile(0.99, sum by (le) (rate(persistence_latency_bucket{service_name="history"}[1m])))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-slow-with-headroom"]
+bound_signals = ["persistence_latency"]
+conclusion = "database-slow"
+concluded = true
+
+[step.expect.states]
+database-slow = "established"
+pool-saturated = "eliminated"

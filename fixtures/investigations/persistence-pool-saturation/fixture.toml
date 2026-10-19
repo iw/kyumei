@@ -1,0 +1,100 @@
+# Reference fixture for persistence latency.
+#
+# A new tenant goes live at 10:20 UTC and History's persistence calls rise by
+# about 70%. Each History host's PostgreSQL pool is capped at 50 connections
+# (maxConns), which held about 20 at normal load. The pools fill, calls wait
+# for a free connection, and the wait shows in persistence_latency, while the
+# database itself has headroom.
+#
+# The investigation must find the full pools, rule out database errors, and
+# tell a pool filled by more calls from one filled by slower calls, without
+# blaming the database.
+
+[fixture]
+id = "persistence-pool-saturation"
+title = "Connection pools full: History persistence latency ~900 ms under a load rise"
+description = "Reference fixture for persistence latency. Three evidence submissions separate the wait for a connection from the database's own latency."
+investigation = "inv-golden-persistence-pool"
+
+[open]
+at = 2026-10-03T10:31:00Z
+description = "Since about 10:20 UTC, History's persistence latency p99 has been around 900ms; it is normally about 15ms. Starts and signals are slow in every namespace. We onboarded a new tenant this morning. The database is PostgreSQL 16 and its CPU is at 40%."
+server_version = "1.31.0"
+window_start = 2026-10-03T10:20:00Z
+window_end = 2026-10-03T10:35:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 3
+history_hosts = 6
+matching_hosts = 3
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "sql-pool"
+conclusion = "none"
+concluded = false
+
+[open.expect.states]
+pool-saturated = "candidate"
+persistence-errors = "candidate"
+load-rise = "candidate"
+database-slow = "candidate"
+
+# E1 — Connection pool use (a Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-03T10:34:00Z
+answers = "sql-pool"
+file = "evidence/e1-sql-pool.csv"
+channel = "upload"
+query = 'max(persistence_sql_in_use{service_name="history", db_kind="main"}) and max(persistence_sql_max_open_conn{service_name="history", db_kind="main"})'
+
+[step.expect]
+next_request = "persistence-errors"
+findings = ["F-pool-full"]
+bound_signals = ["pool_in_use", "pool_max_open"]
+conclusion = "pool-saturated"
+concluded = false
+
+[step.expect.states]
+pool-saturated = "established"
+database-slow = "candidate"
+
+# E2 — Persistence errors.
+[[step]]
+at = 2026-10-03T10:37:00Z
+answers = "persistence-errors"
+file = "evidence/e2-persistence-errors.json"
+channel = "paste"
+query = 'sum(rate(persistence_errors{service_name="history"}[1m]))'
+
+[step.expect]
+next_request = "persistence-requests"
+findings = ["F-no-errors"]
+bound_signals = ["persistence_error_rate"]
+conclusion = "pool-saturated"
+concluded = false
+
+[step.expect.states]
+persistence-errors = "eliminated"
+
+# E3 — Persistence calls before and during the incident, by operation.
+[[step]]
+at = 2026-10-03T10:41:00Z
+answers = "persistence-requests"
+file = "evidence/e3-persistence-requests.json"
+channel = "paste"
+query = 'sum by (operation) (rate(persistence_requests{service_name="history"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-load-rose", "F-pool-filled-by-load"]
+bound_signals = ["persistence_request_rate"]
+conclusion = "pool-saturated-under-load"
+concluded = true
+
+[step.expect.states]
+pool-saturated = "established"
+load-rise = "established"
+persistence-errors = "eliminated"
+database-slow = "weakened"

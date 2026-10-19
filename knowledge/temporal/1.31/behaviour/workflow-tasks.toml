@@ -1,0 +1,65 @@
+# How Workflow Tasks are scheduled, rate-limited and dispatched in 1.31.0.
+
+[[statement]]
+id = "behaviour.signal-schedules-workflow-task"
+category = "behaviour"
+title = "A Signal schedules a Workflow Task only for an idle execution"
+statement = "When a Workflow Execution is signalled, History schedules a new Workflow Task only if the execution has no pending (scheduled or started) Workflow Task. Signals to executions that already have one are delivered with it."
+notes = ["A flood of Signals across many idle executions therefore creates roughly one Workflow Task per execution signalled."]
+scope = { server = ["1.30.0", "1.30.1", "1.30.2", "1.30.3", "1.30.4", "1.30.5", "1.30.6", "1.30.7", "1.30.8", "1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = ["temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/update_workflow_util.go", line = 82, excerpt = "if !mutableState.HasPendingWorkflowTask() && !mutableState.IsWorkflowExecutionStatusPaused() {" },
+]
+
+[[statement]]
+id = "behaviour.schedule-to-start-measured-by-history"
+category = "behaviour"
+title = "Schedule-to-start spans the whole path"
+statement = "Workflow Task schedule-to-start is the task's started time minus its scheduled time, both recorded by History. It therefore includes time before the task reached Matching as well as time waiting in Matching."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/recordworkflowtaskstarted/api.go", line = 207, excerpt = "workflowScheduleToStartLatency := workflowTask.StartedTime.Sub(workflowTask.ScheduledTime)" },
+]
+
+[[statement]]
+id = "behaviour.frontend-priorities"
+category = "behaviour"
+title = "Signals and Starts outrank polls at the Frontend rate limiter"
+statement = "The Frontend rate limiters give SignalWorkflowExecution and StartWorkflowExecution priority 1, and PollWorkflowTaskQueue and PollActivityTaskQueue priority 4. A request is admitted by its own priority's bucket and also reserves tokens in every lower-priority bucket, so heavy Signal or Start traffic near a namespace or host limit consumes capacity that polls depend on."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 87, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/SignalWorkflowExecution\":          1," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 89, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/StartWorkflowExecution\":           1," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 175, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue\":              4," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 176, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/PollActivityTaskQueue\":              4," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/priority_rate_limiter_impl.go", line = 139, excerpt = "return p.rateLimiters[rateLimiterIndex], p.rateLimiters[rateLimiterIndex+1:]" },
+]
+
+[[statement]]
+id = "behaviour.partition-dispatch-rate-limit"
+category = "behaviour"
+title = "Matching rate-limits every dispatch per partition"
+statement = "In the default (priority) matcher, every task-to-poller match on a partition waits for a token from the partition's dispatch rate limiter and consumes one; a task forwarded from a child partition waits for the parent's limiter but is not charged there again. Workflow Tasks are included."
+notes = ["Until the partition's effective rate first changes after it loads, that limiter has no limit (limit.dispatch-applied-on-change)."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matcher_data.go", line = 509, excerpt = "delay := d.rateLimitManager.readyTimeForTask(task).delay(now)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matcher_data.go", line = 520, excerpt = "d.rateLimitManager.consumeTokens(now, task, 1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/ratelimit_manager.go", line = 344, excerpt = "if task.isForwarded() {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/ratelimit_manager.go", line = 345, excerpt = "// don't count any rate limit for forwarded tasks, it was counted on the child" },
+]
+
+[[statement]]
+id = "behaviour.write-partition-choice"
+category = "behaviour"
+title = "Tasks are added to a random write partition"
+statement = "Matching's client adds each task to a randomly chosen write partition, so a Task Queue with more write partitions than read partitions places some tasks where no poller reads directly."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-09-30 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "client/matching/loadbalancer.go", line = 89, excerpt = "return taskQueue.NormalPartition(rand.Intn(n))" },
+]

@@ -1,0 +1,89 @@
+# Branch fixture for Java Workflow thread exhaustion: the cache fills the
+# pool.
+#
+# At 02:00 UTC the subscriptions Workers are scaled in from twelve pods to
+# four. Each now runs about 1,500 open subscription Workflows, which wait on
+# timers between renewals. Each worker factory caches 600 of them, one
+# thread each, which takes its whole pool of 600: every task for a Workflow
+# that is not cached evicts one that is, and replays its own history.
+# Something can always be evicted, so no task fails.
+#
+# The investigation must establish the exhausted pool, rule out task
+# failures, and find one thread per cached Workflow.
+
+[fixture]
+id = "java-cache-fills-threads"
+title = "After a scale-in, the Java Workflow cache fills the thread pool"
+description = "Branch fixture for Java Workflow thread exhaustion. Each Worker caches 600 Workflows, one thread each, and evicts one for every Workflow it has not cached."
+investigation = "inv-branch-java-cache-threads"
+
+[open]
+at = 2026-10-21T02:38:00Z
+description = "Since we scaled our Java Workers in at 02:00, Workflow Tasks in the subscriptions namespace are slow, and the Workers keep evicting cached Workflows to free threads."
+server_version = "1.31.0"
+namespaces = ["subscriptions"]
+window_start = 2026-10-21T02:05:00Z
+window_end = 2026-10-21T02:40:00Z
+
+[open.expect]
+next_request = "java-workflow-threads"
+conclusion = "none"
+concluded = false
+
+# E1 — Threads in use on the busiest Worker, and evictions to free a thread.
+[[step]]
+at = 2026-10-21T02:40:00Z
+answers = "java-workflow-threads"
+file = "evidence/e1-threads.csv"
+channel = "upload"
+query = 'max(temporal_workflow_active_thread_count{namespace="subscriptions"}) and sum(rate(temporal_sticky_cache_thread_forced_eviction_total{namespace="subscriptions"}[1m]))'
+
+[step.expect]
+next_request = "java-workflow-task-failures"
+findings = ["F-evicting-for-threads", "F-threads-at-default-limit", "F-threads-pinned"]
+bound_signals = ["active_threads", "thread_evictions"]
+conclusion = "pool-exhausted"
+concluded = false
+
+[step.expect.states]
+pool-exhausted = "established"
+
+# E2 — Workflow Task failures by reason: none. The counters exist from
+# failures earlier in the week, so the series are flat zero.
+[[step]]
+at = 2026-10-21T02:43:00Z
+answers = "java-workflow-task-failures"
+file = "evidence/e2-task-failures.json"
+channel = "paste"
+query = 'sum by (failure_reason) (rate(temporal_workflow_task_execution_failed_total{namespace="subscriptions"}[1m]))'
+
+[step.expect]
+next_request = "java-workflow-cache-size"
+findings = ["F-evicting-for-threads", "F-threads-at-default-limit", "F-threads-pinned", "F-no-task-failures"]
+bound_signals = ["wft_errors"]
+conclusion = "pool-exhausted"
+concluded = false
+
+[step.expect.states]
+tasks-rejected = "eliminated"
+
+# E3 — Workflows in the busiest Worker's cache: as many as its threads.
+[[step]]
+at = 2026-10-21T02:45:00Z
+answers = "java-workflow-cache-size"
+file = "evidence/e3-cache-size.json"
+channel = "paste"
+query = 'max(temporal_sticky_cache_size{namespace="subscriptions"})'
+
+[step.expect]
+next_request = "none"
+findings = ["F-evicting-for-threads", "F-threads-at-default-limit", "F-threads-pinned", "F-no-task-failures", "F-one-thread-each", "F-cache-matches-threads"]
+bound_signals = ["cached_workflows"]
+conclusion = "cache-fills-pool"
+concluded = true
+
+[step.expect.states]
+pool-exhausted = "established"
+tasks-rejected = "eliminated"
+many-threads = "eliminated"
+cache-fills-pool = "established"

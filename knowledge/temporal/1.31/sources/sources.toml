@@ -1,0 +1,617 @@
+# Provenance sources. Paths in claims are relative to these roots.
+
+[[source]]
+id = "temporal-server-v1.31.0"
+kind = "repository"
+title = "Temporal Server"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.31.0"
+commit = "83881961df2bad7d78d93a2d50778dbc8bd1a2fc"
+retrieved = 2026-09-30
+note = "Source inspected at tag v1.31.0 (\"Bump ServerVersion to 1.31.0\")."
+
+[[source]]
+id = "temporal-api-go-v1.62.8"
+kind = "repository"
+title = "Temporal API (Go bindings), as pinned by Temporal Server 1.31.0 go.mod"
+repository = "https://github.com/temporalio/api-go"
+revision = "v1.62.8"
+checksum = "h1:g8RAZmdebYODoNa2GLA4M4TsXNe1096WV3n26C4+fdw="
+retrieved = 2026-09-30
+note = "go.temporal.io/api v1.62.8 is the version Temporal Server v1.31.0 pins (go.mod line 66); inspected from the Go module cache."
+
+[[source]]
+id = "tally-v4.1.17"
+kind = "repository"
+title = "uber-go/tally, as pinned by Temporal Server 1.31.0 go.mod"
+repository = "https://github.com/uber-go/tally"
+revision = "v4.1.17"
+checksum = "h1:C+U4BKtVDXTszuzU+WH8JVQvRVnaVKxzZrROFyDrvS8="
+retrieved = 2026-10-03
+note = "github.com/uber-go/tally/v4 v4.1.17 is the version Temporal Server v1.31.0 pins (go.mod line 53); its Prometheus reporter was inspected from the Go module cache. Paths are relative to the module root."
+
+[[source]]
+id = "otel-exporter-prometheus-v0.56.0"
+kind = "repository"
+title = "OpenTelemetry Go Prometheus exporter, as pinned by Temporal Server 1.31.0 go.mod"
+repository = "https://github.com/open-telemetry/opentelemetry-go"
+revision = "exporters/prometheus/v0.56.0"
+checksum = "h1:GnCIi0QyG0yy2MrJLzVrIM7laaJstj//flf1zEJCG+E="
+retrieved = 2026-10-03
+note = "go.opentelemetry.io/otel/exporters/prometheus v0.56.0 is the version Temporal Server v1.31.0 pins (go.mod line 61); inspected from the Go module cache. Paths are relative to the module root (exporters/prometheus in the repository)."
+
+[[source]]
+id = "sdk-core-acac9e3f"
+kind = "repository"
+title = "Temporal Rust SDK and Core (shared by the TypeScript, Python, .NET, Ruby and Rust SDKs)"
+repository = "https://github.com/tokeira/sdk-rust"
+revision = "v0.7.0-67-gacac9e3f"
+commit = "acac9e3f98c64eda54805f65779ddf2b313c8cb2"
+retrieved = 2026-09-30
+note = "A fork of the Temporal Rust SDK repository (sdk-core crate version 0.9.0). Metric names and label values were cross-checked against the sdk-core bundled with the Python SDK 1.25.0. The Core version inside a given released SDK may differ."
+
+[[source]]
+id = "sdk-python-1.25.0"
+kind = "repository"
+title = "Temporal Python SDK"
+repository = "https://github.com/temporalio/sdk-python"
+revision = "1.25.0"
+commit = "79a140b0ec4cad90c0579bf38b7d0382dcb39ca5"
+retrieved = 2026-09-30
+
+[[source]]
+id = "sdk-go-v1.44.0"
+kind = "repository"
+title = "Temporal Go SDK"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "v1.44.0"
+checksum = "h1:suitPDukX74rW3/N1FqvEbZTZVJJsxMKhv0KMa/j7pU="
+retrieved = 2026-09-30
+note = "internal/common/metrics/{constants,grpc,tags}.go are byte-identical to v1.41.1, the version Temporal Server v1.31.0 pins."
+
+[[source]]
+id = "kyumei-heuristics"
+kind = "authored"
+title = "Kyumei diagnostic heuristics"
+retrieved = 2026-09-30
+note = "Thresholds and interpretations chosen by Kyumei's authors. They are judgements, not statements about Temporal."
+
+[[source]]
+id = "sdk-java-v1.40.0"
+kind = "repository"
+title = "Temporal Java SDK"
+repository = "https://github.com/temporalio/sdk-java"
+revision = "v1.40.0"
+commit = "7c04e2fd96e88265075172593da2e235c092d445"
+retrieved = 2026-10-03
+note = "Released 29 September 2026. Metric names are in temporal-sdk/.../worker/MetricsType.java and temporal-serviceclient/.../serviceclient/MetricsType.java."
+
+[[source]]
+id = "sdk-go-contrib-tally-v0.2.0"
+kind = "repository"
+title = "Temporal Go SDK tally metrics handler (go.temporal.io/sdk/contrib/tally)"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "contrib/tally/v0.2.0"
+commit = "74a1b731526f3908d073bf4d9349a79859786238"
+retrieved = 2026-10-03
+note = "Inspected from the Go module cache. Paths are relative to the module root (contrib/tally in the repository)."
+
+[[source]]
+id = "sdk-go-contrib-opentelemetry-v0.8.0"
+kind = "repository"
+title = "Temporal Go SDK OpenTelemetry metrics handler (go.temporal.io/sdk/contrib/opentelemetry)"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "contrib/opentelemetry/v0.8.0"
+commit = "06212cb93bcbe9c2929ea8c147b3bf441cad6172"
+retrieved = 2026-10-03
+note = "The newest release that works with Go SDK v1.44.0: v0.8.1 requires v1.46.0. v0.7.0 has no UseMonotonicCounters and records counters and timers the same way otherwise. Paths are relative to the module root (contrib/opentelemetry in the repository)."
+
+[[source]]
+id = "micrometer-v1.9.9"
+kind = "repository"
+title = "Micrometer, the version the Java SDK v1.40.0 builds against"
+repository = "https://github.com/micrometer-metrics/micrometer"
+revision = "v1.9.9"
+commit = "b4778de29270862f8b001e24d79640e40f707bec"
+retrieved = 2026-10-03
+note = "sdk-java v1.40.0 build.gradle sets micrometerVersion to 1.9.9, and to 1.13.6 for its edge-dependency tests. Applications choose their own registry version."
+
+[[source]]
+id = "micrometer-v1.13.6"
+kind = "repository"
+title = "Micrometer, the version the Java SDK v1.40.0 edge-dependency tests use"
+repository = "https://github.com/micrometer-metrics/micrometer"
+revision = "v1.13.6"
+commit = "6f7656307fce5fc392101d0984751fa4eba3a88c"
+retrieved = 2026-10-03
+note = "From 1.13 Micrometer's Prometheus registry is built on the Prometheus Java client 1.x."
+
+[[source]]
+id = "prometheus-client-java-v1.2.1"
+kind = "repository"
+title = "Prometheus Java client, the version Micrometer 1.13.6 pins"
+repository = "https://github.com/prometheus/client_java"
+revision = "v1.2.1"
+commit = "776bbc003bf918f6087b53f1ead86267335c18c6"
+retrieved = 2026-10-03
+
+[[source]]
+id = "go-1.26.2"
+kind = "repository"
+title = "Go standard library, the version Temporal Server 1.31.0's go.mod requires"
+repository = "https://go.googlesource.com/go"
+revision = "go1.26.2"
+checksum = "h1:ueqxBCv2I8myqzn68hoBnvwKd+pza8cYqfM4plJTf1U="
+retrieved = 2026-10-03
+note = "Temporal Server v1.31.0's go.mod says `go 1.26.2`. Inspected from the golang.org/toolchain module v0.0.1-go1.26.2.darwin-arm64 in the Go module cache; the checksum is that module's."
+
+[[source]]
+id = "temporal-server-v1.27.0"
+kind = "repository"
+title = "Temporal Server 1.27.0"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.27.0"
+commit = "b1ae42e00f5d784b66c41ac7d353ef9e55390241"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.27.0, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.27.1"
+kind = "repository"
+title = "Temporal Server 1.27.1"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.27.1"
+commit = "75a3e8d701793707ce7ebe69e0f72c5a6242ff94"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.27.1, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.27.2"
+kind = "repository"
+title = "Temporal Server 1.27.2"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.27.2"
+commit = "ed81e7c8a77866c9c5f3ef3b34cbb3c8b8c6fc28"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.27.2, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.27.3"
+kind = "repository"
+title = "Temporal Server 1.27.3"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.27.3"
+commit = "8f6caaff6170c559dc891c3ffe84f7660cda4c69"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.27.3, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.27.4"
+kind = "repository"
+title = "Temporal Server 1.27.4"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.27.4"
+commit = "3162b75c656c0c38d43ff834c9ddc6fffc6abc73"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.27.4, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.28.0"
+kind = "repository"
+title = "Temporal Server 1.28.0"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.28.0"
+commit = "b03650523460b098cbaacf97192fc45a0c48d995"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.28.0, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.28.1"
+kind = "repository"
+title = "Temporal Server 1.28.1"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.28.1"
+commit = "bc2433d037b163568ed4420f70023dde1a4ae5b5"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.28.1, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.28.2"
+kind = "repository"
+title = "Temporal Server 1.28.2"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.28.2"
+commit = "09d90574e0f0ca65c33e19dc32a32f63579fc229"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.28.2, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.28.3"
+kind = "repository"
+title = "Temporal Server 1.28.3"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.28.3"
+commit = "3dbd4c04633e6986feffe039d7ebd2d636f0cc4a"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.28.3, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.28.4"
+kind = "repository"
+title = "Temporal Server 1.28.4"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.28.4"
+commit = "246f0667ac40a863186237f0f10bce13ce84efc5"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.28.4, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.0"
+kind = "repository"
+title = "Temporal Server 1.29.0"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.0"
+commit = "de42072bd282721e6dfc64780ee1662eb5f25184"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.0, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.1"
+kind = "repository"
+title = "Temporal Server 1.29.1"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.1"
+commit = "4c2403736409e6f38972df3be4de480026a5b6fa"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.1, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.2"
+kind = "repository"
+title = "Temporal Server 1.29.2"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.2"
+commit = "dfc3c9ad65407c0f81e99c2db2d33fa0a52e8633"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.2, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.3"
+kind = "repository"
+title = "Temporal Server 1.29.3"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.3"
+commit = "ca6536ada85941ddec669540f637925cfbc3e6de"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.3, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.4"
+kind = "repository"
+title = "Temporal Server 1.29.4"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.4"
+commit = "bca762906017547df7f248a1da0a3c2da46acdf3"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.4, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.5"
+kind = "repository"
+title = "Temporal Server 1.29.5"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.5"
+commit = "68c602252f3e1929026e5988da881933a4f7b778"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.5, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.6"
+kind = "repository"
+title = "Temporal Server 1.29.6"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.6"
+commit = "9ea51817c711138086caa6e9790ba65daf3797af"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.6, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.29.7"
+kind = "repository"
+title = "Temporal Server 1.29.7"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.29.7"
+commit = "1f74f0c8e9935980d92a39069185671bbbba7c7e"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.29.7, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.0"
+kind = "repository"
+title = "Temporal Server 1.30.0"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.0"
+commit = "f2a389fbab69f89edfb596d4963c04664db4cf89"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.0, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.1"
+kind = "repository"
+title = "Temporal Server 1.30.1"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.1"
+commit = "ae183bd84926809daffd28afb9fbad7102413450"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.1, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.2"
+kind = "repository"
+title = "Temporal Server 1.30.2"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.2"
+commit = "df877a85b229bd0c6d77e72f1416dd2fbe1aa6e3"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.2, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.3"
+kind = "repository"
+title = "Temporal Server 1.30.3"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.3"
+commit = "3b3e5010afc9063a71e8279381f98fad61da9e74"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.3, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.4"
+kind = "repository"
+title = "Temporal Server 1.30.4"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.4"
+commit = "50391837b273c6344c9f7d87870f13c6e6373337"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.4, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.5"
+kind = "repository"
+title = "Temporal Server 1.30.5"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.5"
+commit = "56f9b670543b5473e8d6852544a6581feba5cc81"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.5, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.6"
+kind = "repository"
+title = "Temporal Server 1.30.6"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.6"
+commit = "3d8a4546f0b095f3459423ddfaa65d4be8ef1783"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.6, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.7"
+kind = "repository"
+title = "Temporal Server 1.30.7"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.7"
+commit = "6263d75ecb887e4b11e67dab867c8af07260f36b"
+retrieved = 2026-10-15
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.7, extracted from a clone of the repository whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.30.8"
+kind = "repository"
+title = "Temporal Server 1.30.8"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.30.8"
+commit = "2710cd3a4d47c6641264b100327342661dc947ed"
+retrieved = 2026-10-15
+note = "Swept release: its settings and metrics were generated from the source at tag v1.30.8, extracted from a clone of the repository whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.31.1"
+kind = "repository"
+title = "Temporal Server 1.31.1"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.31.1"
+commit = "e015b7a8c24d327a72e9dab8526966f4f58ba501"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.31.1, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.31.2"
+kind = "repository"
+title = "Temporal Server 1.31.2"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.31.2"
+commit = "19a774302c613da9adc4436ab14278ccdca8e0a5"
+retrieved = 2026-10-13
+note = "Swept release: its settings and metrics were generated from the source at tag v1.31.2, extracted from a checkout whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.31.3"
+kind = "repository"
+title = "Temporal Server 1.31.3"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.31.3"
+commit = "8c78934b67fbac43d2ea7f8ada448c539780584d"
+retrieved = 2026-10-15
+note = "Swept release: its settings and metrics were generated from the source at tag v1.31.3, extracted from a clone of the repository whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.31.4"
+kind = "repository"
+title = "Temporal Server 1.31.4"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.31.4"
+commit = "9a9a1f0fa8a5a4edf29a90c4069352da094920fc"
+retrieved = 2026-10-15
+note = "Swept release: its settings and metrics were generated from the source at tag v1.31.4, extracted from a clone of the repository whose tag matches upstream."
+
+[[source]]
+id = "tally-v4.1.17-0.20240412215630-22fe011f5ff0"
+kind = "repository"
+title = "uber-go/tally, as pinned by Temporal Server 1.27.x go.mod"
+repository = "https://github.com/uber-go/tally"
+revision = "22fe011f5ff0"
+checksum = "h1:z5IgRoL16N7tdzn5oikX2G4oVXopW+CWo3XRxx61OQo="
+retrieved = 2026-10-13
+note = "Temporal Server v1.27.0 to v1.27.4 pin this pseudo-version of tally (go.mod); inspected from the Go module cache. Its Prometheus reporter is byte-identical to v4.1.17's."
+
+[[source]]
+id = "otel-exporter-prometheus-v0.57.0"
+kind = "repository"
+title = "OpenTelemetry Go Prometheus exporter, as pinned by Temporal Server 1.27.2 to 1.27.4"
+repository = "https://github.com/open-telemetry/opentelemetry-go"
+revision = "exporters/prometheus/v0.57.0"
+checksum = "h1:AHh/lAP1BHrY5gBwk8ncc25FXWm/gmmY3BX258z5nuk="
+retrieved = 2026-10-13
+note = "Temporal Server v1.27.2 to v1.27.4 pin v0.57.0 (go.mod); downloaded with go mod download. Paths are relative to the module root."
+
+[[source]]
+id = "go-1.26.4"
+kind = "repository"
+title = "Go standard library, the version Temporal Server 1.31.1 and 1.31.2 require"
+repository = "https://go.googlesource.com/go"
+revision = "go1.26.4"
+checksum = "h1:rHLTnGO5TGnsL7FfPWfGdmX5DIg1sX8/Zn94tjmTCWY="
+retrieved = 2026-10-13
+note = "Temporal Server v1.31.1 and v1.31.2's go.mod say `go 1.26.4`. Downloaded as the golang.org/toolchain module v0.0.1-go1.26.4.darwin-arm64; the checksum is that module's. src/database/sql/sql.go is byte-identical to go1.26.2's."
+
+[[source]]
+id = "go-1.26.8"
+kind = "repository"
+title = "Go standard library, the version Temporal Server 1.31.3 and 1.31.4 require"
+repository = "https://go.googlesource.com/go"
+revision = "go1.26.8"
+checksum = "h1:dFjGhY6f8DTsY8/rLchUTDRRfjJP4pCrGCwxvHFT2Fg="
+retrieved = 2026-10-15
+note = "Temporal Server v1.31.3 and v1.31.4's go.mod say `go 1.26.8`. Inspected from the golang.org/toolchain module v0.0.1-go1.26.8.darwin-arm64 in the Go module cache; the checksum is that module's."
+
+[[source]]
+id = "temporal-server-operations-5a71c36"
+kind = "repository"
+title = "Temporal server operations: playbooks, alert runbooks and Grafana dashboards for self-hosted Temporal"
+repository = "https://github.com/tsurdilo/temporal-server-operations"
+revision = "main"
+commit = "5a71c3656cc0bca831b61142b64c3672cc974b1b"
+committed = 2026-10-09
+retrieved = 2026-10-14
+note = "The repository has no licence, so Kyumei cites it and links to it at this commit, and reads an operator's own copy of its dashboards; it bundles none of its text or dashboards. Its runbooks still link to its earlier name, tsurdilo/temporal-metrics."
+
+[[source]]
+id = "temporal-cli-v1.7.0"
+kind = "repository"
+title = "Temporal CLI 1.7.0"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.0"
+commit = "62fa8939b953445ccfcca9c896b7296279b6cd7a"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.0, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.7.1"
+kind = "repository"
+title = "Temporal CLI 1.7.1"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.1"
+commit = "d39840756b7304ddef086a6ceef4068472907889"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.0, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.7.2"
+kind = "repository"
+title = "Temporal CLI 1.7.2"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.2"
+commit = "b89f8f8df0ffb5fb1820d801c15f7aec3768e513"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.1, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.7.3"
+kind = "repository"
+title = "Temporal CLI 1.7.3"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.3"
+commit = "1d8f321f3fccdca740d359a8ae5704b5bb35ff01"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.0"
+kind = "repository"
+title = "Temporal CLI 1.8.0"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.0"
+commit = "64f5072ebda191c93aa85990c89324aebbe9f651"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.1"
+kind = "repository"
+title = "Temporal CLI 1.8.1"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.1"
+commit = "d904a0d53bff2090274d494f3c201d9006b7237c"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.2"
+kind = "repository"
+title = "Temporal CLI 1.8.2"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.2"
+commit = "c579925f193fe2f0bf5134008125aea0c858ca95"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.3"
+kind = "repository"
+title = "Temporal CLI 1.8.3"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.3"
+commit = "1ff10b1012b44ba8bc953fcaa8ce5d296bf169d0"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.9 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.9.0"
+kind = "repository"
+title = "Temporal CLI 1.9.0"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.9.0"
+commit = "2ecba7d58c1a2a648791e34af0b80e5331f3dab3"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.32.0, which its dev server runs, the Go SDK 1.47.0 and go.temporal.io/api 1.63.5 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.9.1"
+kind = "repository"
+title = "Temporal CLI 1.9.1"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.9.1"
+commit = "1de87a9f26991bf4f5c0a5ff96f2cea8d7a3cbde"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.32.0, which its dev server runs, the Go SDK 1.47.0 and go.temporal.io/api 1.63.5 (go.mod)."
+
+[[source]]
+id = "sdk-go-v1.41.1"
+kind = "repository"
+title = "Temporal Go SDK 1.41.1, the version Temporal CLI 1.7.0 to 1.8.3 build with"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "v1.41.1"
+checksum = "h1:yOpvsHyDD1lNuwlGBv/SUodCPhjv9nDeC9lLHW/fJUA="
+retrieved = 2026-10-19
+note = "Inspected from the Go module cache; the checksum is the one the CLI's go.sum records."

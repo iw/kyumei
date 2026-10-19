@@ -1,0 +1,18 @@
+# Temporal Server 1.32 diagnostic knowledge.
+#
+# Every claim in this pack records the exact versions it was verified
+# against and where (repository, revision, path, line, verbatim excerpt).
+# Claims marked unverified say why. Kyumei's own thresholds live in
+# diagnostics/heuristics.toml and are never presented as Temporal behaviour.
+#
+# `kyumei knowledge verify` re-checks every excerpt against local checkouts.
+
+[pack]
+id = "temporal-1.32"
+title = "Temporal Server 1.32 diagnostic knowledge"
+version = "0.1.0"
+server_family = "1.32"
+verified_server_versions = ["1.32.0", "1.32.1"]
+# Generated from v1.32.1 and swept for v1.32.0; claims list the releases they hold in.
+swept_server_versions = ["1.32.0", "1.32.1"]
+description = "Metrics, dynamic configuration, Task Queue API fields and behaviours of Temporal Server 1.32, verified against source, with the SDKs that emit Worker metrics and Kyumei's diagnostics."

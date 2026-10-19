@@ -1,0 +1,67 @@
+# Branch fixture for visibility lag and errors: the Frontend's visibility
+# rate limit.
+#
+# From 14:00 UTC a reconciliation script, running in three pods, lists and
+# counts the orders namespace's Workflows for each order type every few
+# seconds. Listing and counting calls have a namespace limit of their own on
+# each Frontend host, 10 per second by default, so the Frontend rejects
+# them with ResourceExhausted, and the Web UI's list with them. Records are
+# written on time.
+#
+# The investigation must find the records on time, then the rejections.
+
+[fixture]
+id = "visibility-list-rate-limited"
+title = "A polling script exhausts the Frontend's visibility rate limit"
+description = "Branch fixture for visibility lag and errors. Listing and counting calls are rejected at the Frontend's visibility limit; records are written on time."
+investigation = "inv-branch-visibility-rate-limit"
+
+[open]
+at = 2026-10-17T14:28:00Z
+description = "Since 14:00 UTC temporal workflow list and the Web UI's Workflow list in the orders namespace keep failing with \"namespace rate limit exceeded\". Starting and signalling Workflows still works."
+server_version = "1.31.0"
+namespaces = ["orders"]
+window_start = 2026-10-17T14:00:00Z
+window_end = 2026-10-17T14:30:00Z
+
+[open.expect]
+next_request = "visibility-lag"
+conclusion = "none"
+concluded = false
+
+# E1 — Visibility record lag by task type: on time throughout.
+[[step]]
+at = 2026-10-17T14:30:00Z
+answers = "visibility-lag"
+file = "evidence/e1-record-lag.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_queue_bucket{namespace="orders", task_type=~"VisibilityTask.*"}[1m])))'
+
+[step.expect]
+next_request = "visibility-api-rejections"
+findings = ["F-records-on-time"]
+bound_signals = ["visibility_task_latency"]
+conclusion = "none"
+concluded = false
+
+[step.expect.states]
+records-late = "eliminated"
+
+# E2 — Visibility calls rejected at the Frontend, by API, cause and scope.
+[[step]]
+at = 2026-10-17T14:33:00Z
+answers = "visibility-api-rejections"
+file = "evidence/e2-api-rejections.json"
+channel = "paste"
+query = 'sum by (operation, resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name="frontend", namespace="orders", operation=~"ListWorkflowExecutions|CountWorkflowExecutions"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-records-on-time", "F-api-limit-rejecting"]
+bound_signals = ["api_rejections"]
+conclusion = "api-rate-limit"
+concluded = true
+
+[step.expect.states]
+records-late = "eliminated"
+api-rate-limit = "established"

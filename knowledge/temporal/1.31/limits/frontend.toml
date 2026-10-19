@@ -1,0 +1,166 @@
+# How the Frontend limits requests in 1.31.0, read from source.
+#
+# The settings named here are generated dynamic configuration claims (generated/); their
+# notes in dynamic-config/annotations.toml point back to these statements. The priority
+# order among APIs is the statement behaviour.frontend-priorities.
+
+[[statement]]
+id = "limit.frontend-namespace-rps"
+category = "limit"
+title = "The Frontend's limit on a namespace's requests"
+statement = "Each Frontend host admits a namespace's requests at `frontend.namespaceRPS` (2,400/s by default), with a burst of `frontend.namespaceBurstRatio` (2) times that. When `frontend.globalNamespaceRPS` is above 0 (it is 0 by default), it replaces the per-host value, divided evenly among the Frontend hosts that are not draining. A request over the limit fails with ResourceExhausted, cause RpsLimit and scope Namespace."
+notes = [
+  "Each host enforces its share alone, so a namespace whose requests are spread unevenly across Frontend hosts is throttled on the busiest host before the cluster-wide total reaches the global limit.",
+  "Visibility APIs are limited separately (limit.frontend-visibility-rps), and so are the APIs that cause namespace replication, such as UpdateNamespace.",
+]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 508, excerpt = "PerInstanceQuota: serviceConfig.MaxNamespaceRPSPerInstance," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 510, excerpt = "PerInstanceQuota: serviceConfig.MaxNamespaceRPSPerInstance," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 509, excerpt = "GlobalQuota:      globalNamespaceRPS," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 511, excerpt = "GlobalQuota:      globalNamespaceRPS," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/calculator/cluster_aware_quota_calculator.go", line = 35, excerpt = "if clusterLimit > 0 && memberCounter != nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/calculator/cluster_aware_quota_calculator.go", line = 37, excerpt = "return float64(clusterLimit) / float64(clusterSize)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/calculator/cluster_aware_quota_calculator.go", line = 41, excerpt = "return float64(instanceLimit)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/membership/interfaces.go", line = 83, excerpt = "// AvailableMemberCount returns the number of hosts running this service that are accepting requests (not draining)." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 283, excerpt = "return max(1, int(math.Ceil(rateFn(namespace)*burstRatioFn(namespace))))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 26, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_RPS_LIMIT," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 27, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/service.go", line = 302, excerpt = "// Overshoot since these low rate limits don't work well in an uncoordinated global limiter." },
+]
+
+[[statement]]
+id = "limit.frontend-host-rps"
+category = "limit"
+title = "The Frontend's limit on all requests"
+statement = "Each Frontend host also admits its requests, from every namespace, at `frontend.rps` (2,400/s by default), with a burst of twice that. When `frontend.globalRPS` is above 0 (it is 0 by default), it replaces `frontend.rps`, divided evenly among the Frontend hosts that are not draining. A request over the limit fails with ResourceExhausted, cause RpsLimit and scope System."
+notes = [
+  "Visibility APIs draw on a separate bucket at the same rate, and the APIs that cause namespace replication, such as UpdateNamespace, on `frontend.rps.namespaceReplicationInducingAPIs` (20/s by default).",
+  "Health checks are exempt, and so are APIs the Frontend does not classify, such as the Admin and Operator APIs.",
+]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 445, excerpt = "MemberCounter:    frontendServiceResolver," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 447, excerpt = "MemberCounter:    frontendServiceResolver," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 446, excerpt = "PerInstanceQuota: serviceConfig.RPS," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 448, excerpt = "PerInstanceQuota: serviceConfig.RPS," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 447, excerpt = "GlobalQuota:      serviceConfig.GlobalRPS," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 449, excerpt = "GlobalQuota:      serviceConfig.GlobalRPS," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/dynamic_rate_limiter_impl.go", line = 10, excerpt = "defaultIncomingRateBurstRatio = float64(2)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/rate_limit.go", line = 21, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_RPS_LIMIT," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/rate_limit.go", line = 22, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_SYSTEM," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 465, excerpt = "healthpb.Health_Check_FullMethodName:                     0, // exclude health check requests from rate limiting." },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 467, excerpt = "healthpb.Health_Check_FullMethodName:                     0, // exclude health check requests from rate limiting." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 460, excerpt = "quotas.NewDefaultIncomingRateBurst(rateFn)," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 462, excerpt = "quotas.NewDefaultIncomingRateBurst(rateFn)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 461, excerpt = "quotas.NewDefaultIncomingRateBurst(namespaceReplicationInducingRateFn)," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 463, excerpt = "quotas.NewDefaultIncomingRateBurst(namespaceReplicationInducingRateFn)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 329, excerpt = "for api := range VisibilityAPIToPriority {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 332, excerpt = "for api := range NamespaceReplicationInducingAPIToPriority {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 229, excerpt = '"/temporal.api.workflowservice.v1.WorkflowService/UpdateNamespace":' },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 649, excerpt = '"frontend.rps.namespaceReplicationInducingAPIs",' },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 654, excerpt = '"frontend.rps.namespaceReplicationInducingAPIs",' },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 650, excerpt = "20," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 655, excerpt = "20," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/routing_rate_limiter_impl.go", line = 32, excerpt = "rateLimiter, ok := r.apiToRateLimiter[request.API]" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/quotas/routing_rate_limiter_impl.go", line = 34, excerpt = "return true" },
+]
+
+[[statement]]
+id = "limit.frontend-visibility-rps"
+category = "limit"
+title = "Visibility APIs have their own namespace limit"
+statement = "Listing, counting and scanning Workflow Executions, schedules and other visibility APIs do not use a namespace's `frontend.namespaceRPS`: each Frontend host admits a namespace's visibility requests at `frontend.namespaceRPS.visibility` (10/s by default), or at `frontend.globalNamespaceRPS.visibility` divided among the hosts when that is above 0."
+notes = ["At the host level, visibility requests have their own buckets at the `frontend.rps` rate."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 199, excerpt = "VisibilityAPIToPriority = map[string]int{" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 200, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/CountWorkflowExecutions\":        1," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 330, excerpt = "mapping[api] = visibilityRateLimiter" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 516, excerpt = "PerInstanceQuota: serviceConfig.MaxNamespaceVisibilityRPSPerInstance," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 518, excerpt = "PerInstanceQuota: serviceConfig.MaxNamespaceVisibilityRPSPerInstance," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 517, excerpt = "GlobalQuota:      globalNamespaceVisibilityRPS," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 519, excerpt = "GlobalQuota:      globalNamespaceVisibilityRPS," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 460, excerpt = "quotas.NewDefaultIncomingRateBurst(rateFn)," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 462, excerpt = "quotas.NewDefaultIncomingRateBurst(rateFn)," },
+]
+
+[[statement]]
+id = "limit.frontend-concurrent-long-running"
+category = "limit"
+title = "The Frontend's cap on long-running requests in flight"
+statement = "`frontend.namespaceCount` (1,200 by default) caps, on each Frontend host, the long-running requests one namespace has in flight to one API: Workflow, Activity and Nexus Task polls, QueryWorkflow, UpdateWorkflowExecution and a few others, and GetWorkflowExecutionHistory when it waits for new events. When `frontend.globalNamespaceCount` is above 0 (it is 0 by default), it replaces that, divided among the hosts. A request over the cap fails with ResourceExhausted, cause ConcurrentLimit and scope Namespace."
+notes = ["The in-flight count is published as service_pending_requests, by namespace and API."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 43, excerpt = "ExecutionAPICountLimitOverride = map[string]int{" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 45, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue\":       1," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 47, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/QueryWorkflow\":               1," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/concurrent_request_limit.go", line = 100, excerpt = "if ok && !longPollReq.WaitNewEvent {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/concurrent_request_limit.go", line = 140, excerpt = "return namespace.String() + \"/\" + methodName" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/concurrent_request_limit.go", line = 113, excerpt = "if float64(count) > ni.quotaCalculator.GetQuota(namespaceName.String()) {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 552, excerpt = "serviceConfig.MaxConcurrentLongRunningRequestsPerInstance," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 554, excerpt = "serviceConfig.MaxConcurrentLongRunningRequestsPerInstance," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 553, excerpt = "serviceConfig.MaxGlobalConcurrentLongRunningRequests," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 555, excerpt = "serviceConfig.MaxGlobalConcurrentLongRunningRequests," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/concurrent_request_limit.go", line = 39, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/concurrent_request_limit.go", line = 40, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/concurrent_request_limit.go", line = 109, excerpt = "mh.Gauge(metrics.ServicePendingRequests.Name()).Record(float64(count))" },
+]
+
+[[statement]]
+id = "behaviour.frontend-limiter-order"
+category = "behaviour"
+title = "The order of the Frontend's limits"
+statement = "The Frontend checks its limits after its telemetry interceptor, in this order: the cap on long-running requests in flight, the namespace rate limit, then the host rate limit. A rejected request is still counted in service_requests, and one the namespace limit rejects takes no host token."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 274, excerpt = "telemetryInterceptor.UnaryIntercept," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 275, excerpt = "telemetryInterceptor.UnaryIntercept," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 277, excerpt = "namespaceCountLimiterInterceptor.Intercept," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 278, excerpt = "namespaceCountLimiterInterceptor.Intercept," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 278, excerpt = "namespaceRateLimiterInterceptor.Intercept," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 279, excerpt = "namespaceRateLimiterInterceptor.Intercept," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 279, excerpt = "rateLimitInterceptor.Intercept," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 280, excerpt = "rateLimitInterceptor.Intercept," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/telemetry.go", line = 177, excerpt = "metrics.ServiceRequests.With(metricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/telemetry.go", line = 184, excerpt = "resp, err := handler(ctx, req)" },
+]
+
+[[statement]]
+id = "behaviour.frontend-poll-wait-for-token"
+category = "behaviour"
+title = "Polls can wait for a namespace rate-limit token"
+statement = "With `frontend.pollWaitForNamespaceRateLimitToken` set for a namespace (it is off by default), a Workflow, Activity or Nexus Task poll that finds the namespace limit exhausted waits for a token, until 10 seconds before its deadline, instead of failing at once. It fails with ResourceExhausted, cause RpsLimit and scope Namespace, only if less than 10 seconds remain or no token arrives in time. The wait is recorded in namespace_rate_limit_poll_wait_latency."
+notes = ["Polls throttled this way are delayed rather than rejected, so they do not appear in service_errors_resource_exhausted unless the wait fails."]
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 84, excerpt = "if ni.pollWaitForToken(ns.String()) {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/configs/quotas.go", line = 70, excerpt = "\"/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue\": {}," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 122, excerpt = "return ErrNamespaceRateLimitServerBusy" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 124, excerpt = "waitCtx, cancel = context.WithDeadline(ctx, deadline.Add(-common.CriticalLongPollTimeout))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/constants.go", line = 39, excerpt = "CriticalLongPollTimeout = time.Second * 10" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/namespace_rate_limit.go", line = 130, excerpt = "metrics.NamespaceRateLimitWaitLatency.With(ni.metricsHandler).Record(" },
+]
+
+[[statement]]
+id = "behaviour.resource-exhausted-accounting"
+category = "behaviour"
+title = "How ResourceExhausted errors are counted"
+statement = "A server RPC that fails with ResourceExhausted is counted in service_errors_resource_exhausted, tagged with the error's cause and scope as resource_exhausted_cause and resource_exhausted_scope. Only an error scoped to a namespace is treated as expected: one with any other scope, System included, is also counted in service_errors."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-03 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 104, excerpt = "metrics.ServiceErrResourceExhaustedCounter.With(metricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 106, excerpt = "metrics.ResourceExhaustedCauseTag(resourceExhaustedErr.Cause)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 107, excerpt = "metrics.ResourceExhaustedScopeTag(resourceExhaustedErr.Scope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 134, excerpt = "// the result for resource exhausted depends on the resource exhausted scope and" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 157, excerpt = "return err.Scope == enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 115, excerpt = "metrics.ServiceFailures.With(metricsHandler).Record(1)" },
+]

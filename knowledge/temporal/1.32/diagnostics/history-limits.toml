@@ -1,0 +1,465 @@
+# Diagnostic: Workflows terminated by, or growing toward, the history limits.
+#
+# History terminates a running Workflow whose history passes the size or
+# event count limit, or whose mutable state passes its size limit, and
+# before that suggests continue-as-new on every Workflow Task. The
+# investigation reads one affected Workflow: its status, history length and
+# size say whether it was terminated, whether it ran on past the suggestion,
+# and whether payloads or the number of events filled it. A terminated
+# Workflow's last event then says which limit stopped it.
+#
+# The server's history_size histogram stops at 16 MiB, below the 50 MiB
+# limit, so sizes are read from DescribeWorkflowExecution, not from metrics.
+
+[diagnostic]
+id = "history-limits"
+title = "Workflow history limits"
+summary = "Workflows are terminated, or warned about, because their histories approach the size or event count limits."
+# Before Workflow Task failures: a description that names the history limits
+# is about them, even when it also says Workflows stopped.
+precedence = 6
+
+[diagnostic.path]
+description = "How a history grows: Workflow code on the Workers adds events with every Workflow Task, and History stores them, checks each update against the history limits, and terminates a Workflow that passes one."
+layers = ["workers", "history"]
+
+[[symptom]]
+id = "history-limits"
+title = "Histories at or near the history limits"
+patterns = [
+  "history (size|count|length)\\b.{0,60}\\b(exceed|exceeds|exceeded|exceeding|limit|limits|too (large|big|long)|warn|warning)",
+  "mutable state size",
+  "too many (history )?events",
+  "terminated\\b.{0,60}\\bhistory[- ]service",
+  "continue[- ]as[- ]new",
+]
+signal = "history_size_bytes"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "limit"
+order = 1
+title = "History limits"
+question = "Did a history limit terminate the Workflows, and which?"
+
+[[stage]]
+id = "growth"
+order = 2
+title = "History growth"
+question = "Why did the histories grow so large?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "workflow_status"
+title = "Status of the Workflow described"
+unit = "count"
+description = "Whether the affected Workflow is running or how it closed, from DescribeWorkflowExecution."
+source = [{ claim = "api.workflow_execution_info.status" }]
+
+[[signal]]
+id = "history_length"
+title = "History length of the Workflow described"
+unit = "count"
+description = "The number of events in the affected Workflow's history, from DescribeWorkflowExecution."
+source = [{ claim = "api.workflow_execution_info.history_length" }]
+
+[[signal]]
+id = "history_size_bytes"
+title = "History size of the Workflow described"
+unit = "bytes"
+description = "The size of the affected Workflow's history, from DescribeWorkflowExecution."
+source = [{ claim = "api.workflow_execution_info.history_size_bytes" }]
+
+[[signal]]
+id = "termination_reason"
+title = "Termination reason"
+unit = "count"
+description = "The reason recorded in the terminated Workflow's WorkflowExecutionTerminated event."
+source = [{ claim = "api.workflow_execution_terminated.reason" }]
+
+[[signal]]
+id = "can_suggestions"
+title = "Workflow Tasks started with a continue-as-new suggestion"
+unit = "per_second"
+description = "Workflow Tasks History started on histories past a continue-as-new threshold, per second, across the namespace."
+combine = "sum"
+source = [{ claim = "server.workflow_suggest_continue_as_new_count", transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "history-size-limit"
+stage = "limit"
+primary = true
+layer = "history"
+title = "History size limit"
+question = "Size limit terminated them?"
+statement = "The Workflows' histories grew past limit.historySize.error (50 MiB by default), and History terminated them."
+
+[[hypothesis]]
+id = "history-count-limit"
+stage = "limit"
+layer = "history"
+title = "History event count limit"
+question = "Event count limit terminated them?"
+statement = "The Workflows' histories grew past limit.historyCount.error (51,200 events by default), and History terminated them."
+
+[[hypothesis]]
+id = "mutable-state-limit"
+stage = "limit"
+layer = "history"
+title = "Mutable state size limit"
+question = "Mutable state limit terminated them?"
+statement = "The Workflows' mutable state grew past limit.mutableStateSize.error (8 MiB by default), and History terminated them."
+
+[[hypothesis]]
+id = "continue-as-new-ignored"
+stage = "growth"
+primary = true
+layer = "workers"
+title = "Continue-as-new not used"
+question = "Ran past continue-as-new?"
+statement = "The Workflows keep running past History's suggestion to continue-as-new, made from 4 MiB or 4,096 events by default, so their histories grow until a limit stops them."
+implication = "Have the Workflows continue-as-new when History suggests it, carrying their state into a new run."
+
+[[hypothesis]]
+id = "large-payloads"
+stage = "growth"
+layer = "workers"
+title = "Large payloads"
+question = "Payloads filling the history?"
+statement = "The inputs, results and Signals the Workflows' events carry are large, so the history reaches the size limit with comparatively few events."
+implication = "Store large data outside the Workflow and pass references."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "workflow-size"
+stage = "limit"
+title = "The size and status of an affected Workflow"
+why = "History compares each running Workflow's history with the limits as it updates it, and suggests continue-as-new well before them. One affected Workflow's status, event count and size show whether a limit could have terminated it, whether it ran on past the suggestion, and whether payloads or the number of events filled it. The server's history size histogram stops at 16 MiB, so it cannot show this."
+signals = ["workflow_status", "history_length", "history_size_bytes"]
+distinguishes = ["history-size-limit", "history-count-limit", "mutable-state-limit", "continue-as-new-ignored", "large-payloads"]
+cost = 2
+window = { pad_before_minutes = 0, pad_after_minutes = 0, guidance = "Describe a Workflow that was terminated, or one still running whose history drew warnings, and note the time." }
+
+[[request.collect]]
+method = "temporal-cli"
+label = "DescribeWorkflowExecution for an affected Workflow, as JSON"
+body = "temporal workflow describe --namespace {namespace} --workflow-id <workflow-id> -o json"
+claims = ["cli.workflow-describe", "api.workflow_execution_info.status", "api.workflow_execution_info.history_length", "api.workflow_execution_info.history_size_bytes"]
+note = "workflowExecutionInfo carries status, historyLength and historySizeBytes; for a Workflow that is no longer running the CLI adds closeEvent, its last event"
+
+[[request]]
+id = "termination-event"
+stage = "limit"
+title = "The terminated Workflow's last event"
+why = "A Workflow that a history limit terminated ends with a WorkflowExecutionTerminated event from history-service whose reason names the limit: the history size, the event count or the mutable state size."
+signals = ["termination_reason"]
+distinguishes = ["history-size-limit", "history-count-limit", "mutable-state-limit"]
+cost = 2
+window = { pad_before_minutes = 0, pad_after_minutes = 0, guidance = "Use a Workflow that was terminated; its history no longer changes." }
+
+[[request.collect]]
+method = "temporal-cli"
+label = "DescribeWorkflowExecution for the terminated Workflow, with its close event, as JSON"
+body = "temporal workflow describe --namespace {namespace} --workflow-id <workflow-id> -o json"
+claims = ["cli.workflow-describe", "api.workflow_execution_terminated.reason", "behaviour.limit-termination-reason"]
+note = "closeEvent is the WorkflowExecutionTerminated event; the CLI fetches it without the rest of the history"
+
+[[request.collect]]
+method = "temporal-cli"
+label = "Or the last event of the terminated Workflow's history, as JSON"
+body = "temporal workflow show --namespace {namespace} --workflow-id <workflow-id> --output json | jq '.events[-1]'"
+claims = ["cli.workflow-show", "api.workflow_execution_terminated.reason", "behaviour.limit-termination-reason"]
+note = "the full history can be tens of megabytes, so keep only the last event, which is the WorkflowExecutionTerminated event"
+
+[[request]]
+id = "continue-as-new-suggestions"
+stage = "growth"
+title = "Continue-as-new suggestions across the namespace"
+why = "History counts every Workflow Task it starts on a history past a continue-as-new threshold. A steady count means Workflows keep running past the suggestion, without picking one Workflow to describe."
+signals = ["can_suggestions"]
+distinguishes = ["continue-as-new-ignored"]
+cost = 2
+requires = ["server-metrics"]
+
+[[request.collect]]
+method = "promql"
+label = "Workflow Tasks started with a continue-as-new suggestion, per second"
+body = "sum(rate(workflow_suggest_continue_as_new_count{namespace=\"{namespace}\"}[5m]))"
+unit = "per_second"
+claims = ["server.workflow_suggest_continue_as_new_count", "behaviour.suggest-continue-as-new"]
+note = "with the OpenTelemetry metrics framework the counter is named workflow_suggest_continue_as_new_count_total"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "still-running"
+hypothesis = "history-size-limit"
+effect = "eliminates"
+statement = "The Workflow described is still running ({workflow_status.last}): no history limit has terminated it."
+claims = ["api.workflow_execution_info.status", "limit.history-size-and-count"]
+when = { signal = "workflow_status", equals = "WORKFLOW_EXECUTION_STATUS_RUNNING" }
+
+[[rule]]
+id = "still-running-count"
+hypothesis = "history-count-limit"
+effect = "eliminates"
+statement = "The Workflow described is still running ({workflow_status.last}): no history limit has terminated it."
+claims = ["api.workflow_execution_info.status", "limit.history-size-and-count"]
+when = { signal = "workflow_status", equals = "WORKFLOW_EXECUTION_STATUS_RUNNING" }
+
+[[rule]]
+id = "still-running-mutable-state"
+hypothesis = "mutable-state-limit"
+effect = "eliminates"
+statement = "The Workflow described is still running ({workflow_status.last}): no history limit has terminated it."
+claims = ["api.workflow_execution_info.status", "limit.history-size-and-count"]
+when = { signal = "workflow_status", equals = "WORKFLOW_EXECUTION_STATUS_RUNNING" }
+
+[[rule]]
+id = "size-past-default-limit"
+hypothesis = "history-size-limit"
+effect = "supports"
+statement = "The Workflow described was terminated with a history of {history_size_bytes.last}, past the default size limit of 50 MiB."
+claims = ["limit.history-size-and-count", "api.workflow_execution_info.history_size_bytes", "dc.limit.historySize.error"]
+when = { all = [
+  { signal = "workflow_status", equals = "WORKFLOW_EXECUTION_STATUS_TERMINATED" },
+  { signal = "history_size_bytes", stat = "last", op = "gt", value = 52428800 },
+] }
+
+[[rule]]
+id = "count-past-default-limit"
+hypothesis = "history-count-limit"
+effect = "supports"
+statement = "The Workflow described was terminated with {history_length.last} events in its history, past the default event count limit of 51,200."
+claims = ["limit.history-size-and-count", "api.workflow_execution_info.history_length", "dc.limit.historyCount.error"]
+when = { all = [
+  { signal = "workflow_status", equals = "WORKFLOW_EXECUTION_STATUS_TERMINATED" },
+  { signal = "history_length", stat = "last", op = "gt", value = 51200 },
+] }
+
+[[rule]]
+id = "reason-size"
+hypothesis = "history-size-limit"
+effect = "establishes"
+statement = "History terminated the Workflow because its history size exceeded the limit: \"{termination_reason.last}\""
+claims = ["behaviour.limit-termination-reason", "limit.history-size-and-count"]
+when = { signal = "termination_reason", equals = "Workflow history size exceeds limit." }
+
+[[rule]]
+id = "reason-not-size"
+hypothesis = "history-size-limit"
+effect = "eliminates"
+statement = "The Workflow was terminated for another reason: \"{termination_reason.last}\"."
+claims = ["behaviour.limit-termination-reason"]
+when = { not = { signal = "termination_reason", equals = "Workflow history size exceeds limit." } }
+
+[[rule]]
+id = "reason-count"
+hypothesis = "history-count-limit"
+effect = "establishes"
+statement = "History terminated the Workflow because its history had too many events: \"{termination_reason.last}\""
+claims = ["behaviour.limit-termination-reason", "limit.history-size-and-count"]
+when = { signal = "termination_reason", equals = "Workflow history count exceeds limit." }
+
+[[rule]]
+id = "reason-not-count"
+hypothesis = "history-count-limit"
+effect = "eliminates"
+statement = "The Workflow was terminated for another reason: \"{termination_reason.last}\"."
+claims = ["behaviour.limit-termination-reason"]
+when = { not = { signal = "termination_reason", equals = "Workflow history count exceeds limit." } }
+
+[[rule]]
+id = "reason-mutable-state"
+hypothesis = "mutable-state-limit"
+effect = "establishes"
+statement = "History terminated the Workflow because its mutable state was too large: \"{termination_reason.last}\""
+claims = ["behaviour.limit-termination-reason", "limit.history-size-and-count"]
+when = { signal = "termination_reason", equals = "Workflow mutable state size exceeds limit." }
+
+[[rule]]
+id = "reason-not-mutable-state"
+hypothesis = "mutable-state-limit"
+effect = "eliminates"
+statement = "The Workflow was terminated for another reason: \"{termination_reason.last}\"."
+claims = ["behaviour.limit-termination-reason"]
+when = { not = { signal = "termination_reason", equals = "Workflow mutable state size exceeds limit." } }
+
+[[rule]]
+id = "past-suggestion"
+hypothesis = "continue-as-new-ignored"
+effect = "establishes"
+statement = "The Workflow described had {history_length.last} events and {history_size_bytes.last} of history, past the default thresholds at which History suggests continue-as-new (4,096 events, 4 MiB): it kept running through the suggestion on every Workflow Task since."
+claims = ["heuristic.history-past-suggestion", "behaviour.suggest-continue-as-new"]
+when = { any = [
+  { signal = "history_length", stat = "last", op = "ge", value = 4096 },
+  { signal = "history_size_bytes", stat = "last", op = "ge", value = 4194304 },
+] }
+
+[[rule]]
+id = "below-suggestion"
+hypothesis = "continue-as-new-ignored"
+effect = "eliminates"
+statement = "The Workflow described had {history_length.last} events and {history_size_bytes.last} of history, short of both thresholds at which History suggests continue-as-new."
+claims = ["heuristic.history-past-suggestion", "behaviour.suggest-continue-as-new"]
+when = { all = [
+  { signal = "history_length", stat = "last", op = "lt", value = 4096 },
+  { signal = "history_size_bytes", stat = "last", op = "lt", value = 4194304 },
+] }
+
+[[rule]]
+id = "suggestions-steady"
+hypothesis = "continue-as-new-ignored"
+effect = "supports"
+statement = "History started Workflow Tasks with a continue-as-new suggestion at {can_suggestions.mean} on average across the namespace: Workflows were running past the suggestion."
+claims = ["heuristic.effectively-zero-rate", "server.workflow_suggest_continue_as_new_count", "behaviour.suggest-continue-as-new"]
+when = { signal = "can_suggestions", stat = "mean", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "payload-heavy"
+hypothesis = "large-payloads"
+effect = "establishes"
+statement = "The history described holds {history_size_bytes.last} in {history_length.last} events, more than 4 KiB an event on average: the payloads its events carry, not their number, filled it."
+claims = ["heuristic.payload-heavy-history", "api.workflow_execution_info.history_size_bytes"]
+when = { ratio = { numerator = "history_size_bytes.last", denominator = "history_length.last" }, op = "ge", value = 4096 }
+
+[[rule]]
+id = "event-heavy"
+hypothesis = "large-payloads"
+effect = "eliminates"
+statement = "The history described holds {history_size_bytes.last} in {history_length.last} events, 1 KiB an event or less on average: the number of events, not their payloads, filled it."
+claims = ["heuristic.payload-heavy-history", "api.workflow_execution_info.history_length"]
+when = { ratio = { numerator = "history_size_bytes.last", denominator = "history_length.last" }, op = "le", value = 1024 }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "size-limit-payloads"
+title = "History size limit: payloads filled the histories"
+statement = "History terminated the Workflows when their histories passed the size limit, limit.historySize.error (50 MiB by default). The history described holds {history_size_bytes.last} in only {history_length.last} events: the inputs, results and Signals its events carry filled it."
+when = { all = [
+  { hypothesis = "history-size-limit", state = ["established"] },
+  { hypothesis = "large-payloads", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { hypothesis = "continue-as-new-ignored", state = ["established"] }
+text = "It also ran on past History's suggestion to continue-as-new, made from 4 MiB or 4,096 events by default."
+
+[[conclusion.recommendation]]
+text = "Keep large data out of Workflow histories: store it elsewhere and pass references in Activity inputs and results and in Signals."
+claims = ["heuristic.payload-heavy-history", "limit.history-size-and-count"]
+
+[[conclusion.recommendation]]
+text = "Have long-running Workflows continue-as-new when History suggests it, carrying their state into the new run: GetContinueAsNewSuggested in Go, isContinueAsNewSuggested in Java, is_continue_as_new_suggested in Python."
+claims = ["behaviour.suggest-continue-as-new"]
+
+[[conclusion.recommendation]]
+text = "Start the terminated Workflows again from the state they had reached: History terminated them, so they will not resume."
+caution = "Raising limit.historySize.error lets histories grow further, but every replay of a larger history costs the Workers more; it postpones the termination rather than preventing it."
+claims = ["behaviour.limit-termination-reason", "dc.limit.historySize.error"]
+
+[[conclusion]]
+id = "size-limit"
+title = "History size limit: Workflows ran past continue-as-new"
+statement = "History terminated the Workflows when their histories passed the size limit, limit.historySize.error (50 MiB by default). They ran on past History's suggestion to continue-as-new: the history described holds {history_size_bytes.last} in {history_length.last} events."
+when = { all = [
+  { hypothesis = "history-size-limit", state = ["established"] },
+  { hypothesis = "continue-as-new-ignored", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Have long-running Workflows continue-as-new when History suggests it, carrying their state into the new run: GetContinueAsNewSuggested in Go, isContinueAsNewSuggested in Java, is_continue_as_new_suggested in Python."
+claims = ["behaviour.suggest-continue-as-new"]
+
+[[conclusion.recommendation]]
+text = "Start the terminated Workflows again from the state they had reached: History terminated them, so they will not resume."
+caution = "Raising limit.historySize.error lets histories grow further, but every replay of a larger history costs the Workers more; it postpones the termination rather than preventing it."
+claims = ["behaviour.limit-termination-reason", "dc.limit.historySize.error"]
+
+[[conclusion]]
+id = "count-limit"
+title = "History event count limit"
+statement = "History terminated the Workflows when their histories passed the event count limit, limit.historyCount.error (51,200 events by default)."
+when = { hypothesis = "history-count-limit", state = ["established"] }
+
+[[conclusion.clause]]
+when = { signal = "history_length", stat = "last", op = "ge", value = 1 }
+text = "The history described holds {history_length.last} events in {history_size_bytes.last}."
+
+[[conclusion.clause]]
+when = { hypothesis = "continue-as-new-ignored", state = ["established"] }
+text = "The Workflows ran on past History's suggestion to continue-as-new, made from 4,096 events by default."
+
+[[conclusion.recommendation]]
+text = "Have long-running Workflows continue-as-new when History suggests it, carrying their state into the new run: GetContinueAsNewSuggested in Go, isContinueAsNewSuggested in Java, is_continue_as_new_suggested in Python."
+claims = ["behaviour.suggest-continue-as-new"]
+
+[[conclusion.recommendation]]
+text = "Start the terminated Workflows again from the state they had reached: History terminated them, so they will not resume."
+caution = "Raising limit.historyCount.error lets histories grow further, but every replay of a longer history costs the Workers more; it postpones the termination rather than preventing it."
+claims = ["behaviour.limit-termination-reason", "dc.limit.historyCount.error"]
+
+[[conclusion]]
+id = "mutable-state-limit"
+title = "Mutable state size limit"
+statement = "History terminated the Workflows when their mutable state passed limit.mutableStateSize.error (8 MiB by default)."
+when = { hypothesis = "mutable-state-limit", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Look at what the Workflows keep pending at once, such as Activities, child Workflows and timers in flight, and at large memos and search attributes, and reduce it."
+claims = ["limit.history-size-and-count", "dc.limit.mutableStateSize.error"]
+
+[[conclusion]]
+id = "size-limit-only"
+title = "History size limit"
+statement = "History terminated the Workflows when their histories passed the size limit, limit.historySize.error (50 MiB by default)."
+when = { hypothesis = "history-size-limit", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Describe an affected Workflow to see whether payloads or the number of events filled its history, then continue-as-new when History suggests it or keep large data out of the history."
+claims = ["behaviour.suggest-continue-as-new", "heuristic.payload-heavy-history"]
+
+[[conclusion]]
+id = "approaching-limits"
+title = "Histories growing toward the limits"
+statement = "Workflows are running on past History's suggestion to continue-as-new, so their histories keep growing toward the limits that would terminate them, 50 MiB or 51,200 events by default. The history described holds {history_size_bytes.last} in {history_length.last} events."
+when = { all = [
+  { hypothesis = "continue-as-new-ignored", state = ["established"] },
+  { hypothesis = "history-size-limit", state = ["eliminated"] },
+  { hypothesis = "history-count-limit", state = ["eliminated"] },
+  { hypothesis = "mutable-state-limit", state = ["eliminated"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "history_size_bytes", stat = "last", op = "gt", value = 10485760 }
+text = "It is past the warn limit, limit.historySize.warn (10 MiB by default), where History starts logging warnings about it."
+
+[[conclusion.clause]]
+when = { hypothesis = "large-payloads", state = ["established"] }
+text = "It averages more than 4 KiB an event: payloads, more than events, are filling it."
+
+[[conclusion.recommendation]]
+text = "Have long-running Workflows continue-as-new when History suggests it, carrying their state into the new run: GetContinueAsNewSuggested in Go, isContinueAsNewSuggested in Java, is_continue_as_new_suggested in Python."
+claims = ["behaviour.suggest-continue-as-new"]
+
+[[conclusion.recommendation]]
+text = "Where payloads fill the history, store large data elsewhere and pass references in Activity inputs and results and in Signals."
+claims = ["heuristic.payload-heavy-history"]
+
+[[conclusion]]
+id = "past-continue-as-new"
+title = "Histories past continue-as-new"
+statement = "The Workflows ran on past History's suggestion to continue-as-new, so their histories kept growing toward the limits: the history described holds {history_size_bytes.last} in {history_length.last} events."
+when = { hypothesis = "continue-as-new-ignored", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Have long-running Workflows continue-as-new when History suggests it, carrying their state into the new run: GetContinueAsNewSuggested in Go, isContinueAsNewSuggested in Java, is_continue_as_new_suggested in Python."
+claims = ["behaviour.suggest-continue-as-new"]

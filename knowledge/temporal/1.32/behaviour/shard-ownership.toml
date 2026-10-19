@@ -1,0 +1,47 @@
+# How History hosts share the shards in Temporal Server 1.32, what happens
+# to requests while a shard moves, and the settings that soften a planned
+# shutdown.
+
+[[statement]]
+id = "behaviour.shard-ownership-moves"
+category = "behaviour"
+title = "Shards move when History hosts join or leave"
+statement = "History hosts divide the shards among themselves by a hash ring of the hosts in membership, and each counts every change to the ring in membership_changed_count. When a host joins or leaves, the shards whose owner changed move: the old owner closes them at once (history.shardLingerTimeLimit is 0 by default) and the new one takes a lease on each in the database. Until it has, requests for the shard's Workflows fail: a host that no longer owns the shard answers ShardOwnershipLost, and one still taking it answers \"shard status unknown\". The Frontend returns ShardOwnershipLost to clients as Unavailable, \"shard unavailable, please backoff and retry\"."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/ownership.go", line = 89, excerpt = "case changedEvent := <-o.membershipUpdateCh:" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/ownership.go", line = 90, excerpt = "metrics.MembershipChangedCounter.With(o.metricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/ownership.go", line = 136, excerpt = "ownerInfo, err := o.historyServiceResolver.Lookup(convert.Int32ToString(shardID))" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/ownership.go", line = 143, excerpt = "return serviceerrors.NewShardOwnershipLost(ownerInfo.Identity(), hostInfo.GetAddress())" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/controller_impl.go", line = 414, excerpt = "if c.config.ShardLingerTimeLimit() > 0 {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/controller_impl.go", line = 417, excerpt = "c.CloseShardByID(shardID)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 1951, excerpt = "\"history.shardLingerTimeLimit\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 1952, excerpt = "0," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/context_impl.go", line = 1798, excerpt = "resp, err := s.persistenceShardManager.GetOrCreateShard(ctx, &persistence.GetOrCreateShardRequest{" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/context_impl.go", line = 1170, excerpt = "updatedShardInfo.RangeId++" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/shard/context_impl.go", line = 194, excerpt = "ErrShardStatusUnknown = serviceerror.NewUnavailable(\"shard status unknown\")" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/frontend_service_error.go", line = 41, excerpt = "case *serviceerrors.ShardOwnershipLost:" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/rpc/interceptor/frontend_service_error.go", line = 42, excerpt = "err = serviceerror.NewUnavailable(\"shard unavailable, please backoff and retry\")" },
+]
+
+[[statement]]
+id = "behaviour.history-shutdown-drain"
+category = "behaviour"
+title = "A stopping History host can leave membership before it stops serving"
+statement = "When a History host shuts down, it leaves membership first, so its shards start moving, and then waits history.shutdownDrainDuration (0 by default) before closing them. With history.alignMembershipChange set, hosts leave at aligned times, so the shards of several hosts move together, and each waits for the move to finish."
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-15 }
+provenance = [
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/service.go", line = 123, excerpt = "if align := s.config.AlignMembershipChange(); align > 0 {" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/service.go", line = 127, excerpt = "waitTime, err = s.membershipMonitor.EvictSelfAt(asOf)" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/service.go", line = 130, excerpt = "err = s.membershipMonitor.EvictSelf()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/service.go", line = 145, excerpt = "time.Sleep(s.config.ShutdownDrainDuration())" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 1905, excerpt = "\"history.shutdownDrainDuration\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 1906, excerpt = "0*time.Second," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 1899, excerpt = "\"history.alignMembershipChange\"," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "common/dynamicconfig/constants.go", line = 1902, excerpt = "This can help reduce effects of shard movement.`," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/service.go", line = 157, excerpt = "s.handler.Stop()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/handler.go", line = 204, excerpt = "h.controller.Stop()" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/history/service.go", line = 160, excerpt = "s.handler.controller.Stop()" },
+]

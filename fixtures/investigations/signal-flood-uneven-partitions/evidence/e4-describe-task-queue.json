@@ -1,0 +1,84 @@
+{
+  "pollers": [
+    {
+      "lastAccessTime": "2026-09-30T13:48:29.812Z",
+      "identity": "4100@order-worker-7d9f6c5b8-an0x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:28.775Z",
+      "identity": "4107@order-worker-7d9f6c5b8-bp1x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:27.738Z",
+      "identity": "4114@order-worker-7d9f6c5b8-cr2x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:29.701Z",
+      "identity": "4121@order-worker-7d9f6c5b8-ds3x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:28.664Z",
+      "identity": "4128@order-worker-7d9f6c5b8-et4x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:27.627Z",
+      "identity": "4135@order-worker-7d9f6c5b8-fv5x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:29.590Z",
+      "identity": "4142@order-worker-7d9f6c5b8-gw6x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:28.553Z",
+      "identity": "4149@order-worker-7d9f6c5b8-hx7x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:27.516Z",
+      "identity": "4156@order-worker-7d9f6c5b8-jy8x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:29.479Z",
+      "identity": "4163@order-worker-7d9f6c5b8-kz9x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:28.442Z",
+      "identity": "4170@order-worker-7d9f6c5b8-lq10x",
+      "ratePerSecond": 100000
+    },
+    {
+      "lastAccessTime": "2026-09-30T13:48:27.405Z",
+      "identity": "4177@order-worker-7d9f6c5b8-mk11x",
+      "ratePerSecond": 100000
+    }
+  ],
+  "stats": {
+    "approximateBacklogCount": "91560",
+    "approximateBacklogAge": "30.604s",
+    "tasksAddRate": 3610.2,
+    "tasksDispatchRate": 2992.4,
+    "rateLimitingActive": true
+  },
+  "statsByPriorityKey": {
+    "3": {
+      "approximateBacklogCount": "91560",
+      "approximateBacklogAge": "30.604s",
+      "tasksAddRate": 3610.2,
+      "tasksDispatchRate": 2992.4,
+      "rateLimitingActive": true
+    }
+  },
+  "effectiveRateLimit": {
+    "requestsPerSecond": 4000,
+    "rateLimitSource": "RATE_LIMIT_SOURCE_SYSTEM"
+  }
+}

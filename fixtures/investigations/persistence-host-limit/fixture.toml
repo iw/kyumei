@@ -1,0 +1,41 @@
+# Branch: History was scaled from six hosts to two overnight. Each remaining
+# host owns three times the shards and makes three times the persistence
+# calls, past its own limit (history.persistenceMaxQPS). Requests that need
+# a refused call fail with ResourceExhausted, cause PersistenceLimit and
+# scope System, though no caller sends more than usual.
+
+[fixture]
+id = "persistence-host-limit"
+title = "Host persistence limit: ResourceExhausted at normal load"
+description = "Branch fixture: the breakdown by cause shows only host persistence refusals, which concludes the investigation."
+investigation = "inv-branch-persistence-host-limit"
+
+[open]
+at = 2026-10-02T02:31:00Z
+description = "Clients in namespace ledger have been getting ResourceExhausted errors saying the persistence rate limit was exceeded since 02:15 UTC, roughly 40 per second. Nothing new is running."
+server_version = "1.31.0"
+namespaces = ["ledger"]
+window_start = 2026-10-02T02:15:00Z
+window_end = 2026-10-02T02:30:00Z
+
+[open.expect]
+next_request = "rejections-by-cause"
+
+[[step]]
+at = 2026-10-02T02:34:00Z
+answers = "rejections-by-cause"
+file = "evidence/e1-rejections-by-cause.json"
+query = 'sum by (resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name="frontend", namespace="ledger"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-persistence-host-limit-refusing", "F-no-namespace-limit-rejections", "F-no-persistence-namespace-refusals"]
+conclusion = "persistence-host-limit"
+concluded = true
+
+[step.expect.states]
+persistence-host-limit = "established"
+namespace-rate-limit = "eliminated"
+host-rate-limit = "eliminated"
+concurrency-limit = "eliminated"
+persistence-namespace-limit = "eliminated"

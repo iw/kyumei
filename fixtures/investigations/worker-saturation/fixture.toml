@@ -1,0 +1,37 @@
+# Branch: the cause really is Worker execution capacity. Free Workflow Task
+# slots sit at zero for the whole incident, so Kyumei concludes at the first
+# stage — and only then recommends more Workers or slots.
+
+[fixture]
+id = "worker-saturation"
+title = "Workflow Task slots exhausted: schedule-to-start ~20 s"
+description = "Branch fixture: one piece of evidence establishes Worker slot exhaustion and the diagnosis is final immediately."
+investigation = "inv-branch-worker-saturation"
+
+[open]
+at = 2026-09-30T09:31:00Z
+description = "Workflow tasks on billing-tq have been taking about 20 seconds to start since 09:10. Worker pods are at 100% CPU."
+server_version = "1.31.0"
+sdks = [{ language = "go", version = "1.44.0" }]
+namespaces = ["billing"]
+task_queues = ["billing-tq"]
+window_start = 2026-09-30T09:10:00Z
+window_end = 2026-09-30T09:25:00Z
+
+[open.expect]
+next_request = "workflow-worker-slots"
+
+[[step]]
+at = 2026-09-30T09:36:00Z
+answers = "workflow-worker-slots"
+file = "evidence/e1-worker-slots.json"
+query = 'sum by (task_queue) (temporal_worker_task_slots_available{worker_type="WorkflowWorker", namespace="billing", task_queue="billing-tq"})'
+
+[step.expect]
+next_request = "none"
+findings = ["F-slots-ran-out", "F-slots-exhausted"]
+conclusion = "worker-slot-exhaustion"
+concluded = true
+
+[step.expect.states]
+worker-slot-exhaustion = "established"

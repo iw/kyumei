@@ -1,0 +1,912 @@
+# Reviewed additions to generated server metric claims (generated/server-metrics.toml).
+#
+# A definition says nothing about tags, which are attached where a metric is recorded, and
+# most definitions have no description. Each annotation below adds what a reviewer read at
+# the recording sites: the label set, a purpose, a gauge's unit, notes, and the provenance
+# for them. Every metric a diagnostic signal reads needs a reviewed label set, because the
+# validator checks the signal's label constraints against it.
+#
+# `gen-metric-claims --emitters FILE` lists each metric's recording sites and the tag helpers
+# called there, as a starting point for a review.
+
+# ---------------------------------------------------------------- Frontend RPCs
+
+[[annotation]]
+claim = "server.service_requests"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation", purpose = "RPC method name, e.g. SignalWorkflowExecution or PollWorkflowTaskQueue." },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["The telemetry interceptor runs outside the rate limiters, so rejected calls are still counted."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 5, excerpt = "OperationTagName               = \"operation\"" },
+]
+
+[[annotation]]
+claim = "server.service_errors_resource_exhausted"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "RPCs rejected with ResourceExhausted, by cause and scope."
+labels = [
+  { name = "operation" },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+  { name = "resource_exhausted_cause", values = ["RpsLimit", "ConcurrentLimit", "SystemOverloaded", "PersistenceLimit", "BusyWorkflow", "ApsLimit", "PersistenceStorageLimit", "CircuitBreakerOpen", "OpsLimit", "WorkerDeploymentLimits", "Unspecified"], purpose = "A namespace rate limit appears as RpsLimit with scope Namespace; there is no NamespaceRpsLimit value." },
+  { name = "resource_exhausted_scope", values = ["Namespace", "System", "Unspecified"] },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 104, excerpt = "metrics.ServiceErrResourceExhaustedCounter.With(metricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 26, excerpt = "resourceExhaustedTag           = \"resource_exhausted_cause\"" },
+]
+
+[[annotation]]
+claim = "server.service_pending_requests"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "In-flight long-running requests (such as polls) per namespace and API, per Frontend host."
+unit = "count"
+labels = [
+  { name = "operation" },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["PollWorkflowTaskQueue counts sticky and normal polls together."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/concurrent_request_limit.go", line = 109, excerpt = "mh.Gauge(metrics.ServicePendingRequests.Name()).Record(float64(count))" },
+]
+
+# ---------------------------------------------------------------- Matching
+
+[[annotation]]
+claim = "server.approximate_backlog_count"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Approximate number of tasks in a Task Queue partition's backlog (the same numbers DescribeTaskQueue reports)."
+unit = "count"
+labels = [
+  { name = "namespace" },
+  { name = "taskqueue" },
+  { name = "task_type", values = ["Workflow", "Activity", "Nexus"] },
+  { name = "partition", purpose = "Partition id, or `__sticky__` for sticky queues." },
+  { name = "task_priority" },
+  { name = "worker_version" },
+  { name = "worker_deployment_name", purpose = "Empty unless metrics.breakdownByBuildID is on." },
+  { name = "worker_build_id", purpose = "Empty unless metrics.breakdownByBuildID is on." },
+  { name = "operation", values = ["TaskQueuePartitionManager"] },
+  { name = "namespace_state", values = ["active", "passive"] },
+]
+notes = [
+  "Emitted about once a minute (matching.backlogMetricsEmitInterval).",
+  "Not emitted at all when metrics.breakdownByTaskQueue or metrics.breakdownByPartition is false.",
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 1308, excerpt = "if !pm.config.BreakdownMetricsByTaskQueue() || !pm.config.BreakdownMetricsByPartition() {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 1338, excerpt = "metrics.ApproximateBacklogCount.With(versionHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 553, excerpt = "metrics.OperationTag(metrics.MatchingTaskQueuePartitionManagerScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/matching_engine.go", line = 554, excerpt = ").WithTags(metrics.NamespaceStateTag(nsState))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 488, excerpt = 'MatchingTaskQueuePartitionManagerScope = "TaskQueuePartitionManager"' },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 1332, excerpt = "metrics.WorkerDeploymentNameTag(deploymentName, pm.config.BreakdownMetricsByBuildID())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 1333, excerpt = "metrics.WorkerDeploymentBuildIDTag(buildID, pm.config.BreakdownMetricsByBuildID())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 40, excerpt = 'workerDeploymentName    = "worker_deployment_name"' },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 41, excerpt = 'workerDeploymentBuildID = "worker_build_id"' },
+]
+
+[[annotation]]
+claim = "server.approximate_backlog_age_seconds"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Age of the oldest task in a Task Queue partition's backlog, in seconds."
+unit = "seconds"
+labels = [
+  { name = "namespace" },
+  { name = "taskqueue" },
+  { name = "task_type", values = ["Workflow", "Activity", "Nexus"] },
+  { name = "partition" },
+  { name = "worker_version" },
+]
+notes = ["Emitted about once a minute; same emission conditions as approximate_backlog_count."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_queue_partition_manager.go", line = 1347, excerpt = "metrics.ApproximateBacklogAgeSeconds.With(versionHandler).Record(age.AsDuration().Seconds())" },
+]
+
+[[annotation]]
+claim = "server.poll_timeouts"
+scope = { server = ["1.29.0", "1.29.1", "1.29.2", "1.29.3", "1.29.4", "1.29.5", "1.29.6", "1.29.7", "1.30.0", "1.30.1", "1.30.2", "1.30.3", "1.30.4", "1.30.5", "1.30.6", "1.30.7", "1.30.8", "1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Polls that returned empty at their deadline, per partition."
+labels = [
+  { name = "namespace" },
+  { name = "taskqueue" },
+  { name = "task_type", values = ["Workflow", "Activity", "Nexus"] },
+  { name = "partition" },
+]
+notes = ["With the default priority matcher the metric is also emitted a second time as `pri_poll_timeouts`."]
+provenance = [
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/pri_metrics_handler.go", line = 80, excerpt = "c.handler.Counter(withPriPrefix(c.name)).Record(i, tag...)" },
+]
+
+[[annotation]]
+claim = "server.task_write_throttle_count"
+scope = { server = ["1.30.0", "1.30.1", "1.30.2", "1.30.3", "1.30.4", "1.30.5", "1.30.6", "1.30.7", "1.30.8", "1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Task writes rejected because a partition's append buffer (matching.outstandingTaskAppendsThreshold) was full."
+labels = [
+  { name = "namespace" },
+  { name = "taskqueue" },
+  { name = "task_type", values = ["Workflow", "Activity", "Nexus"] },
+  { name = "partition" },
+]
+notes = ["Callers receive ResourceExhausted with cause SystemOverloaded and scope Namespace."]
+provenance = [
+  { source = ["temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_writer.go", line = 62, excerpt = "appendCh:    make(chan *writeTaskRequest, backlogMgr.config.OutstandingTaskAppendsThreshold())," },
+  { source = ["temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_writer.go", line = 114, excerpt = "default: // channel is full, throttle" },
+  { source = ["temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_writer.go", line = 115, excerpt = "metrics.TaskWriteThrottlePerTaskQueueCounter.With(w.backlogMgr.metricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_writer.go", line = 117, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_SYSTEM_OVERLOADED," },
+  { source = ["temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/matching/task_writer.go", line = 118, excerpt = "Scope:   enumspb.RESOURCE_EXHAUSTED_SCOPE_NAMESPACE," },
+]
+
+# ---------------------------------------------------------------- Persistence
+
+[[annotation]]
+claim = "server.persistence_requests"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation", purpose = "The persistence call, e.g. GetWorkflowExecution or UpdateWorkflowExecution." },
+  { name = "namespace", purpose = "The namespace the call was made for: `system` for the server's own calls, `_unknown_` when unset." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Calls a persistence limit refused are counted too (behaviour.persistence-throttle-metrics)."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1420, excerpt = "handler := p.metricsHandler.WithTags(metrics.OperationTag(operation), metrics.NamespaceTag(caller))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 177, excerpt = "caller := headers.GetCallerInfo(ctx).CallerName" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/headers/caller_info.go", line = 14, excerpt = "CallerNameSystem = \"system\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 66, excerpt = "unknownValue                                   = \"_unknown_\"" },
+]
+
+[[annotation]]
+claim = "server.persistence_latency"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation" },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Includes calls a persistence limit refused."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1422, excerpt = "metrics.PersistenceLatency.With(handler).Record(latency)" },
+]
+
+[[annotation]]
+claim = "server.persistence_errors"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Persistence calls that failed with an unexpected error."
+labels = [
+  { name = "operation" },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Leaves out refusals by a persistence limit, timeouts, condition failures, NotFound, lost shard ownership and cancelled calls; persistence_error_with_type counts every error by type."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1450, excerpt = "*TimeoutError," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1462, excerpt = "metrics.PersistenceFailures.With(handler).Record(1)" },
+]
+
+[[annotation]]
+claim = "server.persistence_errors_resource_exhausted"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Persistence calls that failed with ResourceExhausted, by cause and scope."
+labels = [
+  { name = "operation" },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+  { name = "resource_exhausted_cause", purpose = "PersistenceLimit when a persistence rate limit refused the call. Cassandra reports overload as SystemOverloaded and a full disk as PersistenceStorageLimit." },
+  { name = "resource_exhausted_scope", values = ["Namespace", "System"], purpose = "Namespace for a namespace or shard limit, System for the host limit." },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_metric_clients.go", line = 1459, excerpt = "1, metrics.ResourceExhaustedCauseTag(err.Cause), metrics.ResourceExhaustedScopeTag(err.Scope))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/nosql/nosqlplugin/cassandra/gocql/errors.go", line = 39, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_SYSTEM_OVERLOADED," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/nosql/nosqlplugin/cassandra/gocql/errors.go", line = 49, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_PERSISTENCE_STORAGE_LIMIT," },
+]
+
+# ---------------------------------------------------------------- History
+
+[[annotation]]
+claim = "server.command"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Commands in completed Workflow Tasks, by command type."
+labels = [
+  { name = "commandType", values = ["Unspecified", "ScheduleActivityTask", "RequestCancelActivityTask", "StartTimer", "CompleteWorkflowExecution", "FailWorkflowExecution", "CancelTimer", "CancelWorkflowExecution", "RequestCancelExternalWorkflowExecution", "RecordMarker", "ContinueAsNewWorkflowExecution", "StartChildWorkflowExecution", "SignalExternalWorkflowExecution", "UpsertWorkflowSearchAttributes", "ProtocolMessage", "ModifyWorkflowProperties", "ScheduleNexusOperation", "RequestCancelNexusOperation"], purpose = "The command type's name; the tag key is camel case." },
+  { name = "namespace" },
+  { name = "operation", values = ["RespondWorkflowTaskCompleted"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["Counted per namespace, not per Task Queue: a Workflow can schedule Activities on any Task Queue."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/workflow_task_completed_handler.go", line = 147, excerpt = "metrics.OperationTag(metrics.HistoryRespondWorkflowTaskCompletedScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/workflow_task_completed_handler.go", line = 148, excerpt = "metrics.NamespaceTag(mutableState.GetNamespaceEntry().Name().String())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/workflow_task_completed_handler.go", line = 268, excerpt = "metrics.CommandCounter.With(handler.metricsHandler)." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/workflow_task_completed_handler.go", line = 269, excerpt = "Record(1, metrics.CommandTypeTag(command.GetCommandType().String()))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 36, excerpt = "commandType             = \"commandType\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/command_type.pb.go", line = 105, excerpt = "return \"ScheduleActivityTask\"" },
+]
+
+# ---------------------------------------------------------------- SQL persistence
+
+[[annotation]]
+claim = "server.persistence_sql_max_open_conn"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "The cap on a SQL datastore's connection pool on this host (`maxConns`), or 0 when the pool has no cap."
+unit = "count"
+labels = [
+  { name = "db_kind", values = ["main", "visibility", "unknown"], purpose = "Which datastore the pool connects to." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Reported once a minute (limit.sql-connection-pool)."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 29, excerpt = "metrics:  handle.metrics.WithTags(metrics.PersistenceDBKindTag(dbKind.String()))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 73, excerpt = "metrics.PersistenceSQLMaxOpenConn.With(r.metrics).Record(float64(s.MaxOpenConnections))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/interfaces.go", line = 140, excerpt = "return \"unknown\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 30, excerpt = "PersistenceDBKindTagName       = \"db_kind\"" },
+]
+
+[[annotation]]
+claim = "server.persistence_sql_in_use"
+scope = { server = ["1.29.0", "1.29.1", "1.29.2", "1.29.3", "1.29.4", "1.29.5", "1.29.6", "1.29.7", "1.30.0", "1.30.1", "1.30.2", "1.30.3", "1.30.4", "1.30.5", "1.30.6", "1.30.7", "1.30.8", "1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Connections of a SQL datastore's pool in use by persistence calls on this host."
+unit = "count"
+labels = [
+  { name = "db_kind", values = ["main", "visibility", "unknown"], purpose = "Which datastore the pool connects to." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Reported once a minute, so it is a sample, not a peak."]
+provenance = [
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 27, excerpt = "interval: time.Minute," },
+  { source = ["temporal-server-v1.29.0", "temporal-server-v1.29.1", "temporal-server-v1.29.2", "temporal-server-v1.29.3", "temporal-server-v1.29.4", "temporal-server-v1.29.5", "temporal-server-v1.29.6", "temporal-server-v1.29.7", "temporal-server-v1.30.0", "temporal-server-v1.30.1", "temporal-server-v1.30.2", "temporal-server-v1.30.3", "temporal-server-v1.30.4", "temporal-server-v1.30.5", "temporal-server-v1.30.6", "temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.30.7", "temporal-server-v1.30.8", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/sql/sqlplugin/db_metrics.go", line = 76, excerpt = "metrics.PersistenceSQLInUse.With(r.metrics).Record(float64(s.InUse))" },
+]
+
+
+# ---------------------------------------------------------------- Workflow Tasks
+
+[[annotation]]
+claim = "server.failed_workflow_tasks"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Workflow Task failures History recorded, by cause: failures Workers reported with RespondWorkflowTaskFailed, and completions History rejected."
+labels = [
+  { name = "operation", values = ["RespondWorkflowTaskFailed", "RespondWorkflowTaskCompleted"], purpose = "RespondWorkflowTaskFailed for failures a Worker reported; RespondWorkflowTaskCompleted for completions History rejected, for example for invalid command attributes." },
+  { name = "failure", purpose = "The WorkflowTaskFailedCause's name, e.g. NonDeterministicError or WorkflowWorkerUnhandledFailure. UnhandledCommand on RespondWorkflowTaskCompleted is routine: an event arrived while the task ran, and the Worker is sent a new task." },
+  { name = "first-attempt", values = ["true", "false"], purpose = "Whether the failed task was a first attempt." },
+  { name = "versioning_behavior" },
+  { name = "namespace" },
+  { name = "service_name", values = ["history"] },
+]
+notes = [
+  "SDKs report only a Workflow Task's first failed attempt (sdk.wft-failure-reported-once), so a Workflow stuck in retries adds about one failure here, not one per retry.",
+  "With history.enableDropRepeatedWorkflowTaskFailures on, History drops reports of repeated failures before counting them.",
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskfailed/api.go", line = 79, excerpt = "metrics.FailedWorkflowTasksCounter.With(shardContext.GetMetricsHandler()).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskfailed/api.go", line = 81, excerpt = "metrics.OperationTag(metrics.HistoryRespondWorkflowTaskFailedScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskfailed/api.go", line = 84, excerpt = "metrics.FailureTag(request.GetCause().String())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskfailed/api.go", line = 85, excerpt = "metrics.FirstAttemptTag(workflowTask.Attempt)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 462, excerpt = "metrics.FailedWorkflowTasksCounter.With(handler.metricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 464, excerpt = "metrics.OperationTag(metrics.HistoryRespondWorkflowTaskCompletedScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 467, excerpt = "metrics.FailureTag(wtFailedCause.failedCause.String())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 8, excerpt = "FailureTagName                 = \"failure\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 54, excerpt = "isFirstAttempt                                 = \"first-attempt\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/failed_cause.pb.go", line = 247, excerpt = "return \"NonDeterministicError\"" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/failed_cause.pb.go", line = 227, excerpt = "return \"WorkflowWorkerUnhandledFailure\"" },
+]
+
+[[annotation]]
+claim = "server.service_errors_nondeterministic"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "RespondWorkflowTaskFailed calls the Frontend received with cause NonDeterministicError."
+labels = [
+  { name = "operation", values = ["RespondWorkflowTaskFailed"] },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend"] },
+]
+notes = ["SDKs report only a Workflow Task's first failed attempt (sdk.wft-failure-reported-once), so this rises about once per Workflow that starts failing, not with every retry."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3"], path = "service/frontend/workflow_handler.go", line = 1250, excerpt = "if request.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {" },
+  { source = ["temporal-server-v1.31.4"], path = "service/frontend/workflow_handler.go", line = 1255, excerpt = "if request.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3"], path = "service/frontend/workflow_handler.go", line = 1256, excerpt = "metrics.ServiceErrNonDeterministicCounter.With(wh.metricsScope(ctx)).Record(1)" },
+  { source = ["temporal-server-v1.31.4"], path = "service/frontend/workflow_handler.go", line = 1261, excerpt = "metrics.ServiceErrNonDeterministicCounter.With(wh.metricsScope(ctx)).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/telemetry.go", line = 380, excerpt = "return baseMetricsHandler.WithTags(metrics.OperationTag(overridedMethodName), metrics.NamespaceTag(nsName.String()))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.workflow_task_attempt"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "The attempt number of each Workflow Task History starts: 1 for a first attempt, higher for retries."
+labels = [
+  { name = "namespace" },
+  { name = "operation", values = ["WorkflowContext"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["The default buckets for this histogram are 1, 2, 5, 10, 20, 50 and so on, so attempts 3 to 5 share a bucket."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 616, excerpt = "m.emitWorkflowTaskAttemptStats(workflowTask.Attempt)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1402, excerpt = "metrics.WorkflowTaskAttempt.With(m.ms.metricsHandler)." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 1403, excerpt = "Record(int64(attempt), metrics.NamespaceTag(namespaceName))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/mutable_state_impl.go", line = 361, excerpt = "metricsHandler:  shard.GetMetricsHandler().WithTags(metrics.OperationTag(metrics.WorkflowContextScope))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/config.go", line = 221, excerpt = "Dimensionless: {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/config.go", line = 224, excerpt = "5," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.start_to_close_timeout"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Start-to-close timeouts History enforced, of Activities and of Workflow Tasks; the operation tells them apart."
+labels = [
+  { name = "operation", values = ["TimerActiveTaskActivityTimeout", "TimerActiveTaskWorkflowTaskTimeout", "TimerActiveTaskSpeculativeWorkflowTaskTimeout"], purpose = "TimerActiveTaskWorkflowTaskTimeout for Workflow Tasks, TimerActiveTaskActivityTimeout for Activities." },
+  { name = "first-attempt", values = ["true", "false"], purpose = "Whether the task that timed out was a first attempt." },
+  { name = "versioning_behavior" },
+  { name = "namespace" },
+  { name = "service_name", values = ["history"] },
+]
+notes = [
+  "Because SDKs report only a Workflow Task's first failed attempt, each retry of a failing Workflow Task ends here as a timeout (sdk.wft-failure-reported-once).",
+  "An Activity's timeout is counted only when it ends the Activity: one History retries is not.",
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 345, excerpt = "metrics.TimerActiveTaskActivityTimeoutScope," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 419, excerpt = "operationMetricsTag = metrics.TimerActiveTaskWorkflowTaskTimeoutScope" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 408, excerpt = "operationMetricsTag = metrics.TaskTypeTimerActiveTaskSpeculativeWorkflowTaskTimeout" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 928, excerpt = "metrics.OperationTag(operation)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 931, excerpt = "metrics.FirstAttemptTag(taskAttempt)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 939, excerpt = "metrics.StartToCloseTimeoutCounter.With(metricsScope).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 400, excerpt = "TimerActiveTaskWorkflowTaskTimeoutScope = \"TimerActiveTaskWorkflowTaskTimeout\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 334, excerpt = "if retryState == enumspb.RETRY_STATE_IN_PROGRESS {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 343, excerpt = "t.emitTimeoutMetricScopeWithNamespaceTag(" },
+]
+
+[[annotation]]
+claim = "server.workflow_suggest_continue_as_new_count"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Workflow Tasks History started with a suggestion to continue-as-new, by the thresholds the history passed."
+labels = [
+  { name = "suggest_continue_as_new_reason_history_size_too_large", values = ["true", "false"], purpose = "The history had reached limit.historySize.suggestContinueAsNew." },
+  { name = "suggest_continue_as_new_reason_too_many_history_events", values = ["true", "false"], purpose = "The history had reached limit.historyCount.suggestContinueAsNew." },
+  { name = "suggest_continue_as_new_reason_too_many_updates", values = ["true", "false"] },
+  { name = "versioning_behavior" },
+  { name = "namespace" },
+  { name = "operation", values = ["WorkflowContext"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["Counted on every Workflow Task a Workflow starts while it stays past a threshold, so it measures tasks, not Workflows (behaviour.suggest-continue-as-new)."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 539, excerpt = "metrics.WorkflowSuggestContinueAsNewCount.With(m.metricsHandler.WithTags(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 540, excerpt = "metrics.NamespaceTag(m.ms.namespaceEntry.Name().String())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 544, excerpt = "metrics.SuggestContinueAsNewReasonHistorySizeTooLargeTag(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/workflow_task_state_machine.go", line = 546, excerpt = "metrics.SuggestContinueAsNewReasonTooManyHistoryEventsTag(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 52, excerpt = "suggestContinueAsNewReasonTooManyHistoryEvents = \"suggest_continue_as_new_reason_too_many_history_events\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 53, excerpt = "suggestContinueAsNewReasonHistorySizeTooLarge  = \"suggest_continue_as_new_reason_history_size_too_large\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/mutable_state_impl.go", line = 361, excerpt = "metricsHandler:  shard.GetMetricsHandler().WithTags(metrics.OperationTag(metrics.WorkflowContextScope))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.schedule_to_start_timeout"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Schedule-to-start timeouts History enforced. Only Workflow Tasks on a sticky queue have one, so for Workflow Tasks (operation TimerActiveTaskWorkflowTaskTimeout) these are tasks a Worker's sticky queue did not start in time."
+labels = [
+  { name = "operation", values = ["TimerActiveTaskActivityTimeout", "TimerActiveTaskWorkflowTaskTimeout", "TimerActiveTaskSpeculativeWorkflowTaskTimeout"], purpose = "TimerActiveTaskWorkflowTaskTimeout for Workflow Tasks, TimerActiveTaskActivityTimeout for Activities." },
+  { name = "first-attempt", values = ["true", "false"] },
+  { name = "versioning_behavior" },
+  { name = "namespace" },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["A Workflow Task that times out here is scheduled again on the normal queue (behaviour.sticky-queue-routing)."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 445, excerpt = "t.emitTimeoutMetricScopeWithNamespaceTag(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 448, excerpt = "enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 935, excerpt = "metrics.ScheduleToStartTimeoutCounter.With(metricsScope).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 928, excerpt = "metrics.OperationTag(operation)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/timer_queue_active_task_executor.go", line = 345, excerpt = "metrics.TimerActiveTaskActivityTimeoutScope," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/mutable_state_impl.go", line = 1366, excerpt = "// No WFT ScheduleToStart timeout for normal WFT on normal task queue." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.complete_workflow_task_sticky_enabled_count"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Workflow Task completions that asked History to send the Workflow's next task to the Worker's sticky queue."
+labels = [
+  { name = "operation", values = ["RespondWorkflowTaskCompleted"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["There is no namespace label: the count covers every namespace on the cluster."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 324, excerpt = "if request.StickyAttributes == nil || request.StickyAttributes.WorkerTaskQueue == nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 330, excerpt = "metrics.CompleteWorkflowTaskWithStickyEnabledCounter.With(handler.metricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 88, excerpt = "metricsHandler:             shardContext.GetMetricsHandler()," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.complete_workflow_task_sticky_disabled_count"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Workflow Task completions without sticky attributes: History sends the Workflow's next task to the normal queue, with the whole history."
+labels = [
+  { name = "operation", values = ["RespondWorkflowTaskCompleted"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["There is no namespace label: the count covers every namespace on the cluster."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 324, excerpt = "if request.StickyAttributes == nil || request.StickyAttributes.WorkerTaskQueue == nil {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 325, excerpt = "metrics.CompleteWorkflowTaskWithStickyDisabledCounter.With(handler.metricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 328, excerpt = "ms.ClearStickyTaskQueue()" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/api/respondworkflowtaskcompleted/api.go", line = 88, excerpt = "metricsHandler:             shardContext.GetMetricsHandler()," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+# ---------------------------------------------------------------- History task processing
+
+[[annotation]]
+claim = "server.task_latency_load"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "namespace", purpose = "The task's namespace, or _unknown_." },
+  { name = "task_type", purpose = "The task's queue, side and kind, e.g. TimerActiveTaskUserTimer or TransferActiveTaskActivity." },
+  { name = "operation", purpose = "The same value as task_type, kept for compatibility.", same_as = "task_type" },
+  { name = "archetype" },
+  { name = "service_name", values = ["history"] },
+  { name = "queue_reader_id" },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 222, excerpt = "metrics.TaskLoadLatency.With(e.chasmMetricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 224, excerpt = "metrics.QueueReaderIDTag(readerID)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 859, excerpt = "namespaceTag," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 860, excerpt = "metrics.TaskTypeTag(taskType)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 861, excerpt = "metrics.OperationTag(taskType), // for backward compatibility" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 827, excerpt = "e.chasmMetricsHandler = e.defaultMetricsHandler.WithTags(getArchetypeTag(e.GetTask(), e.chasmRegistry))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.task_latency_schedule"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "namespace", purpose = "The task's namespace, or _unknown_." },
+  { name = "task_type", purpose = "The task's queue, side and kind, e.g. TimerActiveTaskUserTimer or TransferActiveTaskActivity." },
+  { name = "operation", purpose = "The same value as task_type, kept for compatibility.", same_as = "task_type" },
+  { name = "archetype" },
+  { name = "service_name", values = ["history"] },
+  { name = "task_priority" },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 316, excerpt = "priorityTaggedProvider := e.chasmMetricsHandler.WithTags(metrics.TaskPriorityTag(e.priority.String()))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 318, excerpt = "metrics.TaskScheduleLatency.With(priorityTaggedProvider).Record(e.scheduleLatency)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 859, excerpt = "namespaceTag," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 860, excerpt = "metrics.TaskTypeTag(taskType)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 861, excerpt = "metrics.OperationTag(taskType), // for backward compatibility" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 827, excerpt = "e.chasmMetricsHandler = e.defaultMetricsHandler.WithTags(getArchetypeTag(e.GetTask(), e.chasmRegistry))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.task_latency_processing"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "namespace", purpose = "The task's namespace, or _unknown_." },
+  { name = "task_type", purpose = "The task's queue, side and kind, e.g. TimerActiveTaskUserTimer or TransferActiveTaskActivity." },
+  { name = "operation", purpose = "The same value as task_type, kept for compatibility.", same_as = "task_type" },
+  { name = "archetype" },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["Includes waiting for the Workflow's lock and for persistence calls."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 309, excerpt = "metrics.TaskProcessingLatency.With(e.chasmMetricsHandler).Record(attemptLatency)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 859, excerpt = "namespaceTag," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 860, excerpt = "metrics.TaskTypeTag(taskType)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 861, excerpt = "metrics.OperationTag(taskType), // for backward compatibility" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 827, excerpt = "e.chasmMetricsHandler = e.defaultMetricsHandler.WithTags(getArchetypeTag(e.GetTask(), e.chasmRegistry))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.task_latency_queue"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "namespace", purpose = "The task's namespace, or _unknown_." },
+  { name = "task_type", purpose = "The task's queue, side and kind, e.g. TimerActiveTaskUserTimer or TransferActiveTaskActivity." },
+  { name = "operation", purpose = "The same value as task_type, kept for compatibility.", same_as = "task_type" },
+  { name = "archetype" },
+  { name = "service_name", values = ["history"] },
+  { name = "task_priority" },
+  { name = "queue_reader_id" },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 660, excerpt = "metrics.TaskQueueLatency.With(priorityTaggedProvider.WithTags(metrics.QueueReaderIDTag(e.readerID)))." },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 661, excerpt = "Record(time.Since(e.GetVisibilityTime()))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 859, excerpt = "namespaceTag," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 860, excerpt = "metrics.TaskTypeTag(taskType)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 861, excerpt = "metrics.OperationTag(taskType), // for backward compatibility" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 827, excerpt = "e.chasmMetricsHandler = e.defaultMetricsHandler.WithTags(getArchetypeTag(e.GetTask(), e.chasmRegistry))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.task_errors_throttled"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "namespace", purpose = "The task's namespace, or _unknown_." },
+  { name = "task_type", purpose = "The task's queue, side and kind, e.g. TimerActiveTaskUserTimer or TransferActiveTaskActivity." },
+  { name = "operation", purpose = "The same value as task_type, kept for compatibility.", same_as = "task_type" },
+  { name = "archetype" },
+  { name = "service_name", values = ["history"] },
+  { name = "resource_exhausted_cause", values = ["RpsLimit", "ConcurrentLimit", "SystemOverloaded", "PersistenceLimit", "BusyWorkflow", "ApsLimit", "PersistenceStorageLimit", "CircuitBreakerOpen", "OpsLimit", "WorkerDeploymentLimits", "Unspecified"], purpose = "PersistenceLimit when a persistence limit refused the task's calls; BusyWorkflow when another caller held the Workflow's lock too long." },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 449, excerpt = "metrics.TaskThrottledCounter.With(e.chasmMetricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 450, excerpt = "1, metrics.ResourceExhaustedCauseTag(resourceExhaustedErr.Cause))" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/failed_cause.pb.go", line = 553, excerpt = "return \"PersistenceLimit\"" },
+  { source = "temporal-api-go-v1.62.8", path = "enums/v1/failed_cause.pb.go", line = 555, excerpt = "return \"BusyWorkflow\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 859, excerpt = "namespaceTag," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 860, excerpt = "metrics.TaskTypeTag(taskType)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 861, excerpt = "metrics.OperationTag(taskType), // for backward compatibility" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 827, excerpt = "e.chasmMetricsHandler = e.defaultMetricsHandler.WithTags(getArchetypeTag(e.GetTask(), e.chasmRegistry))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.task_errors"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "namespace", purpose = "The task's namespace, or _unknown_." },
+  { name = "task_type", purpose = "The task's queue, side and kind, e.g. TimerActiveTaskUserTimer or TransferActiveTaskActivity." },
+  { name = "operation", purpose = "The same value as task_type, kept for compatibility.", same_as = "task_type" },
+  { name = "archetype" },
+  { name = "service_name", values = ["history"] },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 540, excerpt = "metrics.TaskFailures.With(e.chasmMetricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 859, excerpt = "namespaceTag," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 860, excerpt = "metrics.TaskTypeTag(taskType)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 861, excerpt = "metrics.OperationTag(taskType), // for backward compatibility" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/executable.go", line = 827, excerpt = "e.chasmMetricsHandler = e.defaultMetricsHandler.WithTags(getArchetypeTag(e.GetTask(), e.chasmRegistry))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+# ---------------------------------------------------------------- History's Workflow cache
+
+[[annotation]]
+claim = "server.cache_requests"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation", values = ["HistoryCacheGetOrCreate", "HistoryCacheGetOrCreateCurrent", "EventsCacheGetEvent", "EventsCachePutEvent", "EventsCacheDeleteEvent", "EventsCacheGetFromStore", "VersionMembershipCacheGet", "VersionMembershipCachePut", "RoutingInfoCacheGet", "RoutingInfoCachePut", "VersionReactivationSignalCacheShouldSend"], purpose = "HistoryCacheGetOrCreate for lookups of a Workflow's state; HistoryCacheGetOrCreateCurrent counts the extra lookup of a Workflow's current run." },
+  { name = "cache_type", values = ["mutablestate", "events", "version_membership", "routing_info", "version_reactivation_signal"], purpose = "mutablestate for the Workflow cache, events for the events cache; version_membership, routing_info and version_reactivation_signal for Worker Versioning lookups." },
+  { name = "namespace_id", purpose = "The namespace's ID, not its name." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 230, excerpt = "metrics.OperationTag(metrics.HistoryCacheGetOrCreateScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 231, excerpt = "metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 232, excerpt = "metrics.NamespaceIDTag(namespaceID.String())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 47, excerpt = "MutableStateCacheTypeTagValue                     = \"mutablestate\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 234, excerpt = "metrics.CacheRequests.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_membership_cache.go", line = 51, excerpt = "h := metricsHandler.WithTags(metrics.CacheTypeTag(metrics.VersionMembershipCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/routing_info_cache.go", line = 66, excerpt = "h := metricsHandler.WithTags(metrics.CacheTypeTag(metrics.RoutingInfoCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_reactivation_signal_cache.go", line = 33, excerpt = "h := metricsHandler.WithTags(metrics.CacheTypeTag(metrics.VersionReactivationSignalCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_reactivation_signal_cache.go", line = 44, excerpt = "metrics.OperationTag(metrics.VersionReactivationSignalCacheShouldSendScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/events/cache.go", line = 147, excerpt = "handler := e.metricsHandler.WithTags(metrics.OperationTag(metrics.EventsCachePutEventScope), metrics.NamespaceIDTag(key.NamespaceID.String()))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/events/cache.go", line = 159, excerpt = "handler := e.metricsHandler.WithTags(metrics.OperationTag(metrics.EventsCacheDeleteEventScope), metrics.NamespaceIDTag(key.NamespaceID.String()))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_membership_cache.go", line = 97, excerpt = "handler := c.metricsHandler.WithTags(metrics.OperationTag(metrics.VersionMembershipCachePutScope), metrics.NamespaceIDTag(namespaceID))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/routing_info_cache.go", line = 116, excerpt = "handler := c.metricsHandler.WithTags(metrics.OperationTag(metrics.RoutingInfoCachePutScope), metrics.NamespaceIDTag(namespaceID))" },
+]
+
+[[annotation]]
+claim = "server.cache_miss"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation", values = ["HistoryCacheGetOrCreate", "HistoryCacheGetOrCreateCurrent", "EventsCacheGetEvent", "VersionMembershipCacheGet", "RoutingInfoCacheGet", "VersionReactivationSignalCacheShouldSend"], purpose = "HistoryCacheGetOrCreate for lookups of a Workflow's state; HistoryCacheGetOrCreateCurrent counts the extra lookup of a Workflow's current run." },
+  { name = "cache_type", values = ["mutablestate", "events", "version_membership", "routing_info", "version_reactivation_signal"], purpose = "mutablestate for the Workflow cache, events for the events cache; version_membership, routing_info and version_reactivation_signal for Worker Versioning lookups." },
+  { name = "namespace_id", purpose = "The namespace's ID, not its name." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["A miss in the Workflow cache reads the Workflow's state from the database (behaviour.mutable-state-cache)."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 230, excerpt = "metrics.OperationTag(metrics.HistoryCacheGetOrCreateScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 231, excerpt = "metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 232, excerpt = "metrics.NamespaceIDTag(namespaceID.String())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 47, excerpt = "MutableStateCacheTypeTagValue                     = \"mutablestate\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 284, excerpt = "metrics.CacheMissCounter.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_membership_cache.go", line = 51, excerpt = "h := metricsHandler.WithTags(metrics.CacheTypeTag(metrics.VersionMembershipCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/routing_info_cache.go", line = 66, excerpt = "h := metricsHandler.WithTags(metrics.CacheTypeTag(metrics.RoutingInfoCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_reactivation_signal_cache.go", line = 33, excerpt = "h := metricsHandler.WithTags(metrics.CacheTypeTag(metrics.VersionReactivationSignalCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_reactivation_signal_cache.go", line = 44, excerpt = "metrics.OperationTag(metrics.VersionReactivationSignalCacheShouldSendScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_reactivation_signal_cache.go", line = 62, excerpt = "metrics.CacheMissCounter.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/events/cache.go", line = 126, excerpt = "metrics.CacheMissCounter.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/version_membership_cache.go", line = 77, excerpt = "metrics.CacheMissCounter.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/worker_versioning/routing_info_cache.go", line = 88, excerpt = "metrics.CacheMissCounter.With(handler).Record(1)" },
+]
+
+[[annotation]]
+claim = "server.cache_errors"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation", values = ["HistoryCacheGetOrCreate", "HistoryCacheGetOrCreateCurrent", "EventsCacheGetEvent", "EventsCacheGetFromStore"], purpose = "HistoryCacheGetOrCreate for lookups of a Workflow's state; HistoryCacheGetOrCreateCurrent counts the extra lookup of a Workflow's current run." },
+  { name = "cache_type", values = ["mutablestate", "events"], purpose = "mutablestate for the Workflow cache, events for the events cache." },
+  { name = "namespace_id", purpose = "The namespace's ID, not its name." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Counts both a full cache refusing an entry and a request that gave up waiting for a Workflow's lock."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 230, excerpt = "metrics.OperationTag(metrics.HistoryCacheGetOrCreateScope)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 231, excerpt = "metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 232, excerpt = "metrics.NamespaceIDTag(namespaceID.String())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 47, excerpt = "MutableStateCacheTypeTagValue                     = \"mutablestate\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 298, excerpt = "metrics.CacheFailures.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 306, excerpt = "metrics.CacheFailures.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.cache_size"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+unit = "count"
+labels = [
+  { name = "cache_type", values = ["mutablestate", "events", "nexus_endpoint_registry_readthrough"] },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = [
+  "The configured maximum, recorded once when the cache is created: entries for the Workflow cache, unless history.cacheSizeBasedLimit makes it bytes; bytes for the events cache.",
+  "Replication's progress cache also reports as cache_type mutablestate.",
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 143, excerpt = "taggedHandler := handler.WithTags(metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 47, excerpt = "MutableStateCacheTypeTagValue                     = \"mutablestate\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 162, excerpt = "metrics.CacheSize.With(handler).Record(float64(maxSize))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/replication/progress_cache.go", line = 61, excerpt = "cache: cache.NewWithMetrics(maxSize, opts, handler.WithTags(metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue)))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/nexus/endpoint_registry.go", line = 102, excerpt = "}, metricsHandler.WithTags(metrics.CacheTypeTag(metrics.NexusEndpointRegistryReadThroughCacheTypeTagValue)))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/events/cache.go", line = 63, excerpt = "return newEventsCache(executionManager, handler, logger, config.EventsHostLevelCacheMaxSizeBytes(), config.EventsCacheTTL(), disabled)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/events/cache.go", line = 73, excerpt = "return newEventsCache(executionManager, handler, logger, config.EventsShardLevelCacheMaxSizeBytes(), config.EventsCacheTTL(), disabled)" },
+]
+
+[[annotation]]
+claim = "server.cache_usage"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+unit = "count"
+labels = [
+  { name = "cache_type", values = ["mutablestate", "events", "nexus_endpoint_registry_readthrough"] },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Replication's progress cache also reports as cache_type mutablestate."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 143, excerpt = "taggedHandler := handler.WithTags(metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 47, excerpt = "MutableStateCacheTypeTagValue                     = \"mutablestate\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 280, excerpt = "metrics.CacheUsage.With(c.metricsHandler).Record(float64(c.currSize))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/replication/progress_cache.go", line = 61, excerpt = "cache: cache.NewWithMetrics(maxSize, opts, handler.WithTags(metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue)))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/nexus/endpoint_registry.go", line = 102, excerpt = "}, metricsHandler.WithTags(metrics.CacheTypeTag(metrics.NexusEndpointRegistryReadThroughCacheTypeTagValue)))," },
+]
+
+[[annotation]]
+claim = "server.cache_pinned_usage"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+unit = "count"
+labels = [
+  { name = "cache_type", values = ["mutablestate"], purpose = "Only the Workflow cache pins entries." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["Entries in use by a request or task; a full cache cannot evict them."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 143, excerpt = "taggedHandler := handler.WithTags(metrics.CacheTypeTag(metrics.MutableStateCacheTypeTagValue))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 47, excerpt = "MutableStateCacheTypeTagValue                     = \"mutablestate\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 442, excerpt = "c.pinnedSize += entry.Size()" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 443, excerpt = "metrics.CachePinnedUsage.With(c.metricsHandler).Record(float64(c.pinnedSize))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/cache/lru.go", line = 257, excerpt = "if c.maxSize == 0 || !c.pin {" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/workflow/cache/cache.go", line = 104, excerpt = "Pin:             true," },
+]
+
+# ---------------------------------------------------------------- Shard ownership
+
+[[annotation]]
+claim = "server.membership_changed_count"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation", values = ["ShardController"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["Each History host counts every change to the ring it sees, so one host joining or leaving is counted by every other host."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/ownership.go", line = 90, excerpt = "metrics.MembershipChangedCounter.With(o.metricsHandler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/controller_impl.go", line = 80, excerpt = "taggedMetricsHandler := metricsHandler.WithTags(metrics.OperationTag(metrics.HistoryShardControllerScope))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 379, excerpt = "HistoryShardControllerScope = \"ShardController\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.acquire_shards_latency"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "operation", values = ["ShardController"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["The time of one pass over every shard, taking those this host should own, ten at a time by default."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/controller_impl.go", line = 387, excerpt = "metrics.AcquireShardsLatency.With(c.taggedMetricsHandler).Record(time.Since(startTime))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/controller_impl.go", line = 80, excerpt = "taggedMetricsHandler := metricsHandler.WithTags(metrics.OperationTag(metrics.HistoryShardControllerScope))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 379, excerpt = "HistoryShardControllerScope = \"ShardController\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.numshards_gauge"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+unit = "count"
+labels = [
+  { name = "operation", values = ["ShardController"] },
+  { name = "service_name", values = ["history"] },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/controller_impl.go", line = 463, excerpt = "metrics.NumShardsGauge.With(c.taggedMetricsHandler).Record(float64(numOfOwnedShards))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/shard/controller_impl.go", line = 80, excerpt = "taggedMetricsHandler := metricsHandler.WithTags(metrics.OperationTag(metrics.HistoryShardControllerScope))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 379, excerpt = "HistoryShardControllerScope = \"ShardController\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.service_error_with_type"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "error_type", purpose = "The error's Go type, e.g. serviceerror.ShardOwnershipLost; tally writes the dot as an underscore." },
+  { name = "operation" },
+  { name = "namespace" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["The Frontend counts ShardOwnershipLost by its own type, although it returns it to clients as Unavailable."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/request_error_handler.go", line = 100, excerpt = "metrics.ServiceErrorWithType.With(metricsHandler).Record(1, metrics.ServiceErrorTypeTag(err))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util/error_type.go", line = 52, excerpt = "return strings.TrimPrefix(errType, \"*\")" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 18, excerpt = "ErrorTypeTagName               = \"error_type\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/rpc/interceptor/telemetry.go", line = 380, excerpt = "return baseMetricsHandler.WithTags(metrics.OperationTag(overridedMethodName), metrics.NamespaceTag(nsName.String()))," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+# ---------------------------------------------------------------- Visibility
+
+[[annotation]]
+claim = "server.visibility_persistence_requests"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Calls to the visibility store, counted by the host that made them before they run, refused ones included."
+labels = [
+  { name = "operation", values = ["RecordWorkflowExecutionStarted", "RecordWorkflowExecutionClosed", "UpsertWorkflowExecution", "DeleteWorkflowExecution", "ListWorkflowExecutions", "ListChasmExecutions", "CountWorkflowExecutions", "CountChasmExecutions", "GetWorkflowExecution", "AddSearchAttributes"], purpose = "The call. History's writes are RecordWorkflowExecutionStarted, UpsertWorkflowExecution, RecordWorkflowExecutionClosed and DeleteWorkflowExecution; listing, counting and getting records are reads." },
+  { name = "visibility_plugin_name", purpose = "The visibility store: elasticsearch, or the SQL plugin, such as mysql8, postgres12 or sqlite." },
+  { name = "visibility_index_name", purpose = "The Elasticsearch index or the SQL database." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["There is no namespace label."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 210, excerpt = "taggedHandler := m.metricHandler.WithTags(metrics.OperationTag(operation), m.visibilityPluginNameMetricsTag, m.visibilityIndexNameMetricsTag)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 211, excerpt = "metrics.VisibilityPersistenceRequests.With(taggedHandler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/factory.go", line = 165, excerpt = "visManager = NewVisibilityManagerMetrics(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/factory.go", line = 229, excerpt = "metrics.VisibilityPluginNameTag(visStore.GetName())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/factory.go", line = 230, excerpt = "metrics.VisibilityIndexNameTag(visStore.GetIndexName())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 16, excerpt = "visibilityPluginNameTagName    = \"visibility_plugin_name\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 17, excerpt = "visibilityIndexNameTagName     = \"visibility_index_name\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 283, excerpt = "VisibilityPersistenceRecordWorkflowExecutionStartedScope = \"RecordWorkflowExecutionStarted\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 285, excerpt = "VisibilityPersistenceRecordWorkflowExecutionClosedScope = \"RecordWorkflowExecutionClosed\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 287, excerpt = "VisibilityPersistenceUpsertWorkflowExecutionScope = \"UpsertWorkflowExecution\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 289, excerpt = "VisibilityPersistenceDeleteWorkflowExecutionScope = \"DeleteWorkflowExecution\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 291, excerpt = "VisibilityPersistenceListWorkflowExecutionsScope = \"ListWorkflowExecutions\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 297, excerpt = "VisibilityPersistenceCountWorkflowExecutionsScope = \"CountWorkflowExecutions\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.visibility_persistence_latency"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "How long each call to the visibility store took, timed by the host that made it."
+labels = [
+  { name = "operation", values = ["RecordWorkflowExecutionStarted", "RecordWorkflowExecutionClosed", "UpsertWorkflowExecution", "DeleteWorkflowExecution", "ListWorkflowExecutions", "ListChasmExecutions", "CountWorkflowExecutions", "CountChasmExecutions", "GetWorkflowExecution", "AddSearchAttributes"], purpose = "The call. History's writes are RecordWorkflowExecutionStarted, UpsertWorkflowExecution, RecordWorkflowExecutionClosed and DeleteWorkflowExecution; listing, counting and getting records are reads." },
+  { name = "visibility_plugin_name", purpose = "The visibility store: elasticsearch, or the SQL plugin, such as mysql8, postgres12 or sqlite." },
+  { name = "visibility_index_name", purpose = "The Elasticsearch index or the SQL database." },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["There is no namespace label.", "Calls the visibility persistence limit refuses are timed too, at almost nothing (limit.visibility-persistence-qps)."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 82, excerpt = "metrics.VisibilityPersistenceLatency.With(handler).Record(elapsed)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 210, excerpt = "taggedHandler := m.metricHandler.WithTags(metrics.OperationTag(operation), m.visibilityPluginNameMetricsTag, m.visibilityIndexNameMetricsTag)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/factory.go", line = 158, excerpt = "visManager = NewVisibilityManagerRateLimited(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/factory.go", line = 165, excerpt = "visManager = NewVisibilityManagerMetrics(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/factory.go", line = 229, excerpt = "metrics.VisibilityPluginNameTag(visStore.GetName())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/factory.go", line = 230, excerpt = "metrics.VisibilityIndexNameTag(visStore.GetIndexName())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.visibility_persistence_resource_exhausted"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Calls to the visibility store refused with ResourceExhausted, by the visibility persistence limit of the host that made them."
+labels = [
+  { name = "operation", values = ["RecordWorkflowExecutionStarted", "RecordWorkflowExecutionClosed", "UpsertWorkflowExecution", "DeleteWorkflowExecution", "ListWorkflowExecutions", "ListChasmExecutions", "CountWorkflowExecutions", "CountChasmExecutions", "GetWorkflowExecution", "AddSearchAttributes"], purpose = "The refused call: a write refused by system.visibilityPersistenceMaxWriteQPS, or a read by system.visibilityPersistenceMaxReadQPS." },
+  { name = "resource_exhausted_cause", values = ["RpsLimit", "ConcurrentLimit", "SystemOverloaded", "PersistenceLimit", "BusyWorkflow", "ApsLimit", "PersistenceStorageLimit", "CircuitBreakerOpen", "OpsLimit", "WorkerDeploymentLimits", "Unspecified"], purpose = "PersistenceLimit for the visibility persistence limit." },
+  { name = "resource_exhausted_scope", values = ["Namespace", "System", "Unspecified"] },
+  { name = "visibility_plugin_name" },
+  { name = "visibility_index_name" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = ["There is no namespace label: the limit is per host, for every namespace."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 228, excerpt = "case *serviceerror.ResourceExhausted:" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 230, excerpt = "1, metrics.ResourceExhaustedCauseTag(err.Cause), metrics.ResourceExhaustedScopeTag(err.Scope))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visibility_manager_rate_limited.go", line = 74, excerpt = "return persistence.ErrPersistenceSystemLimitExceeded" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/persistence_rate_limited_clients.go", line = 25, excerpt = "Cause:   enumspb.RESOURCE_EXHAUSTED_CAUSE_PERSISTENCE_LIMIT," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 26, excerpt = "resourceExhaustedTag           = \"resource_exhausted_cause\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 27, excerpt = "resourceExhaustedScopeTag      = \"resource_exhausted_scope\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 210, excerpt = "taggedHandler := m.metricHandler.WithTags(metrics.OperationTag(operation), m.visibilityPluginNameMetricsTag, m.visibilityIndexNameMetricsTag)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.visibility_persistence_errors"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Calls to the visibility store that failed unexpectedly, such as with the store unavailable or rejecting the call."
+labels = [
+  { name = "operation", values = ["RecordWorkflowExecutionStarted", "RecordWorkflowExecutionClosed", "UpsertWorkflowExecution", "DeleteWorkflowExecution", "ListWorkflowExecutions", "ListChasmExecutions", "CountWorkflowExecutions", "CountChasmExecutions", "GetWorkflowExecution", "AddSearchAttributes"], purpose = "The failed call." },
+  { name = "visibility_plugin_name" },
+  { name = "visibility_index_name" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+notes = [
+  "Leaves out invalid queries, records not found, an Elasticsearch write that waited its whole acknowledgement timeout and refusals by the limit; visibility_persistence_error_with_type counts every error, by type.",
+  "Each one is also logged as \"Operation failed with an error.\"",
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 222, excerpt = "case *serviceerror.InvalidArgument," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 223, excerpt = "*persistence.TimeoutError," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 225, excerpt = "*serviceerror.NotFound:" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 228, excerpt = "case *serviceerror.ResourceExhausted:" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 232, excerpt = "m.logger.Error(\"Operation failed with an error.\", tag.Error(err))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 233, excerpt = "metrics.VisibilityPersistenceFailures.With(handler).Record(1)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 210, excerpt = "taggedHandler := m.metricHandler.WithTags(metrics.OperationTag(operation), m.visibilityPluginNameMetricsTag, m.visibilityIndexNameMetricsTag)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.visibility_persistence_error_with_type"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+purpose = "Calls to the visibility store that failed, by the error's type."
+labels = [
+  { name = "error_type", purpose = "The error's Go type, such as serviceerror.Unavailable or persistence.TimeoutError; tally writes the dot as an underscore." },
+  { name = "operation", values = ["RecordWorkflowExecutionStarted", "RecordWorkflowExecutionClosed", "UpsertWorkflowExecution", "DeleteWorkflowExecution", "ListWorkflowExecutions", "ListChasmExecutions", "CountWorkflowExecutions", "CountChasmExecutions", "GetWorkflowExecution", "AddSearchAttributes"], purpose = "The failed call." },
+  { name = "visibility_plugin_name" },
+  { name = "visibility_index_name" },
+  { name = "service_name", values = ["frontend", "history", "matching", "worker", "internal-frontend"] },
+]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 220, excerpt = "metrics.VisibilityPersistenceErrorWithType.With(handler).Record(1, metrics.ServiceErrorTypeTag(err))" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/util/error_type.go", line = 52, excerpt = "return strings.TrimPrefix(errType, \"*\")" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 18, excerpt = "ErrorTypeTagName               = \"error_type\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/persistence/visibility/visiblity_manager_metrics.go", line = 210, excerpt = "taggedHandler := m.metricHandler.WithTags(metrics.OperationTag(operation), m.visibilityPluginNameMetricsTag, m.visibilityIndexNameMetricsTag)" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]
+
+[[annotation]]
+claim = "server.dlq_writes"
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+labels = [
+  { name = "task_category", values = ["transfer", "timer", "replication", "visibility", "archival", "memory-timer", "outbound"], purpose = "The queue the task came from." },
+  { name = "namespace_state", values = ["active", "passive"] },
+  { name = "service_name", values = ["history"] },
+]
+notes = ["There is no namespace label; History logs the namespace with \"Task enqueued to DLQ\"."]
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/dlq_writer.go", line = 105, excerpt = "metrics.DLQWrites.With(q.metricsHandler).Record(" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/dlq_writer.go", line = 107, excerpt = "metrics.TaskCategoryTag(task.GetCategory().Name())," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/dlq_writer.go", line = 108, excerpt = "metrics.NamespaceStateTag(namespaceState)," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/queues/dlq_writer.go", line = 121, excerpt = "q.logger.Warn(\"Task enqueued to DLQ\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 10, excerpt = "TaskCategoryTagName            = \"task_category\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/history/tasks/category.go", line = 40, excerpt = "categoryNameVisibility  = \"visibility\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tags.go", line = 26, excerpt = "namespaceState          = \"namespace_state\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 57, excerpt = "ActiveNamespaceStateTagValue  = \"active\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/metric_defs.go", line = 58, excerpt = "PassiveNamespaceStateTagValue = \"passive\"" },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "temporal/fx.go", line = 445, excerpt = "return params.MetricsHandler.WithTags(metrics.ServiceNameTag(serviceName))" },
+]

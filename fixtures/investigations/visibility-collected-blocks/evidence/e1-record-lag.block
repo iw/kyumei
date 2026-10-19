@@ -1,0 +1,52 @@
+-----BEGIN KYUMEI SAMPLES v1-----
+Collected by kyumei-collect 0.1.0 from file at 2026-10-16 10:39 UTC
+Request R1 of inv-golden-visibility-blocks, 2026-10-16 09:30 UTC to 2026-10-16 10:40 UTC, step 15s
+Query 1: histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_queue_bucket{namespace…
+  task_type=VisibilityTaskStartExecution   ▁▁▁▁▁▁▁▁▁▁▁▁▁▃▇██▇▇▇▇▇█▇▇▇▇▇▇█▇▇  min 0.703  max 210  mean 89.07  (281 samples)
+  task_type=VisibilityTaskUpsertExecution  ▁▁▁▁▁▁▁▁▁▁▁▁▁▂███▆█▆█▇██▆▇█▇▆█▇▇  min 0.706  max 199  mean 80.05  (281 samples)
+  task_type=VisibilityTaskCloseExecution   ▁▁▁▁▁▁▁▁▁▁▁▁▁▃▇▇▇▇▇▇▇█▇▆█▇█▇▇▇▇▇  min 0.8  max 219  mean 91.76  (281 samples)
+:7ZZ5UNMHFsf7IyeBHGA4QhIId1gCAUQqtG69Vmu77dbilmoPizRWKkcVsGt3tgW5r5BAwETCrRIB
+:OYIcCRLCGZEjQEKACBgElEK4QiDhXmd3ptPO7P7R__v-evOd7_fNe_985r1_3h94A3v1ZlQoLdgt
+:KDwkhBYUSfJw93T3AF8ODqGJ68c6eFcIwWE33L4JD_maFuZ2Izgi-FJwSHDkTbdLIeFBVyMMPvaM
+:TlSJeVeiVarXXnbUG0AycCU4IjL8m-uBoRevRQWGRb6eRPZw9_WlkCKiQkmXbpLIITQKKTIw4urF
+:yJvf0VxI5OuBkTTyf4SQ111Y0M3XQVoU7eKlqKCrtMh_hgWG0iK-CwyiHbELv_417XqE3a_iR360
+:--SXrc69Vt3_ZPevzzxDv3BxcQEBhr_4CL91-UcGXo_8yz9oQVGRweFhHIP_XlE9D7zxR_2vAmC8
+:AkBCLIdUO-RSnprTIWWgdGKZNROuNas7mOQX6xlHzjjQgX1FVsAHUVzXe2gJNngdKoSJzAdhckyB
+:s5KqhTPRBDk0m6oxX7bQuOait60yzVTYeNSa1ZZXzJssTzZch8wxXsc1H5hDD2A0QIwl2z7G9yWh
+:laA9IHQW-OT7xEM6ka3OO7gZ5D3HUeM14z13EfjkK8QmIpl0x0po4tjtlgVEQwq9h73um1RCRLgp
+:9xWY1mb5TxrwGLzMr9TtBWYQNuS4gNFBt6GLyHH7GPd6Uh02G0gz6sTk4CSkApAcxgEVe-6ai28P
+:AFujqE3NeSEzIjHJ_xbDiEcHV_OsZ5SIKeY53vrnfVK_23rci_nzfAZQl2DQev_DNNEnslzslpCw
+:22HTu2JfVP_Xx-POegVY0O_4TG9QxUXTu0_WTJ_O1B6aSMAvFZi1FvntT9jKywNqZR-U1dvw5440
+:l169VfJjE5u6lgzmRZv0LFyoSYck8C7XDR7oVcHkWqs6zUfldIzw4Y285HigQ3FcvYSObvUYyf1p
+:nH1BVv4ZXecjrrKUt9hON0TtTFwuXwhIaXZ8KTiXnHVgseLasgSRpgflT4dmvAjhV4bu3AWJW4Ch
+:RhOpkDKURogvc9njm9YpA8SCU5rao8m5n_LV1IXuD2fqKRUv4Bs1tmOPj6U0mG2ryXEvDo-mHGqI
+:PSvXOy_GoqUa76SHZ6T7p-a1fpOjb-6PfL0Tc2ia4zE_QJFWHOfz3OYHXXJV_oxx7O6KaazW8G7M
+:-8V9Fq19lO1RI0G22WyBIXfvMkd1Qt1NlO35SdrR2_sW43su3HhT1Q6KvoesXkdUZ-IlG4ipeYyw
+:wCSvzakhA8GYO9rHAq1Wvveo7VQM42gOm9re_a2w27-_--Biw3vKu-_ULuB1yq8YufCnXMfC5S_a
+:E93HFHDRIyfd8Hu6VWK0xrX62Ylf0YH4Wzr8_bsI2h94-F14GP9eiK0z3gJ1Yja8xsg82xYnNToD
+:V2i_Dl4GC1CV-GFHxuEsQjRcZpSNOy5y3UTFIwsx89hu85MMcIqp1Fvk3ABRwZvsxC4cgwKS1mX7
+:zTnrEUI1lEFgg5koKWrSNBaaCFYAhaBpiAD9yKIUOWfDQjCR27gcw0eYZRu5fS510ncY14F8hehA
+:S62eY9kwle0SKo-ag6k2fU58AE6wbSJ3IXmYdGghIZEoAy8jy5zXqBkGajMhvsquDCmxeGmU77IL
+:fk4dP1Rn_QorQrEcZR5shxVEKbBrKEZ0ehU7jGM68TKbHBNtbRGQdw8cN-i2MPCRrtlysuHiSonH
+:8tIZpZagKQFnKCEbsaZN6-Gs3kuxHOfWPJgy9kiV7JJqIWJ1CT1aCNpoMF6QX-7a98npcONovOm5
+:2CrxucbHH-fGfBnHO92cfHo-zSUvgcjlWi7Umqmjz24qzCezHIofQSRzqKwn6E6dUT3fIb3fs68d
+:ttJiIHni83jHKrPl7YVe21v74G2xh7AZLhoOTtUi4meP8mVnS2q8VjZxPdwAsTKqYfZMDct9tg7R
+:cryVbsgYunbnqcFI6gdbOpC-8UL2YBBvLVBwz2h_-O3Hu9C1SZigEbpS5lU7CprLcC_V_VQ5hN_J
+:J_FrnbStxNV8XHzFt-yNwKb5v1UU2uTme49ooaqf_ZZmj20zPym963RX95Ug_-3ESoKcZaLsC7ol
+:NdAlvLWbBVKIbKR6r6Rs6JNV31QZZqmKVN7uPtfuOFcMzPYGLDHe6mw0nl3xrR6G85m48YqzY2Px
+:AJedBEjjDJbTPooWkbYZ1IJsJ0kRSJR0pb3pzNMdcnwvidlKvp9wuH7TcLLlzFTbsRn18ZF2_yc_
+:H02eoSbXv7shiAX26Xa1aZgRKTZ9_M9J8h-n176fm4Hx1wM5nafUVdBXbYZqPkGRSS2YPz7RQxyQ
+:HPn_78OJkPAI2h98-B18SMkC1LYx3sXmdpmWi06jjjoU30QA7JsqkIMOSqdV21EziaXag2mnR98z
+:rDbSWbMc9i3m0CzT2yYM6CAmEejC9-Hj8XSTYsRzAh0iJE5ZJng8ONhvVIpMMX1goXCUEieATLQO
+:NQBPcV13mreQGUQDw8irCchuGw70JWgX_Aj_wKLDvA02gc3BP0DEGycgp6zppGaLDo8-SxkgOVAD
+:nwfvGa0hRJRphyWYxCBq0ajLpt5QhtnGPrVdd9sgz6JL0WzP7sNCNNesyWmF0k3VI8Zdk73lBzmU
+:l0gOJM48F1glTEK4qEarrlkRcCcJ17tqrlswZVThBIsnb905mCr6PHoQ_VCHFW1F6EaC0vpdN4ew
+:fbWwVIlZvZJSmA5XcSDcGTMxnTi27nlnDqgt8pnPIvaxEXyO36byXNuqV6zIfmnpqylmcFu3n27E
+:cYDlElN0Lq45bEx1Wr6HZu0T2vI9R9SHBpWQnvV3NthGFWyDfGZQd-cPS8xIQdop9at3au9SNEPH
+:Zu98sKYi0RuIXWLbgrpjO_ffbcwgrub-wFfQgbzsL9sG7IXTXhmLrveT3GOniTuN5pIJk9gSpzU2
+:WbTjx9MRVrOva1ZDJQ99JUzrHj16tOtiez2Vk-1bzCAmT-OHuHYTbSYakWM53zOrBBHNCtyqdq7J
+:IxXMBuh3fpiqNC0rxsTwP17JwmayjZ_oDv9cCeuZuTCVQ1mp9pcLLTgvghT67zuzbiSNfJoZh9rq
+:wPeV0HjFpNV1X5UgYCvVabABPNWeAPTHYnobf9pPMOzhELjboM1dT8UQsU1JLmKdSJTBl4VoUSJu
+:q-bAc4X3QrqxfsCoZgo1Mwra6iIrnng-mzs0znW5nWDV3wFhJfsuPLu2pDiTUeadrzAQ6yj32T7p
+:ujSgTeXMY51vSf12aNm59jGpZQSlyvCPluJ0etuVUcP0sSP_Bg
+-----END KYUMEI SAMPLES (3318 chars, crc32 baad3cbe)-----

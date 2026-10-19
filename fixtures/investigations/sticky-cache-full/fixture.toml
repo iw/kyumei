@@ -1,0 +1,109 @@
+# Reference fixture for Workflow cache misses and replays.
+#
+# A marketing campaign launched at 10:00 UTC takes the running CampaignWorkflow
+# executions from about 4,000 to 26,000. Each waits for Signals and timers for
+# days. The two Go Worker processes cache 10,000 Workflows each, the default,
+# and hold at 9,999. By 10:08 both caches are full: every Workflow they add
+# evicts one that soon gets another Signal, and that Signal's task misses the
+# cache and replays the whole history. Workflow Tasks take seconds.
+#
+# The investigation must establish the replays, find sticky tasks missing the
+# cache, and find the caches pinned at their limit, without blaming the
+# server or recommending more Task Queue partitions.
+
+[fixture]
+id = "sticky-cache-full"
+title = "Campaign surge: Go Workers' caches full, Workflow Tasks replaying for seconds"
+description = "Reference fixture for Workflow cache misses and replays. Three evidence submissions take the investigation from symptom to a final diagnosis."
+investigation = "inv-golden-sticky-cache"
+
+[open]
+at = 2026-10-12T10:40:00Z
+description = "Since about 10:10 UTC our Go workers spend seconds replaying workflows: workflow task latency on the campaigns task queue went from around 50ms to 2-3s. A campaign launched at 10:00 and the running CampaignWorkflow executions went from about 4,000 to 26,000. Namespace growth."
+server_version = "1.31.0"
+sdks = [{ language = "go", version = "1.44.0" }]
+namespaces = ["growth"]
+task_queues = ["campaigns"]
+window_start = 2026-10-12T10:10:00Z
+window_end = 2026-10-12T10:50:00Z
+
+[open.topology]
+deployment = "self_hosted_kubernetes"
+frontend_hosts = 2
+history_hosts = 4
+matching_hosts = 2
+worker_processes = 2
+persistence = "PostgreSQL 16"
+
+[open.expect]
+next_request = "replay-latency"
+conclusion = "none"
+concluded = false
+
+# The operator's "2-3s" is read as an assertion about replay latency.
+[open.expect.states]
+replay-pressure = "supported"
+cache-misses = "candidate"
+cache-full = "candidate"
+sticky-timeouts = "candidate"
+sticky-disabled = "candidate"
+
+# E1 — Replay latency, from 30 minutes before the incident.
+[[step]]
+at = 2026-10-12T10:45:00Z
+answers = "replay-latency"
+file = "evidence/e1-replay-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.95, sum by (le) (rate(temporal_workflow_task_replay_latency_bucket{namespace="growth", task_queue="campaigns"}[1m])))'
+unit = "seconds"
+
+[step.expect]
+next_request = "cache-hits"
+findings = ["F-replay-elevated"]
+bound_signals = ["wft_replay_latency"]
+conclusion = "replay-pressure"
+concluded = false
+
+[step.expect.states]
+replay-pressure = "established"
+cache-misses = "candidate"
+
+# E2 — Sticky cache hits and misses (a Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-12T10:47:00Z
+answers = "cache-hits"
+file = "evidence/e2-cache-hits.csv"
+channel = "upload"
+query = 'sum(rate(temporal_sticky_cache_hit{namespace="growth", task_queue="campaigns"}[1m])) and sum(rate(temporal_sticky_cache_miss{namespace="growth", task_queue="campaigns"}[1m]))'
+
+[step.expect]
+next_request = "cache-size"
+findings = ["F-misses-high"]
+bound_signals = ["cache_hits", "cache_misses"]
+conclusion = "cache-misses"
+concluded = false
+
+[step.expect.states]
+replay-pressure = "established"
+cache-misses = "established"
+cache-full = "candidate"
+
+# E3 — The largest cache's size.
+[[step]]
+at = 2026-10-12T10:51:00Z
+answers = "cache-size"
+file = "evidence/e3-cache-size.json"
+channel = "paste"
+query = 'max(temporal_sticky_cache_size{namespace="growth", task_queue="campaigns"})'
+
+[step.expect]
+next_request = "none"
+findings = ["F-cache-pinned"]
+bound_signals = ["cache_size"]
+conclusion = "cache-too-small"
+concluded = true
+
+[step.expect.states]
+replay-pressure = "established"
+cache-misses = "established"
+cache-full = "established"

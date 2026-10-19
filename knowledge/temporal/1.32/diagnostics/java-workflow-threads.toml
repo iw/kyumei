@@ -1,0 +1,362 @@
+# Diagnostic: Java Workers out of Workflow threads.
+#
+# A Java worker factory runs its Workflows on one bounded pool of threads,
+# and every cached Workflow keeps at least one of them while it waits. When
+# a Workflow needs a thread and none is free, the Worker evicts a cached
+# Workflow, which replays its whole history at its next task; when nothing
+# can be evicted, the Workflow Task fails. The investigation establishes
+# that the pool is exhausted, asks whether tasks fail for it, and then what
+# holds the threads: the cache itself, one thread per Workflow, or the
+# Workflows' handlers and branches, several each.
+
+[diagnostic]
+id = "java-workflow-threads"
+title = "Java Workflow thread exhaustion"
+summary = "Java Workers run out of Workflow threads: they evict cached Workflows to free threads, replaying them later, and fail Workflow Tasks when no thread can be freed."
+# First: its patterns name Java's Workflow thread pool, which descriptions
+# of Workflow Task failures and cache evictions may also mention.
+precedence = 4
+
+[diagnostic.path]
+description = "The path of a Workflow Task on a Java Worker: Matching hands it to the Worker, which runs the Workflow on a thread of its factory's pool; cached Workflows keep their threads between tasks."
+layers = ["matching", "workers"]
+labels = { workers = "Java Workers" }
+
+[[symptom]]
+id = "java-workflow-threads"
+title = "Java Workers out of Workflow threads"
+patterns = [
+  "WorkflowRejectedExecutionError",
+  "maxWorkflowThreadCount",
+  "workflow_active_thread_count",
+  "thread_forced_eviction",
+  "\\bworkflow threads?\\b.{0,40}\\b(exhaust\\w*|run(ning)? out|ran out|starv\\w*|all (in )?use|full|limit|pool)",
+  "\\bevict\\w*\\b.{0,40}\\b(free|for|to get)\\b.{0,10}\\bthreads?\\b",
+]
+signal = "active_threads"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "threads"
+order = 1
+title = "Threads"
+question = "Are the Workers' Workflow threads all in use?"
+
+[[stage]]
+id = "failures"
+order = 2
+title = "Task failures"
+question = "Do Workflow Tasks fail for want of a thread?"
+
+[[stage]]
+id = "holders"
+order = 3
+title = "Thread holders"
+question = "What holds the threads?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "active_threads"
+title = "Workflow threads in use"
+unit = "count"
+description = "Threads of the busiest Java Worker's Workflow pool in use, cached Workflows' threads included."
+source = [{ claim = "sdk.workflow_active_thread_count" }]
+
+[[signal]]
+id = "thread_evictions"
+title = "Evictions to free a Workflow thread"
+unit = "per_second"
+description = "Cached Workflows per second that Java Workers evicted to free a Workflow thread."
+combine = "sum"
+source = [{ claim = "sdk.sticky_cache_thread_forced_eviction", transform = "rate" }]
+
+[[signal]]
+id = "wft_errors"
+title = "Workflow Tasks failing with errors"
+unit = "per_second"
+description = "Workflow Task attempts per second that Java Workers counted as failed with failure_reason WorkflowError."
+combine = "sum"
+source = [{ claim = "sdk.workflow_task_execution_failed", labels = { failure_reason = "WorkflowError" }, transform = "rate" }]
+
+[[signal]]
+id = "cached_workflows"
+title = "Cached Workflows"
+unit = "count"
+description = "Workflows in the busiest Java Worker's Workflow cache."
+source = [{ claim = "sdk.sticky_cache_size" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "pool-exhausted"
+stage = "threads"
+primary = true
+layer = "workers"
+title = "Workflow thread pool exhausted"
+question = "Threads all in use?"
+statement = "The Java Workers' Workflow thread pools are exhausted: every thread is held, so each Workflow that needs one evicts a cached Workflow, which replays its whole history at its next task."
+
+[[hypothesis]]
+id = "tasks-rejected"
+stage = "failures"
+primary = true
+layer = "workers"
+title = "Workflow Tasks failing for want of a thread"
+question = "Tasks failing?"
+statement = "When every cached Workflow is being processed, nothing can be evicted, and Workflow Tasks fail with WorkflowRejectedExecutionError; their retries time out."
+activation = { hypothesis = "pool-exhausted", state = ["established"] }
+
+[[hypothesis]]
+id = "many-threads"
+stage = "holders"
+primary = true
+layer = "workers"
+title = "Workflows holding many threads each"
+question = "Many threads per Workflow?"
+statement = "Each cached Workflow holds several threads: one for each Signal or Update whose handler is waiting, and one for each branch run in a thread of its own."
+activation = { hypothesis = "pool-exhausted", state = ["established"] }
+
+[[hypothesis]]
+id = "cache-fills-pool"
+stage = "holders"
+layer = "workers"
+title = "Workflow cache as large as the thread pool"
+question = "Cache filling the pool?"
+statement = "The Workflow cache holds about as many Workflows as there are threads, one thread each, so a full cache leaves no thread for a Workflow that is not cached. With the defaults both are 600."
+activation = { hypothesis = "pool-exhausted", state = ["established"] }
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "java-workflow-threads"
+stage = "threads"
+title = "Workflow threads in use, and cached Workflows evicted to free one"
+why = "A Java worker factory runs its Workflows on one pool of threads, 600 by default, and every cached Workflow holds at least one. When none is free, the Worker evicts a cached Workflow to free its threads and counts the eviction, so a steady rate of these evictions means the pool is exhausted. The count leaves out Workflows that are replaying; the threads in use, held at a peak, show an exhausted pool then."
+signals = ["active_threads", "thread_evictions"]
+distinguishes = ["pool-exhausted"]
+cost = 1
+requires = ["sdk-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "Workflow threads in use on the busiest Java Worker (include at least 15 minutes before the incident)"
+body = "max(temporal_workflow_active_thread_count{namespace=\"{namespace}\"})"
+sdk_family = "java"
+unit = "count"
+claims = ["sdk.workflow_active_thread_count", "sdk.java-workflow-thread-pool"]
+
+[[request.collect]]
+method = "promql"
+label = "Cached Workflows evicted to free a Workflow thread, per second"
+body = "sum(rate(temporal_sticky_cache_thread_forced_eviction_total{namespace=\"{namespace}\"}[1m]))"
+sdk_family = "java"
+unit = "per_second"
+claims = ["sdk.sticky_cache_thread_forced_eviction", "sdk.java-thread-forced-eviction"]
+
+[[request]]
+id = "java-workflow-task-failures"
+stage = "failures"
+title = "Workflow Task failures counted by the Java Workers, by reason"
+why = "A Workflow that finds no thread, and no cached Workflow to evict, fails its Workflow Task with WorkflowRejectedExecutionError. The Workers count it as failure_reason WorkflowError, as they do failures of Workflow code, and the task is retried until it gets a thread. Reasons missing from the breakdown did not occur."
+signals = ["wft_errors"]
+distinguishes = ["tasks-rejected"]
+cost = 1
+requires = ["sdk-metrics"]
+group_by = ["failure_reason"]
+
+[[request.collect]]
+method = "promql"
+label = "Workflow Task failures per second, by reason"
+body = "sum by (failure_reason) (rate(temporal_workflow_task_execution_failed_total{namespace=\"{namespace}\"}[1m]))"
+sdk_family = "java"
+unit = "per_second"
+claims = ["sdk.workflow_task_execution_failed", "sdk.java-thread-forced-eviction"]
+
+[[request]]
+id = "java-workflow-cache-size"
+stage = "holders"
+title = "Workflows in the Java Workers' caches"
+why = "Every cached Workflow holds a thread while it waits, and more for each waiting Signal or Update handler and each branch run in a thread of its own. Comparing the threads in use with the cached Workflows tells a cache that fills the pool, one thread each, from Workflows that hold several."
+signals = ["cached_workflows"]
+distinguishes = ["many-threads", "cache-fills-pool"]
+cost = 1
+requires = ["sdk-metrics"]
+
+[[request.collect]]
+method = "promql"
+label = "Workflows in the busiest Java Worker's cache"
+body = "max(temporal_sticky_cache_size{namespace=\"{namespace}\"})"
+sdk_family = "java"
+unit = "count"
+claims = ["sdk.sticky_cache_size", "sdk.workflow-cache-size"]
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "evicting-for-threads"
+hypothesis = "pool-exhausted"
+effect = "establishes"
+statement = "Java Workers evicted cached Workflows to free Workflow threads at {thread_evictions.mean} on average, peaking at {thread_evictions.max}: they do so only when every thread is taken."
+claims = ["heuristic.thread-evictions-significant", "sdk.java-thread-forced-eviction"]
+when = { signal = "thread_evictions", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "threads-at-default-limit"
+hypothesis = "pool-exhausted"
+effect = "establishes"
+statement = "The busiest Worker's Workflow threads in use held between {active_threads.min} and {active_threads.max}, at the default limit of 600."
+claims = ["heuristic.thread-pool-pinned", "sdk.java-workflow-thread-pool"]
+when = { all = [
+  { ratio = { numerator = "active_threads.min", denominator = "active_threads.max" }, op = "ge", value = 0.97 },
+  { signal = "active_threads", stat = "max", op = "ge", value = 594 },
+  { signal = "active_threads", stat = "max", op = "le", value = 600 },
+  { signal = "active_threads", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "threads-pinned"
+hypothesis = "pool-exhausted"
+effect = "supports"
+statement = "The busiest Worker's Workflow threads in use held between {active_threads.min} and {active_threads.max} at every sample, as a pool at its limit does."
+claims = ["heuristic.thread-pool-pinned", "sdk.workflow_active_thread_count"]
+when = { all = [
+  { ratio = { numerator = "active_threads.min", denominator = "active_threads.max" }, op = "ge", value = 0.97 },
+  { signal = "active_threads", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "threads-to-spare"
+hypothesis = "pool-exhausted"
+effect = "eliminates"
+statement = "No Workflow was evicted to free a thread (at most {thread_evictions.max}), and the threads in use ranged from {active_threads.min} to {active_threads.max}: the pools had threads to spare."
+claims = ["heuristic.sustained-needs-samples", "heuristic.thread-evictions-significant"]
+when = { all = [
+  { signal = "thread_evictions", stat = "max", op = "le", value = 0.01 },
+  { signal = "thread_evictions", stat = "samples", op = "ge", value = 3 },
+  { ratio = { numerator = "active_threads.min", denominator = "active_threads.max" }, op = "lt", value = 0.8 },
+  { signal = "active_threads", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "tasks-failing"
+hypothesis = "tasks-rejected"
+effect = "supports"
+statement = "Workflow Tasks failed with WorkflowError at up to {wft_errors.max} while the pools were exhausted, as tasks that find no thread do."
+claims = ["heuristic.wft-failures-occurring", "sdk.java-thread-forced-eviction"]
+when = { signal = "wft_errors", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "no-task-failures"
+hypothesis = "tasks-rejected"
+effect = "eliminates"
+statement = "No Workflow Task failed with WorkflowError during the window (at most {wft_errors.max}): every Workflow that needed a thread got one, if only by evicting another."
+claims = ["heuristic.sustained-needs-samples", "heuristic.wft-failures-occurring"]
+when = { all = [
+  { signal = "wft_errors", stat = "max", op = "le", value = 0.01 },
+  { signal = "wft_errors", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "several-threads-each"
+hypothesis = "many-threads"
+effect = "establishes"
+statement = "The busiest Worker had {active_threads.max} Workflow threads in use for {cached_workflows.max} cached Workflows: several threads each."
+claims = ["heuristic.threads-per-workflow", "sdk.java-workflow-thread-pool"]
+when = { ratio = { numerator = "active_threads.max", denominator = "cached_workflows.max" }, op = "ge", value = 2 }
+
+[[rule]]
+id = "one-thread-each"
+hypothesis = "many-threads"
+effect = "eliminates"
+statement = "The busiest Worker had {active_threads.max} Workflow threads in use for {cached_workflows.max} cached Workflows: about one each."
+claims = ["heuristic.threads-per-workflow", "sdk.java-workflow-thread-pool"]
+when = { ratio = { numerator = "active_threads.max", denominator = "cached_workflows.max" }, op = "lt", value = 1.5 }
+
+[[rule]]
+id = "cache-matches-threads"
+hypothesis = "cache-fills-pool"
+effect = "establishes"
+statement = "The busiest Worker's {cached_workflows.max} cached Workflows held its {active_threads.max} Workflow threads, about one each: the cache fills the pool."
+claims = ["heuristic.threads-per-workflow", "sdk.java-workflow-thread-pool", "sdk.workflow-cache-size"]
+when = { ratio = { numerator = "active_threads.max", denominator = "cached_workflows.max" }, op = "lt", value = 1.5 }
+
+[[rule]]
+id = "cache-below-threads"
+hypothesis = "cache-fills-pool"
+effect = "eliminates"
+statement = "The busiest Worker's {cached_workflows.max} cached Workflows held {active_threads.max} Workflow threads, several each: the cache alone does not fill the pool."
+claims = ["heuristic.threads-per-workflow", "sdk.java-workflow-thread-pool"]
+when = { ratio = { numerator = "active_threads.max", denominator = "cached_workflows.max" }, op = "ge", value = 2 }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "many-threads"
+title = "Java Workflows holding many threads each"
+statement = "Java Workers run out of Workflow threads because their Workflows hold several threads each: the busiest Worker had {active_threads.max} threads in use for {cached_workflows.max} cached Workflows. With every thread taken, each Workflow that needs one evicts a cached Workflow, and the evicted Workflow replays its whole history at its next task."
+when = { all = [
+  { hypothesis = "pool-exhausted", state = ["established"] },
+  { hypothesis = "many-threads", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "thread_evictions", stat = "mean", op = "gt", value = 0.1 }
+text = "Workers evicted cached Workflows for threads at {thread_evictions.mean} on average."
+
+[[conclusion.clause]]
+when = { hypothesis = "tasks-rejected", state = ["supported", "established"] }
+text = "Workflow Tasks also failed with WorkflowError at up to {wft_errors.max}: a task that finds no thread and no cached Workflow to evict fails with WorkflowRejectedExecutionError, which the Workers log as a Workflow task processing failure."
+
+[[conclusion.recommendation]]
+text = "Find the Workflows that hold many threads. Each Signal or Update handler holds a thread until it returns, so handlers that wait, for example with Workflow.await, pile up threads; so does each branch run with Async.function or Async.procedure on code other than an Activity or child Workflow stub. Let handlers record the work and return, leaving the waiting to the Workflow method; call Activities and child Workflows through their stubs, which takes no thread; and bound how many branches run at once."
+claims = ["sdk.java-workflow-thread-pool"]
+
+[[conclusion.recommendation]]
+text = "Or give the Workers more threads: raise WorkerFactoryOptions.maxWorkflowThreadCount (600 by default), or on JDK 21 or later run Workflows on virtual threads with setUsingVirtualWorkflowThreads, which lifts the limit."
+caution = "Each platform thread takes memory of its own; raise the count only as far as the Workers' memory allows."
+claims = ["sdk.java-workflow-thread-pool"]
+
+[[conclusion]]
+id = "cache-fills-pool"
+title = "Java Workflow cache as large as the thread pool"
+statement = "Java Workers run out of Workflow threads because their Workflow cache holds as many Workflows as the pool has threads: the busiest Worker's {cached_workflows.max} cached Workflows held its {active_threads.max} threads. A Workflow that is not cached then finds no thread and evicts a cached one, which replays its whole history at its next task."
+when = { all = [
+  { hypothesis = "pool-exhausted", state = ["established"] },
+  { hypothesis = "cache-fills-pool", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { signal = "thread_evictions", stat = "mean", op = "gt", value = 0.1 }
+text = "Workers evicted cached Workflows for threads at {thread_evictions.mean} on average."
+
+[[conclusion.clause]]
+when = { hypothesis = "tasks-rejected", state = ["supported", "established"] }
+text = "Workflow Tasks also failed with WorkflowError at up to {wft_errors.max}: a task that finds no thread and no cached Workflow to evict fails with WorkflowRejectedExecutionError, which the Workers log as a Workflow task processing failure."
+
+[[conclusion.recommendation]]
+text = "Keep the Workflow cache below the thread limit, so that Workflows that are not cached still find a thread: lower WorkerFactoryOptions.workflowCacheSize, or raise maxWorkflowThreadCount above it. Both are 600 by default."
+claims = ["sdk.java-workflow-thread-pool", "sdk.workflow-cache-size"]
+
+[[conclusion.recommendation]]
+text = "Or lift the thread limit by running Workflows on virtual threads (setUsingVirtualWorkflowThreads, JDK 21 or later), or add Workers so the Workflows, and their threads, spread over more pools."
+caution = "A larger pool, or more cached Workflows, takes more of the Workers' memory."
+claims = ["sdk.java-workflow-thread-pool"]
+
+[[conclusion]]
+id = "pool-exhausted"
+title = "Java Workers out of Workflow threads"
+statement = "Java Workers ran out of Workflow threads: with every thread taken, each Workflow that needs one evicts a cached Workflow, which replays its whole history at its next task."
+when = { hypothesis = "pool-exhausted", state = ["established"] }
+
+[[conclusion.clause]]
+when = { signal = "thread_evictions", stat = "mean", op = "gt", value = 0.1 }
+text = "Workers evicted cached Workflows for threads at {thread_evictions.mean} on average, peaking at {thread_evictions.max}."
+
+[[conclusion.recommendation]]
+text = "Follow the remaining requests to find what holds the threads: the cache itself, or the handlers and branches of the Workflows in it."
+claims = ["sdk.java-workflow-thread-pool"]

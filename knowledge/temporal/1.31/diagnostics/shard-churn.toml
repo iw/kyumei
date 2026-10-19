@@ -1,0 +1,292 @@
+# Diagnostic: intermittent errors while History's shards change owner.
+#
+# History hosts share the shards by a hash ring of the hosts in membership.
+# When a host joins or leaves, the shards whose owner changed move, and until
+# the new owner has taken each one, requests for its Workflows fail. The
+# Frontend returns those failures to clients as Unavailable. The
+# investigation confirms the failures come from shard ownership, asks
+# whether membership changed, and then how long taking the moved shards
+# took.
+
+[diagnostic]
+id = "shard-churn"
+title = "Shard ownership churn"
+summary = "Clients see intermittent Unavailable errors, often during deploys or scaling, while History's shards change owner."
+# After the Workflow cache diagnostic, whose descriptions also mention
+# restarts, and before Workflow Task schedule-to-start.
+precedence = 9
+
+[diagnostic.path]
+description = "The path of a request for a Workflow: the Frontend sends it to the History host that owns the Workflow's shard by the membership ring; while the shard moves to a new owner and its lease is taken in the database, the request fails."
+layers = ["clients", "frontend", "history", "persistence"]
+labels = { clients = "Callers" }
+
+[[symptom]]
+id = "shard-churn"
+title = "Requests failing while shards move"
+patterns = [
+  "shard (is )?(unavailable|ownership|status unknown)",
+  "ShardOwnershipLost",
+  "shards? (moving|movement|rebalanc\\w*|churn\\w*|handoff)",
+  "membership (change|changes|churn|flapping)",
+  "\\bringpop\\b",
+]
+signal = "ownership_errors"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "errors"
+order = 1
+title = "Ownership errors"
+question = "Are requests failing on moving shards?"
+
+[[stage]]
+id = "membership"
+order = 2
+title = "Membership"
+question = "Did History's membership change?"
+
+[[stage]]
+id = "acquisition"
+order = 3
+title = "Shard acquisition"
+question = "How long did taking the moved shards take?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "ownership_errors"
+title = "ShardOwnershipLost errors at the Frontend"
+unit = "per_second"
+description = "Requests per second the Frontend failed because the History host it reached no longer owned the Workflow's shard."
+combine = "sum"
+source = [{ claim = "server.service_error_with_type", labels = { service_name = "frontend", error_type = "serviceerror.ShardOwnershipLost" }, transform = "rate" }]
+
+[[signal]]
+id = "membership_changes"
+title = "History membership changes"
+unit = "per_second"
+description = "Changes to History's membership ring per second, as History hosts saw them."
+combine = "sum"
+source = [{ claim = "server.membership_changed_count", labels = { service_name = "history" }, transform = "rate" }]
+
+[[signal]]
+id = "acquire_latency"
+title = "Shard acquisition pass time"
+unit = "seconds"
+description = "How long History hosts took to take the shards they should own (a high quantile over the window)."
+source = [{ claim = "server.acquire_shards_latency", labels = { service_name = "history" } }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "ownership-errors"
+stage = "errors"
+primary = true
+layer = "history"
+title = "Requests failing on moving shards"
+question = "Failing on moving shards?"
+statement = "Requests fail because the History host they reach no longer owns the Workflow's shard; the Frontend returns them to clients as Unavailable, \"shard unavailable, please backoff and retry\"."
+
+[[hypothesis]]
+id = "membership-changes"
+stage = "membership"
+primary = true
+layer = "history"
+title = "History hosts joining or leaving"
+question = "Membership changed?"
+statement = "History hosts joined or left membership, through restarts, deploys, scaling or failures, so the shards whose owner changed moved."
+
+[[hypothesis]]
+id = "slow-acquisition"
+stage = "acquisition"
+primary = true
+layer = "persistence"
+title = "Moved shards taken slowly"
+question = "Shards taken slowly?"
+statement = "Taking the moved shards' leases in the database is slow, so each moved shard stays unavailable for longer."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "ownership-errors"
+stage = "errors"
+title = "ShardOwnershipLost errors at the Frontend"
+why = "The Frontend counts every request it fails by the error's type, and counts a request that reached a History host no longer owning the shard as ShardOwnershipLost, although it returns it to clients as Unavailable. That separates errors from moving shards from other Unavailable errors."
+signals = ["ownership_errors"]
+distinguishes = ["ownership-errors"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["error_type"]
+
+[[request.collect]]
+method = "promql"
+label = "ShardOwnershipLost errors at the Frontend per second"
+body = "sum by (error_type) (rate(service_error_with_type{service_name=\"frontend\", error_type=~\"serviceerror.ShardOwnershipLost\", namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.service_error_with_type", "behaviour.shard-ownership-moves", "server.metrics-label-values"]
+note = "the pattern matches serviceerror_ShardOwnershipLost too, the spelling tally writes; with the OpenTelemetry metrics framework the counter is named service_error_with_type_total"
+
+[[request]]
+id = "membership-changes"
+stage = "membership"
+title = "History membership changes, before and during the incident"
+why = "Shards move only when the membership ring changes or when hosts disagree about it. History hosts count every change they see, so a stable cluster shows none."
+signals = ["membership_changes"]
+distinguishes = ["membership-changes"]
+cost = 1
+requires = ["server-metrics"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "History membership changes per second, across History hosts (include at least 15 minutes before the incident)"
+body = "sum(rate(membership_changed_count{service_name=\"history\"}[1m]))"
+unit = "per_second"
+claims = ["server.membership_changed_count", "behaviour.shard-ownership-moves"]
+note = "with the OpenTelemetry metrics framework the counter is named membership_changed_count_total"
+
+[[request]]
+id = "shard-acquisition"
+stage = "acquisition"
+title = "How long History hosts took to take their shards"
+why = "A moved shard is unavailable until its new owner has taken its lease in the database. The time each pass over the shards takes shows whether that is quick or stretches every burst of errors."
+signals = ["acquire_latency"]
+distinguishes = ["slow-acquisition"]
+cost = 1
+requires = ["server-metrics"]
+
+[[request.collect]]
+method = "promql"
+label = "p99 shard acquisition pass time, across History hosts"
+body = "histogram_quantile(0.99, sum by (le) (rate(acquire_shards_latency_bucket{service_name=\"history\"}[1m])))"
+unit = "seconds"
+claims = ["server.acquire_shards_latency", "behaviour.shard-ownership-moves"]
+note = "with the OpenTelemetry metrics framework the histogram is acquire_shards_latency_milliseconds_bucket, in milliseconds"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "ownership-failing"
+hypothesis = "ownership-errors"
+effect = "establishes"
+statement = "The Frontend failed requests with ShardOwnershipLost, up to {ownership_errors.max} and {ownership_errors.mean} on average: their History host no longer owned the Workflow's shard."
+claims = ["heuristic.shard-errors-significant", "behaviour.shard-ownership-moves"]
+when = { signal = "ownership_errors", stat = "max", op = "gt", value = 0.5 }
+
+[[rule]]
+id = "no-ownership-errors"
+hypothesis = "ownership-errors"
+effect = "eliminates"
+statement = "No request failed with ShardOwnershipLost during the window (at most {ownership_errors.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.shard-errors-significant"]
+when = { all = [
+  { signal = "ownership_errors", stat = "max", op = "le", value = 0.01 },
+  { signal = "ownership_errors", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "membership-changed"
+hypothesis = "membership-changes"
+effect = "establishes"
+statement = "History hosts saw their membership change, at up to {membership_changes.max} across hosts."
+claims = ["heuristic.membership-changed", "server.membership_changed_count"]
+when = { signal = "membership_changes", stat = "max", op = "gt", value = 0.01 }
+
+[[rule]]
+id = "membership-stable"
+hypothesis = "membership-changes"
+effect = "eliminates"
+statement = "History's membership did not change during the window (at most {membership_changes.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.membership-changed"]
+when = { all = [
+  { signal = "membership_changes", stat = "max", op = "le", value = 0.01 },
+  { signal = "membership_changes", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "acquisition-slow"
+hypothesis = "slow-acquisition"
+effect = "establishes"
+statement = "Taking the shards took up to {acquire_latency.max} per pass: moved shards stayed unavailable that long."
+claims = ["heuristic.shard-acquisition-slow", "server.acquire_shards_latency"]
+when = { signal = "acquire_latency", stat = "max", op = "ge", value = 5 }
+
+[[rule]]
+id = "acquisition-fast"
+hypothesis = "slow-acquisition"
+effect = "eliminates"
+statement = "Taking the shards was quick: at most {acquire_latency.max} per pass."
+claims = ["heuristic.sustained-needs-samples", "heuristic.shard-acquisition-slow"]
+when = { all = [
+  { signal = "acquire_latency", stat = "max", op = "lt", value = 1 },
+  { signal = "acquire_latency", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "churn-slow-acquisition"
+title = "Shards moving, and slow to be taken"
+statement = "Requests failed while History's shards moved: hosts joined or left membership, and the Frontend failed requests with ShardOwnershipLost, up to {ownership_errors.max}. Taking the moved shards took up to {acquire_latency.max} per pass, so each stayed unavailable that long."
+when = { all = [
+  { hypothesis = "ownership-errors", state = ["established"] },
+  { hypothesis = "membership-changes", state = ["established"] },
+  { hypothesis = "slow-acquisition", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Check the database's latency for History's shard reads and writes over the window: taking a shard is a read and a conditional write of its record, and the persistence latency diagnostic finds why they slowed."
+claims = ["behaviour.shard-ownership-moves", "server.acquire_shards_latency"]
+
+[[conclusion.recommendation]]
+text = "Find why the hosts joined or left: a deploy or scaling is expected; repeated restarts of one host point at crashes, out-of-memory kills or failing health checks."
+claims = ["behaviour.shard-ownership-moves", "server.membership_changed_count"]
+
+[[conclusion]]
+id = "membership-churn"
+title = "Shards moving as History hosts join or leave"
+statement = "Requests failed while History's shards moved: hosts joined or left membership, with changes at up to {membership_changes.max} across hosts, and each move left the shards' Workflows unavailable until their new owner took them. The Frontend failed requests with ShardOwnershipLost, up to {ownership_errors.max}, and returned them to clients as Unavailable."
+when = { all = [
+  { hypothesis = "ownership-errors", state = ["established"] },
+  { hypothesis = "membership-changes", state = ["established"] },
+] }
+
+[[conclusion.clause]]
+when = { hypothesis = "slow-acquisition", state = ["eliminated"] }
+text = "Taking each moved shard was quick (at most {acquire_latency.max} per pass), so the errors come from how often the shards moved."
+
+[[conclusion.recommendation]]
+text = "For planned restarts, let a stopping History host keep serving while its shards move: set history.shutdownDrainDuration (0 by default) to the time a move takes, and give the pod at least that long to stop. history.alignMembershipChange makes several hosts leave together, so the shards move fewer times."
+caution = "Both settings lengthen every History shutdown."
+claims = ["behaviour.history-shutdown-drain", "dc.history.shutdownDrainDuration", "dc.history.alignMembershipChange"]
+
+[[conclusion.recommendation]]
+text = "If the hosts left unplanned, find why: crashes, out-of-memory kills or failing health checks each move the host's shards twice, as it leaves and as it returns."
+claims = ["behaviour.shard-ownership-moves", "server.membership_changed_count"]
+
+[[conclusion]]
+id = "ownership-without-membership"
+title = "Shards changing owner without membership changes"
+statement = "Requests failed with ShardOwnershipLost, up to {ownership_errors.max}, while History's membership did not change: hosts disagreed about who owns the shards, or shards lost their lease in the database."
+when = { all = [
+  { hypothesis = "ownership-errors", state = ["established"] },
+  { hypothesis = "membership-changes", state = ["eliminated"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Read History's logs over the window for shards closed on lost ownership, and check the network between History hosts: hosts that cannot reach each other can each believe they own the same shards."
+claims = ["behaviour.shard-ownership-moves"]
+
+[[conclusion]]
+id = "ownership-errors"
+title = "Requests failing on moving shards"
+statement = "Requests failed because the History host they reached no longer owned the Workflow's shard: the Frontend failed them with ShardOwnershipLost, up to {ownership_errors.max}, and returned them to clients as Unavailable."
+when = { hypothesis = "ownership-errors", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Check History's membership changes over the window to see what moved the shards."
+claims = ["behaviour.shard-ownership-moves"]

@@ -1,0 +1,77 @@
+# Branch: a Signal-heavy import job near the namespace rate limit. Signals are
+# admitted at a higher priority than polls and reserve the capacity polls
+# need, so the Frontend rejects Workflow Task polls with RpsLimit. Workers
+# back off while their slots sit free.
+
+[fixture]
+id = "poll-throttling"
+title = "Polls throttled: schedule-to-start ~12 s with slots free"
+description = "Branch fixture: Worker capacity is ruled out, pollers are neither saturated nor idle, and poll rejections establish throttling."
+investigation = "inv-branch-poll-throttling"
+
+[open]
+at = 2026-09-30T21:22:00Z
+description = "From 21:00 UTC workflow task schedule-to-start on import-workers is around 12 seconds. A signal-heavy import job is running."
+server_version = "1.31.0"
+sdks = [{ language = "typescript", version = "1.13.0" }]
+namespaces = ["imports"]
+task_queues = ["import-workers"]
+window_start = 2026-09-30T21:00:00Z
+window_end = 2026-09-30T21:20:00Z
+
+[open.expect]
+next_request = "workflow-worker-slots"
+
+[[step]]
+at = 2026-09-30T21:24:00Z
+answers = "workflow-worker-slots"
+file = "evidence/e1-worker-slots.json"
+query = 'sum by (task_queue) (temporal_worker_task_slots_available{worker_type="WorkflowWorker", namespace="imports", task_queue="import-workers"})'
+
+[step.expect]
+next_request = "workflow-pollers"
+
+[step.expect.states]
+worker-slot-exhaustion = "eliminated"
+
+[[step]]
+at = 2026-09-30T21:27:00Z
+answers = "workflow-pollers"
+file = "evidence/e2-pollers.csv"
+channel = "upload"
+query = 'sum(temporal_num_pollers{poller_type="workflow_task"}) and sum(rate(temporal_workflow_task_queue_poll_succeed[1m]))'
+
+[step.expect]
+next_request = "poll-failures"
+
+[step.expect.states]
+pollers-absent = "eliminated"
+poller-starvation = "candidate"
+
+[[step]]
+at = 2026-09-30T21:29:00Z
+answers = "poll-failures"
+file = "evidence/e3-poll-failures.json"
+query = 'sum by (status_code) (rate(temporal_long_request_failure{operation="PollWorkflowTaskQueue", namespace="imports"}[1m]))'
+
+[step.expect]
+next_request = "poll-rejections"
+findings = ["F-poll-failures"]
+
+[step.expect.states]
+poll-throttling = "supported"
+
+[[step]]
+at = 2026-09-30T21:33:00Z
+answers = "poll-rejections"
+file = "evidence/e4-frontend-rejections.json"
+query = 'sum by (resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name="frontend", operation="PollWorkflowTaskQueue", namespace="imports"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-poll-rejections"]
+conclusion = "poll-throttling"
+concluded = true
+
+[step.expect.states]
+poll-throttling = "established"

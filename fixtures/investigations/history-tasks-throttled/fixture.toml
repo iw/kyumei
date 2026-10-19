@@ -1,0 +1,98 @@
+# Branch fixture for History task processing lag: persistence limits.
+#
+# History was scaled from 6 hosts to 3 at 14:00 UTC to save cost. Each host
+# now serves twice the shards, and its persistence limit refuses calls. Task
+# attempts fail fast with ResourceExhausted (PersistenceLimit) and back off
+# for seconds; the queues fill while they wait and the readers fall behind.
+#
+# The investigation must find the delay in loading, rule out the scheduler
+# and slow attempts, and find the persistence limit refusing tasks.
+
+[fixture]
+id = "history-tasks-throttled"
+title = "History halved: persistence limits refuse tasks, timers and Activities late"
+description = "Branch fixture for History task processing lag. Attempts fail fast against persistence limits and back off."
+investigation = "inv-branch-history-tasks-throttled"
+
+[open]
+at = 2026-10-14T14:30:00Z
+description = "Since 14:00 UTC, timers fire late and activities are scheduled late in namespace fulfilment, by 15 to 30 seconds. We scaled History from 6 to 3 hosts at 14:00."
+server_version = "1.31.0"
+namespaces = ["fulfilment"]
+window_start = 2026-10-14T14:00:00Z
+window_end = 2026-10-14T14:40:00Z
+
+[open.expect]
+next_request = "task-load-latency"
+conclusion = "none"
+concluded = false
+
+# E1 — Load latency by task type.
+[[step]]
+at = 2026-10-14T14:34:00Z
+answers = "task-load-latency"
+file = "evidence/e1-load-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_load_bucket{namespace="fulfilment"}[1m])))'
+
+[step.expect]
+next_request = "task-schedule-latency"
+findings = ["F-load-delayed"]
+bound_signals = ["task_load_latency"]
+conclusion = "tasks-late"
+concluded = false
+
+# E2 — Scheduler wait by task type.
+[[step]]
+at = 2026-10-14T14:36:00Z
+answers = "task-schedule-latency"
+file = "evidence/e2-schedule-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_schedule_bucket{namespace="fulfilment"}[1m])))'
+
+[step.expect]
+next_request = "task-processing-latency"
+findings = ["F-schedule-prompt"]
+bound_signals = ["task_schedule_latency"]
+conclusion = "tasks-late"
+concluded = false
+
+# E3 — Attempt latency by task type.
+[[step]]
+at = 2026-10-14T14:38:00Z
+answers = "task-processing-latency"
+file = "evidence/e3-processing-latency.json"
+channel = "paste"
+query = 'histogram_quantile(0.99, sum by (le, task_type) (rate(task_latency_processing_bucket{namespace="fulfilment"}[1m])))'
+
+[step.expect]
+next_request = "task-errors"
+findings = ["F-attempts-fast"]
+bound_signals = ["task_processing_latency"]
+conclusion = "load-lag"
+concluded = false
+
+[step.expect.states]
+load-lag = "established"
+scheduler-backlog = "eliminated"
+slow-processing = "eliminated"
+
+# E4 — Failed attempts by cause (a Grafana CSV export with both queries).
+[[step]]
+at = 2026-10-14T14:41:00Z
+answers = "task-errors"
+file = "evidence/e4-task-errors.csv"
+channel = "upload"
+query = 'sum by (resource_exhausted_cause) (rate(task_errors_throttled{namespace="fulfilment"}[1m])) and sum(rate(task_errors{namespace="fulfilment"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-persistence-refusing", "F-no-busy-workflows", "F-no-errors"]
+bound_signals = ["persistence_throttled_retries", "busy_workflow_retries", "task_error_rate"]
+conclusion = "persistence-throttled"
+concluded = true
+
+[step.expect.states]
+persistence-throttled = "established"
+busy-workflow = "eliminated"
+task-errors = "eliminated"

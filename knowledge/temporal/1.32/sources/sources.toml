@@ -1,0 +1,277 @@
+# Provenance sources. Paths in claims are relative to these roots.
+
+[[source]]
+id = "temporal-server-v1.32.1"
+kind = "repository"
+title = "Temporal Server 1.32.1"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.32.1"
+commit = "af08a5e5f2dd40f545f2afac7780daaa6987001e"
+retrieved = 2026-10-15
+note = "Source inspected at tag v1.32.1, extracted from a clone of the repository whose tag matches upstream."
+
+[[source]]
+id = "temporal-server-v1.32.0"
+kind = "repository"
+title = "Temporal Server 1.32.0"
+repository = "https://github.com/temporalio/temporal"
+revision = "v1.32.0"
+commit = "d94e34a1ebba5410a2e7d07119a76896909591aa"
+retrieved = 2026-10-15
+note = "Source inspected at tag v1.32.0, extracted from a clone of the repository whose tag matches upstream."
+
+[[source]]
+id = "temporal-api-go-v1.63.5"
+kind = "repository"
+title = "Temporal API (Go bindings), as pinned by Temporal Server 1.32.0 and 1.32.1 go.mod"
+repository = "https://github.com/temporalio/api-go"
+revision = "v1.63.5"
+checksum = "h1:c11+kPYHkXXL3UiShPdbMD+xtvqGsbTibUA9ypmiCa4="
+retrieved = 2026-10-15
+note = "go.temporal.io/api v1.63.5 is the version Temporal Server v1.32.0 and v1.32.1 pin (go.mod line 69); inspected from the Go module cache."
+
+[[source]]
+id = "tally-v4.1.17"
+kind = "repository"
+title = "uber-go/tally, as pinned by Temporal Server 1.32.0 and 1.32.1 go.mod"
+repository = "https://github.com/uber-go/tally"
+revision = "v4.1.17"
+checksum = "h1:C+U4BKtVDXTszuzU+WH8JVQvRVnaVKxzZrROFyDrvS8="
+retrieved = 2026-10-03
+note = "github.com/uber-go/tally/v4 v4.1.17 is the version Temporal Server v1.32.0 and v1.32.1 pin (go.mod line 55); its Prometheus reporter was inspected from the Go module cache. Paths are relative to the module root."
+
+[[source]]
+id = "otel-exporter-prometheus-v0.56.0"
+kind = "repository"
+title = "OpenTelemetry Go Prometheus exporter, as pinned by Temporal Server 1.32.0 and 1.32.1 go.mod"
+repository = "https://github.com/open-telemetry/opentelemetry-go"
+revision = "exporters/prometheus/v0.56.0"
+checksum = "h1:GnCIi0QyG0yy2MrJLzVrIM7laaJstj//flf1zEJCG+E="
+retrieved = 2026-10-03
+note = "go.opentelemetry.io/otel/exporters/prometheus v0.56.0 is the version Temporal Server v1.32.0 and v1.32.1 pin (go.mod line 63); inspected from the Go module cache. Paths are relative to the module root (exporters/prometheus in the repository)."
+
+[[source]]
+id = "sdk-core-acac9e3f"
+kind = "repository"
+title = "Temporal Rust SDK and Core (shared by the TypeScript, Python, .NET, Ruby and Rust SDKs)"
+repository = "https://github.com/tokeira/sdk-rust"
+revision = "v0.7.0-67-gacac9e3f"
+commit = "acac9e3f98c64eda54805f65779ddf2b313c8cb2"
+retrieved = 2026-09-30
+note = "A fork of the Temporal Rust SDK repository (sdk-core crate version 0.9.0). Metric names and label values were cross-checked against the sdk-core bundled with the Python SDK 1.25.0. The Core version inside a given released SDK may differ."
+
+[[source]]
+id = "sdk-python-1.25.0"
+kind = "repository"
+title = "Temporal Python SDK"
+repository = "https://github.com/temporalio/sdk-python"
+revision = "1.25.0"
+commit = "79a140b0ec4cad90c0579bf38b7d0382dcb39ca5"
+retrieved = 2026-09-30
+
+[[source]]
+id = "sdk-go-v1.44.0"
+kind = "repository"
+title = "Temporal Go SDK"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "v1.44.0"
+checksum = "h1:suitPDukX74rW3/N1FqvEbZTZVJJsxMKhv0KMa/j7pU="
+retrieved = 2026-09-30
+note = "Temporal Server v1.32.0 and v1.32.1 pin this version (go.mod line 71)."
+
+[[source]]
+id = "kyumei-heuristics"
+kind = "authored"
+title = "Kyumei diagnostic heuristics"
+retrieved = 2026-09-30
+note = "Thresholds and interpretations chosen by Kyumei's authors. They are judgements, not statements about Temporal."
+
+[[source]]
+id = "sdk-java-v1.40.0"
+kind = "repository"
+title = "Temporal Java SDK"
+repository = "https://github.com/temporalio/sdk-java"
+revision = "v1.40.0"
+commit = "7c04e2fd96e88265075172593da2e235c092d445"
+retrieved = 2026-10-03
+note = "Released 29 September 2026. Metric names are in temporal-sdk/.../worker/MetricsType.java and temporal-serviceclient/.../serviceclient/MetricsType.java."
+
+[[source]]
+id = "sdk-go-contrib-tally-v0.2.0"
+kind = "repository"
+title = "Temporal Go SDK tally metrics handler (go.temporal.io/sdk/contrib/tally)"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "contrib/tally/v0.2.0"
+commit = "74a1b731526f3908d073bf4d9349a79859786238"
+retrieved = 2026-10-03
+note = "Inspected from the Go module cache. Paths are relative to the module root (contrib/tally in the repository)."
+
+[[source]]
+id = "sdk-go-contrib-opentelemetry-v0.8.0"
+kind = "repository"
+title = "Temporal Go SDK OpenTelemetry metrics handler (go.temporal.io/sdk/contrib/opentelemetry)"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "contrib/opentelemetry/v0.8.0"
+commit = "06212cb93bcbe9c2929ea8c147b3bf441cad6172"
+retrieved = 2026-10-03
+note = "The newest release that works with Go SDK v1.44.0: v0.8.1 requires v1.46.0. v0.7.0 has no UseMonotonicCounters and records counters and timers the same way otherwise. Paths are relative to the module root (contrib/opentelemetry in the repository)."
+
+[[source]]
+id = "micrometer-v1.9.9"
+kind = "repository"
+title = "Micrometer, the version the Java SDK v1.40.0 builds against"
+repository = "https://github.com/micrometer-metrics/micrometer"
+revision = "v1.9.9"
+commit = "b4778de29270862f8b001e24d79640e40f707bec"
+retrieved = 2026-10-03
+note = "sdk-java v1.40.0 build.gradle sets micrometerVersion to 1.9.9, and to 1.13.6 for its edge-dependency tests. Applications choose their own registry version."
+
+[[source]]
+id = "micrometer-v1.13.6"
+kind = "repository"
+title = "Micrometer, the version the Java SDK v1.40.0 edge-dependency tests use"
+repository = "https://github.com/micrometer-metrics/micrometer"
+revision = "v1.13.6"
+commit = "6f7656307fce5fc392101d0984751fa4eba3a88c"
+retrieved = 2026-10-03
+note = "From 1.13 Micrometer's Prometheus registry is built on the Prometheus Java client 1.x."
+
+[[source]]
+id = "prometheus-client-java-v1.2.1"
+kind = "repository"
+title = "Prometheus Java client, the version Micrometer 1.13.6 pins"
+repository = "https://github.com/prometheus/client_java"
+revision = "v1.2.1"
+commit = "776bbc003bf918f6087b53f1ead86267335c18c6"
+retrieved = 2026-10-03
+
+[[source]]
+id = "go-1.26.8"
+kind = "repository"
+title = "Go standard library, the version Temporal Server 1.32.0 and 1.32.1 require"
+repository = "https://go.googlesource.com/go"
+revision = "go1.26.8"
+checksum = "h1:dFjGhY6f8DTsY8/rLchUTDRRfjJP4pCrGCwxvHFT2Fg="
+retrieved = 2026-10-15
+note = "Temporal Server v1.32.0 and v1.32.1's go.mod say `go 1.26.8`. Inspected from the golang.org/toolchain module v0.0.1-go1.26.8.darwin-arm64 in the Go module cache; the checksum is that module's."
+
+[[source]]
+id = "temporal-server-operations-5a71c36"
+kind = "repository"
+title = "Temporal server operations: playbooks, alert runbooks and Grafana dashboards for self-hosted Temporal"
+repository = "https://github.com/tsurdilo/temporal-server-operations"
+revision = "main"
+commit = "5a71c3656cc0bca831b61142b64c3672cc974b1b"
+committed = 2026-10-09
+retrieved = 2026-10-14
+note = "The repository has no licence, so Kyumei cites it and links to it at this commit, and reads an operator's own copy of its dashboards; it bundles none of its text or dashboards. Its runbooks still link to its earlier name, tsurdilo/temporal-metrics."
+
+[[source]]
+id = "temporal-cli-v1.7.0"
+kind = "repository"
+title = "Temporal CLI 1.7.0"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.0"
+commit = "62fa8939b953445ccfcca9c896b7296279b6cd7a"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.0, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.7.1"
+kind = "repository"
+title = "Temporal CLI 1.7.1"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.1"
+commit = "d39840756b7304ddef086a6ceef4068472907889"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.0, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.7.2"
+kind = "repository"
+title = "Temporal CLI 1.7.2"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.2"
+commit = "b89f8f8df0ffb5fb1820d801c15f7aec3768e513"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.1, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.7.3"
+kind = "repository"
+title = "Temporal CLI 1.7.3"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.7.3"
+commit = "1d8f321f3fccdca740d359a8ae5704b5bb35ff01"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.0"
+kind = "repository"
+title = "Temporal CLI 1.8.0"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.0"
+commit = "64f5072ebda191c93aa85990c89324aebbe9f651"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.1"
+kind = "repository"
+title = "Temporal CLI 1.8.1"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.1"
+commit = "d904a0d53bff2090274d494f3c201d9006b7237c"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.2"
+kind = "repository"
+title = "Temporal CLI 1.8.2"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.2"
+commit = "c579925f193fe2f0bf5134008125aea0c858ca95"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.8 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.8.3"
+kind = "repository"
+title = "Temporal CLI 1.8.3"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.8.3"
+commit = "1ff10b1012b44ba8bc953fcaa8ce5d296bf169d0"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.31.2, which its dev server runs, the Go SDK 1.41.1 and go.temporal.io/api 1.62.9 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.9.0"
+kind = "repository"
+title = "Temporal CLI 1.9.0"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.9.0"
+commit = "2ecba7d58c1a2a648791e34af0b80e5331f3dab3"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.32.0, which its dev server runs, the Go SDK 1.47.0 and go.temporal.io/api 1.63.5 (go.mod)."
+
+[[source]]
+id = "temporal-cli-v1.9.1"
+kind = "repository"
+title = "Temporal CLI 1.9.1"
+repository = "https://github.com/temporalio/cli"
+revision = "v1.9.1"
+commit = "1de87a9f26991bf4f5c0a5ff96f2cea8d7a3cbde"
+retrieved = 2026-10-19
+note = "Built with Temporal Server 1.32.0, which its dev server runs, the Go SDK 1.47.0 and go.temporal.io/api 1.63.5 (go.mod)."
+
+[[source]]
+id = "sdk-go-v1.41.1"
+kind = "repository"
+title = "Temporal Go SDK 1.41.1, the version Temporal CLI 1.7.0 to 1.8.3 build with"
+repository = "https://github.com/temporalio/sdk-go"
+revision = "v1.41.1"
+checksum = "h1:yOpvsHyDD1lNuwlGBv/SUodCPhjv9nDeC9lLHW/fJUA="
+retrieved = 2026-10-19
+note = "Inspected from the Go module cache; the checksum is the one the CLI's go.sum records."

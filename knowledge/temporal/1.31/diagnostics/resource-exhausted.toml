@@ -1,0 +1,407 @@
+# Diagnostic: requests rejected with ResourceExhausted.
+#
+# The Frontend counts every ResourceExhausted it returns, tagged with the
+# error's cause and scope, so one breakdown says which limit rejected the
+# requests: the Frontend's namespace or host rate limit, its cap on
+# long-running requests, or a persistence limit behind it. The load stage
+# then asks whether callers' requests surged or the limit was reached at
+# normal load.
+
+[diagnostic]
+id = "resource-exhausted"
+title = "Requests rejected with ResourceExhausted"
+summary = "Clients receive ResourceExhausted errors: a server limit is rejecting requests."
+# After the latency diagnostics, whose symptoms are more specific: a
+# description of slow tasks that mentions throttling belongs to them.
+precedence = 30
+
+[diagnostic.path]
+description = "The path of a client request: through the Frontend's limits, to History and the persistence limits behind it."
+layers = ["clients", "frontend", "history", "persistence"]
+labels = { clients = "Callers" }
+
+[[symptom]]
+id = "resource-exhausted-errors"
+title = "Requests are rejected with ResourceExhausted"
+patterns = [
+  "resource[_ ]?exhausted",
+  "\\brate[- ]?limit(ed|ing| exceeded)\\b",
+  "\\bthrottl(ed|ing)\\b",
+  "too many requests",
+]
+signal = "client_rejections"
+
+# ------------------------------------------------------------------ stages
+
+[[stage]]
+id = "rejections"
+order = 1
+title = "Rejections by cause"
+question = "Which limit rejects the requests?"
+
+[[stage]]
+id = "load"
+order = 2
+title = "Request load"
+question = "Did callers' requests surge?"
+
+# ----------------------------------------------------------------- signals
+
+[[signal]]
+id = "client_rejections"
+title = "ResourceExhausted errors seen by clients"
+unit = "per_second"
+description = "Requests that failed with RESOURCE_EXHAUSTED, as seen by SDK clients."
+combine = "sum"
+source = [{ claim = "sdk.request_failure", labels = { status_code = "RESOURCE_EXHAUSTED" }, transform = "rate" }]
+
+[[signal]]
+id = "namespace_rps_rejections"
+title = "Rejected by the namespace rate limit"
+unit = "per_second"
+description = "Requests the Frontend rejected with cause RpsLimit and scope Namespace."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { service_name = "frontend", resource_exhausted_cause = "RpsLimit", resource_exhausted_scope = "Namespace" }, transform = "rate" }]
+
+[[signal]]
+id = "host_rps_rejections"
+title = "Rejected by the Frontend host rate limit"
+unit = "per_second"
+description = "Requests the Frontend rejected with cause RpsLimit and scope System."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { service_name = "frontend", resource_exhausted_cause = "RpsLimit", resource_exhausted_scope = "System" }, transform = "rate" }]
+
+[[signal]]
+id = "concurrency_rejections"
+title = "Rejected by the long-running request cap"
+unit = "per_second"
+description = "Requests the Frontend rejected with cause ConcurrentLimit."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { service_name = "frontend", resource_exhausted_cause = "ConcurrentLimit" }, transform = "rate" }]
+
+[[signal]]
+id = "persistence_namespace_rejections"
+title = "Rejected by a namespace or shard persistence limit"
+unit = "per_second"
+description = "Requests the Frontend returned with cause PersistenceLimit and scope Namespace."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { service_name = "frontend", resource_exhausted_cause = "PersistenceLimit", resource_exhausted_scope = "Namespace" }, transform = "rate" }]
+
+[[signal]]
+id = "persistence_host_rejections"
+title = "Rejected by a host persistence limit"
+unit = "per_second"
+description = "Requests the Frontend returned with cause PersistenceLimit and scope System."
+combine = "sum"
+source = [{ claim = "server.service_errors_resource_exhausted", labels = { service_name = "frontend", resource_exhausted_cause = "PersistenceLimit", resource_exhausted_scope = "System" }, transform = "rate" }]
+
+[[signal]]
+id = "frontend_request_rate"
+title = "Requests to the Frontend"
+unit = "per_second"
+description = "The namespace's requests per second received by the Frontend, rejected ones included."
+combine = "sum"
+source = [{ claim = "server.service_requests", labels = { service_name = "frontend" }, transform = "rate" }]
+
+# -------------------------------------------------------------- hypotheses
+
+[[hypothesis]]
+id = "namespace-rate-limit"
+stage = "rejections"
+primary = true
+layer = "frontend"
+title = "Namespace rate limit reached"
+question = "Namespace limit rejecting?"
+statement = "The namespace's requests exceed the Frontend's namespace rate limit (frontend.namespaceRPS per host, or frontend.globalNamespaceRPS shared among the hosts), so the Frontend rejects the excess."
+implication = "Pace the callers, or raise the namespace's limit if the load is expected."
+
+[[hypothesis]]
+id = "host-rate-limit"
+stage = "rejections"
+layer = "frontend"
+title = "Frontend host rate limit reached"
+question = "Host limit rejecting?"
+statement = "The Frontend hosts' limit on all requests, from every namespace (frontend.rps), is exhausted, so the Frontend rejects requests whatever their namespace's own limit."
+
+[[hypothesis]]
+id = "concurrency-limit"
+stage = "rejections"
+layer = "frontend"
+title = "Long-running request cap reached"
+question = "Too many polls in flight?"
+statement = "The namespace has more long-running requests, such as Task polls, in flight to one API on a Frontend host than frontend.namespaceCount allows."
+
+[[hypothesis]]
+id = "persistence-namespace-limit"
+stage = "rejections"
+layer = "persistence"
+title = "Namespace or shard persistence limit reached"
+question = "Namespace persistence limit refusing?"
+statement = "A persistence limit for the namespace, on a host or on one History shard, refuses its persistence calls, and the requests that needed them fail with ResourceExhausted."
+
+[[hypothesis]]
+id = "persistence-host-limit"
+stage = "rejections"
+layer = "persistence"
+title = "Host persistence limit reached"
+question = "Host persistence limit refusing?"
+statement = "A server host's limit on all its persistence calls (history.persistenceMaxQPS on History) refuses calls, and the requests that needed them fail with ResourceExhausted."
+
+[[hypothesis]]
+id = "request-surge"
+stage = "load"
+primary = true
+layer = "clients"
+title = "Callers' requests surged"
+question = "Request surge?"
+statement = "Callers sent the namespace far more requests than before the incident, enough to reach a limit sized for normal load."
+
+# ---------------------------------------------------------------- requests
+# Collection bodies may use {namespace}, {task_queue}, {start}, {end}, {step}.
+
+[[request]]
+id = "rejections-by-cause"
+stage = "rejections"
+title = "ResourceExhausted errors by cause and scope"
+why = "The Frontend tags every ResourceExhausted it returns with the error's cause and scope. One breakdown shows which limit rejected the requests, and causes missing from it did not occur."
+signals = ["namespace_rps_rejections", "host_rps_rejections", "concurrency_rejections", "persistence_namespace_rejections", "persistence_host_rejections"]
+distinguishes = ["namespace-rate-limit", "host-rate-limit", "concurrency-limit", "persistence-namespace-limit", "persistence-host-limit"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["resource_exhausted_cause", "resource_exhausted_scope"]
+
+[[request.collect]]
+method = "promql"
+label = "Requests rejected with ResourceExhausted per second, by cause and scope"
+body = "sum by (resource_exhausted_cause, resource_exhausted_scope) (rate(service_errors_resource_exhausted{service_name=\"frontend\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(service_requests{service_name="frontend", namespace="{namespace}"}[1m]))', because = "server.request-errors-counted-on-error" }
+unit = "per_second"
+claims = ["server.service_errors_resource_exhausted", "behaviour.resource-exhausted-accounting", "behaviour.persistence-throttle-metrics", "server.request-errors-counted-on-error"]
+note = "keep the breakdown by both labels: a cause with no series did not occur, and Kyumei reads it as zero"
+
+[[request]]
+id = "frontend-requests"
+stage = "load"
+title = "Requests to the Frontend, before and during the incident"
+why = "A limit sized for normal load is reached either because callers sent far more requests or because normal load grew into it. The namespace's request rate before and during the incident tells them apart, and its breakdown by operation shows which calls rose."
+signals = ["frontend_request_rate"]
+distinguishes = ["request-surge"]
+cost = 1
+requires = ["server-metrics"]
+group_by = ["operation"]
+window = { pad_before_minutes = 30, pad_after_minutes = 5 }
+
+[[request.collect]]
+method = "promql"
+label = "The namespace's requests to the Frontend per second, by operation (include at least 15 minutes before the incident)"
+body = "sum by (operation) (rate(service_requests{service_name=\"frontend\", namespace=\"{namespace}\"}[1m]))"
+unit = "per_second"
+claims = ["server.service_requests", "server.metrics-framework", "behaviour.frontend-limiter-order"]
+note = "with the OpenTelemetry metrics framework the counter is named service_requests_total"
+
+# ------------------------------------------------------------------- rules
+
+[[rule]]
+id = "namespace-limit-rejecting"
+hypothesis = "namespace-rate-limit"
+effect = "establishes"
+statement = "The Frontend rejected the namespace's requests at its namespace rate limit: {namespace_rps_rejections.mean} on average, peaking at {namespace_rps_rejections.max}."
+claims = ["heuristic.rejections-significant", "limit.frontend-namespace-rps"]
+when = { signal = "namespace_rps_rejections", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-namespace-limit-rejections"
+hypothesis = "namespace-rate-limit"
+effect = "eliminates"
+statement = "The namespace rate limit rejected nothing during the window (at most {namespace_rps_rejections.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "namespace_rps_rejections", stat = "max", op = "le", value = 0.01 },
+  { signal = "namespace_rps_rejections", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "host-limit-rejecting"
+hypothesis = "host-rate-limit"
+effect = "establishes"
+statement = "The Frontend rejected the namespace's requests at its host rate limit: {host_rps_rejections.mean} on average, peaking at {host_rps_rejections.max}."
+claims = ["heuristic.rejections-significant", "limit.frontend-host-rps"]
+when = { signal = "host_rps_rejections", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-host-limit-rejections"
+hypothesis = "host-rate-limit"
+effect = "eliminates"
+statement = "The Frontend host rate limit rejected none of the namespace's requests during the window (at most {host_rps_rejections.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "host_rps_rejections", stat = "max", op = "le", value = 0.01 },
+  { signal = "host_rps_rejections", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "concurrency-limit-rejecting"
+hypothesis = "concurrency-limit"
+effect = "establishes"
+statement = "The Frontend rejected the namespace's long-running requests at its cap on requests in flight: {concurrency_rejections.mean} on average, peaking at {concurrency_rejections.max}."
+claims = ["heuristic.rejections-significant", "limit.frontend-concurrent-long-running"]
+when = { signal = "concurrency_rejections", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-concurrency-limit-rejections"
+hypothesis = "concurrency-limit"
+effect = "eliminates"
+statement = "The cap on long-running requests rejected nothing during the window (at most {concurrency_rejections.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "concurrency_rejections", stat = "max", op = "le", value = 0.01 },
+  { signal = "concurrency_rejections", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "persistence-namespace-limit-refusing"
+hypothesis = "persistence-namespace-limit"
+effect = "establishes"
+statement = "Requests failed because a namespace or shard persistence limit refused their persistence calls: {persistence_namespace_rejections.mean} on average, peaking at {persistence_namespace_rejections.max}."
+claims = ["heuristic.rejections-significant", "limit.persistence-namespace-qps", "behaviour.persistence-limit-order"]
+when = { signal = "persistence_namespace_rejections", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-persistence-namespace-refusals"
+hypothesis = "persistence-namespace-limit"
+effect = "eliminates"
+statement = "No request failed on a namespace or shard persistence limit during the window (at most {persistence_namespace_rejections.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "persistence_namespace_rejections", stat = "max", op = "le", value = 0.01 },
+  { signal = "persistence_namespace_rejections", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "persistence-host-limit-refusing"
+hypothesis = "persistence-host-limit"
+effect = "establishes"
+statement = "Requests failed because a host persistence limit refused their persistence calls: {persistence_host_rejections.mean} on average, peaking at {persistence_host_rejections.max}."
+claims = ["heuristic.rejections-significant", "limit.persistence-host-qps", "behaviour.persistence-limit-order"]
+when = { signal = "persistence_host_rejections", stat = "mean", op = "gt", value = 0.1 }
+
+[[rule]]
+id = "no-persistence-host-refusals"
+hypothesis = "persistence-host-limit"
+effect = "eliminates"
+statement = "No request failed on a host persistence limit during the window (at most {persistence_host_rejections.max})."
+claims = ["heuristic.sustained-needs-samples", "heuristic.rejections-significant"]
+when = { all = [
+  { signal = "persistence_host_rejections", stat = "max", op = "le", value = 0.01 },
+  { signal = "persistence_host_rejections", stat = "samples", op = "ge", value = 3 },
+] }
+
+[[rule]]
+id = "requests-surged"
+hypothesis = "request-surge"
+effect = "establishes"
+statement = "The namespace's requests surged: from about {frontend_request_rate.baseline} before the incident to {frontend_request_rate.max}."
+claims = ["heuristic.request-surge"]
+when = { ratio = { numerator = "frontend_request_rate.max", denominator = "frontend_request_rate.baseline" }, op = "ge", value = 3 }
+
+[[rule]]
+id = "no-request-surge"
+hypothesis = "request-surge"
+effect = "eliminates"
+statement = "The namespace's requests did not surge: they peaked at {frontend_request_rate.max} against about {frontend_request_rate.baseline} before the incident."
+claims = ["heuristic.sustained-needs-samples", "heuristic.request-surge"]
+when = { all = [
+  { ratio = { numerator = "frontend_request_rate.max", denominator = "frontend_request_rate.baseline" }, op = "lt", value = 1.5 },
+  { signal = "frontend_request_rate", stat = "samples", op = "ge", value = 3 },
+] }
+
+# ------------------------------------------------------------- conclusions
+# The first conclusion whose condition holds is the diagnosis.
+
+[[conclusion]]
+id = "namespace-limit-under-surge"
+title = "Namespace rate limit reached under a request surge"
+statement = "Requests were rejected with ResourceExhausted because the namespace's requests to the Frontend rose from about {frontend_request_rate.baseline} to {frontend_request_rate.max}, past its namespace rate limit. The Frontend rejected {namespace_rps_rejections.mean} on average, peaking at {namespace_rps_rejections.max}."
+when = { all = [
+  { hypothesis = "namespace-rate-limit", state = ["established"] },
+  { hypothesis = "request-surge", state = ["established"] },
+] }
+
+[[conclusion.recommendation]]
+text = "Find the operations that rose in the breakdown by operation and pace their callers, for example by spreading a batch job's Starts or Signals over time."
+claims = ["heuristic.request-surge", "server.service_requests"]
+
+[[conclusion.recommendation]]
+text = "If the load is expected, raise the namespace's limit: frontend.namespaceRPS per Frontend host (2,400/s by default), or frontend.globalNamespaceRPS for a cluster-wide limit divided among the Frontend hosts."
+caution = "Each host enforces its own share, so load spread unevenly across Frontend hosts is throttled on the busiest host first. A higher limit passes more load to History and persistence; check their headroom first."
+claims = ["limit.frontend-namespace-rps", "dc.frontend.namespaceRPS", "dc.frontend.globalNamespaceRPS"]
+
+[[conclusion.recommendation]]
+text = "Expect Workers to be slowed too: Task polls share the namespace limit at a lower priority than Starts and Signals, so a surge of those takes the capacity polls depend on."
+claims = ["behaviour.frontend-priorities"]
+
+[[conclusion]]
+id = "namespace-limit"
+title = "Namespace rate limit reached"
+statement = "Requests were rejected with ResourceExhausted because the namespace's requests exceeded the Frontend's namespace rate limit: {namespace_rps_rejections.mean} rejected on average, peaking at {namespace_rps_rejections.max}."
+when = { hypothesis = "namespace-rate-limit", state = ["established"] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "frontend_request_rate.max", denominator = "frontend_request_rate.baseline" }, op = "lt", value = 1.5 }
+text = "The request rate stayed near normal (at most {frontend_request_rate.max}, against about {frontend_request_rate.baseline} before), so the limit is too low for the namespace's usual load."
+
+[[conclusion.recommendation]]
+text = "Raise the namespace's limit, frontend.namespaceRPS per Frontend host or frontend.globalNamespaceRPS across hosts, or reduce what the namespace's callers send."
+caution = "A higher limit passes more load to History and persistence; check their headroom first."
+claims = ["limit.frontend-namespace-rps", "dc.frontend.namespaceRPS", "dc.frontend.globalNamespaceRPS"]
+
+[[conclusion]]
+id = "host-limit"
+title = "Frontend host rate limit reached"
+statement = "Requests were rejected with ResourceExhausted because the Frontend hosts' limit on all requests was exhausted: {host_rps_rejections.mean} of this namespace's requests rejected on average, peaking at {host_rps_rejections.max}. Other namespaces' requests count against the same limit."
+when = { hypothesis = "host-rate-limit", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Find which namespaces' requests filled the hosts, then add Frontend hosts or raise frontend.rps (or frontend.globalRPS across hosts) if the load is expected."
+caution = "A higher limit passes more load to History and persistence; check their headroom first."
+claims = ["limit.frontend-host-rps", "dc.frontend.rps", "dc.frontend.globalRPS"]
+
+[[conclusion]]
+id = "concurrency-limit"
+title = "Long-running request cap reached"
+statement = "Requests were rejected with ResourceExhausted because the namespace had more long-running requests, such as Task polls, in flight on a Frontend host than its cap allows: {concurrency_rejections.mean} rejected on average."
+when = { hypothesis = "concurrency-limit", state = ["established"] }
+
+[[conclusion.recommendation]]
+text = "Count the namespace's pollers: each Worker keeps several polls in flight per Task Queue. Reduce pollers per Worker, or raise frontend.namespaceCount (or frontend.globalNamespaceCount across hosts)."
+claims = ["limit.frontend-concurrent-long-running", "dc.frontend.namespaceCount", "dc.frontend.globalNamespaceCount", "server.service_pending_requests"]
+
+[[conclusion]]
+id = "persistence-namespace-limit"
+title = "Namespace persistence limit reached"
+statement = "Requests were rejected with ResourceExhausted because a persistence limit for the namespace, on a host or on one History shard, refused their persistence calls: {persistence_namespace_rejections.mean} on average, peaking at {persistence_namespace_rejections.max}."
+when = { hypothesis = "persistence-namespace-limit", state = ["established"] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "frontend_request_rate.max", denominator = "frontend_request_rate.baseline" }, op = "ge", value = 3 }
+text = "The namespace's requests rose from about {frontend_request_rate.baseline} to {frontend_request_rate.max}."
+
+[[conclusion.recommendation]]
+text = "Check the namespace and shard persistence limits: history.persistenceNamespaceMaxQPS, history.persistenceGlobalNamespaceMaxQPS and history.persistencePerShardNamespaceMaxQPS. A per-shard refusal points at one hot Workflow or a few hot Workflows on one shard."
+caution = "These limits protect the database from one namespace; raise them only if the database has headroom."
+claims = ["limit.persistence-namespace-qps", "behaviour.persistence-limit-order", "dc.history.persistenceNamespaceMaxQPS", "dc.history.persistenceGlobalNamespaceMaxQPS", "dc.history.persistencePerShardNamespaceMaxQPS"]
+
+[[conclusion]]
+id = "persistence-host-limit"
+title = "Host persistence limit reached"
+statement = "Requests were rejected with ResourceExhausted because a server host's limit on its persistence calls refused them: {persistence_host_rejections.mean} on average, peaking at {persistence_host_rejections.max}."
+when = { hypothesis = "persistence-host-limit", state = ["established"] }
+
+[[conclusion.clause]]
+when = { ratio = { numerator = "frontend_request_rate.max", denominator = "frontend_request_rate.baseline" }, op = "lt", value = 1.5 }
+text = "The namespace's requests stayed near normal (at most {frontend_request_rate.max}, against about {frontend_request_rate.baseline} before): the hosts' persistence calls reached the limit without a surge from this namespace."
+
+[[conclusion.recommendation]]
+text = "Find which service refused, from persistence_errors_resource_exhausted by service_name, and whether its hosts changed: History's limit is per host (history.persistenceMaxQPS, 9,000/s by default), so fewer History hosts each carry more shards and more calls. Restore the hosts, or raise the limit or set history.persistenceGlobalMaxQPS."
+caution = "Raise a persistence limit only if the database has headroom: the limit is what protects it."
+claims = ["limit.persistence-host-qps", "server.persistence_errors_resource_exhausted", "dc.history.persistenceMaxQPS", "dc.history.persistenceGlobalMaxQPS"]
