@@ -95,7 +95,7 @@ labels = [
   { name = "operation", purpose = "RPC method name, e.g. PollWorkflowTaskQueue." },
   { name = "status_code", purpose = "gRPC status code in screaming snake case, e.g. RESOURCE_EXHAUSTED; Core also uses TRANSPORT_ERROR." },
   { name = "namespace" },
-  { name = "task_queue" },
+  { name = "task_queue", purpose = "On long polls, Core sets the poll's Task Queue, with sticky polls under the normal name by default, and the Java SDK the Worker's, with `<queue>:sticky` for sticky polls. The Go SDK records long polls with its client's tags, so its task_queue is none." },
 ]
 notes = ["Counts every failed attempt, including ones the SDK retries."]
 provenance = [
@@ -103,6 +103,19 @@ provenance = [
   { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 174, excerpt = "const KEY_STATUS_CODE: &str = \"status_code\";" },
   { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 40, excerpt = "new ImmutableMap.Builder<String, String>(1).put(OPERATION_NAME, name).build();" },
   { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 125, excerpt = ".put(STATUS_CODE, code.name())" },
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/metrics.rs", line = 173, excerpt = "const KEY_TASK_QUEUE: &str = \"task_queue\";" },
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/grpc.rs", line = 835, excerpt = "labels.task_q(r.get_ref().task_queue.clone());" },
+  { source = "sdk-core-acac9e3f", path = "crates/client/src/grpc.rs", line = 863, excerpt = "labels.task_q(r.get_ref().task_queue.clone());" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/Worker.java", line = 141, excerpt = "new ImmutableMap.Builder<String, String>(1).put(MetricsTag.TASK_QUEUE, taskQueue).build();" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/worker/Worker.java", line = 142, excerpt = "Scope taggedScope = metricsScope.tagged(tags);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/ActivityPollTask.java", line = 116, excerpt = ".withOption(METRICS_TAGS_CALL_OPTIONS_KEY, metricsScope)" },
+  { source = "sdk-java-v1.40.0", path = "temporal-sdk/src/main/java/io/temporal/internal/worker/WorkflowPollTask.java", line = 72, excerpt = ".withOption(METRICS_TAGS_CALL_OPTIONS_KEY, metricsScope);" },
+  { source = "sdk-java-v1.40.0", path = "temporal-serviceclient/src/main/java/io/temporal/serviceclient/GrpcMetricsInterceptor.java", line = 49, excerpt = "Scope scope = callOptions.getOption(MetricsTag.METRICS_TAGS_CALL_OPTIONS_KEY);" },
+  { source = "sdk-go-v1.44.0", path = "internal/internal_task_pollers.go", line = 309, excerpt = "ctx, cancel := newGRPCContext(context.Background(), grpcTimeout(pollTaskServiceTimeOut), grpcLongPoll(true))" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/grpc.go", line = 35, excerpt = "handler = defaultHandler" },
+  { source = "sdk-go-v1.44.0", path = "internal/grpc_dialer.go", line = 136, excerpt = "metrics.NewGRPCInterceptor(clientOptions.MetricsHandler, \"\", clientOptions.DisableErrorCodeMetricTags)," },
+  { source = "sdk-go-v1.44.0", path = "internal/client.go", line = 1419, excerpt = "options.MetricsHandler = options.MetricsHandler.WithTags(metrics.RootTags(options.Namespace))" },
+  { source = "sdk-go-v1.44.0", path = "internal/common/metrics/tags.go", line = 17, excerpt = "TaskQueueTagName:        NoneTagValue," },
 ]
 
 [[annotation]]

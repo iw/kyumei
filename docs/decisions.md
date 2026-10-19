@@ -255,15 +255,36 @@ poll throttling out, nor reach a conclusion that needs it ruled out.
 Each such query has a witness: a counter the same source keeps whenever the
 first could count, `long_request` beside `long_request_failure` and
 `service_requests` beside `service_errors_resource_exhausted`, over the same
-operation and namespace. Collect now runs both. When the query returns no
+operation and namespace, and the same Task Queue where the query names one.
+Collect now runs both. When the query returns no
 series and the witness has samples in the same answer, the signal reads as
 zero at the witness's sample times, and its binding and a note say so.
 
 Without the witness, an empty result is still no evidence. No data from
 Workers that aren't scraped looks exactly like no failures, which is why the
-queries are not rewritten to return zero. Eight instructions, in the Workflow
+queries are not rewritten to return zero. Ten instructions, in the Workflow
 Task, Activity Task, ResourceExhausted and visibility diagnostics, have
 witnesses.
+
+### Failed polls are the Task Queue's own, and a lone one is not failing
+
+A request about a Task Queue reads its own Workers' failed polls. Core and the
+Java SDK label each long poll with its Task Queue, so their queries filter on
+it, and a failure on another Task Queue in the Namespace does not count
+against this one. The Go SDK records long polls with its client's tags, whose
+`task_queue` is `none`, so its query still covers the Namespace
+(`sdk.long_request_failure`).
+
+The Frontend closes each client connection after five minutes
+(`behaviour.frontend-connection-age`), and a poll in flight on a closing
+connection can fail once before the SDK retries it. That one failure makes a
+one-minute rate of about 0.02 a second, above the 0.01 that counts as none.
+So the rule that rules failing polls out reads their mean across the window,
+not its worst minute (`heuristic.isolated-poll-failures`): polls that a rate
+limit or a failing Frontend rejects fail again and again, and the mean shows
+them. Many Core Workers on one Task Queue each lose a poll as they reconnect,
+so their mean can still reach 0.01. The hypothesis then stays open, and the
+Frontend's own count of rejected polls can rule it out.
 
 ### A query that finds nothing is recorded, and not asked again
 

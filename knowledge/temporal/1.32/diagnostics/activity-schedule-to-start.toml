@@ -366,18 +366,28 @@ group_by = ["status_code"]
 [[request.collect]]
 method = "promql"
 label = "Failed PollActivityTaskQueue attempts per second, by status code"
-sdk_family = ["core", "go"]
-body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\"}[1m]))"
-absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollActivityTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+sdk_family = "core"
+body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollActivityTaskQueue", namespace="{namespace}", task_queue="{task_queue}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
 unit = "per_second"
 claims = ["sdk.long_request_failure", "sdk.long-poll-failures-counted-on-failure"]
 
 [[request.collect]]
 method = "promql"
 label = "Failed PollActivityTaskQueue attempts per second, by status code"
+sdk_family = "go"
+body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollActivityTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+unit = "per_second"
+claims = ["sdk.long_request_failure", "sdk.long-poll-failures-counted-on-failure"]
+note = "covers every Task Queue in the Namespace: the Go SDK labels its long polls task_queue=\"none\""
+
+[[request.collect]]
+method = "promql"
+label = "Failed PollActivityTaskQueue attempts per second, by status code"
 sdk_family = "java"
-body = "sum by (status_code) (rate(temporal_long_request_failure_total{operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\"}[1m]))"
-absent_reads_zero = { witness = 'sum(rate(temporal_long_request_total{operation="PollActivityTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+body = "sum by (status_code) (rate(temporal_long_request_failure_total{operation=\"PollActivityTaskQueue\", namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request_total{operation="PollActivityTaskQueue", namespace="{namespace}", task_queue="{task_queue}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
 unit = "per_second"
 claims = ["sdk.long_request_failure", "sdk.java-metrics-naming", "sdk.long-poll-failures-counted-on-failure"]
 
@@ -553,10 +563,10 @@ when = { all = [
 id = "no-poll-failures"
 hypothesis = "activity-poll-throttling"
 effect = "eliminates"
-statement = "No Activity Task poll failed during the window (at most {activity_poll_failures_rate.max}) while schedule-to-start reached {activity_schedule_to_start.max}."
-claims = ["heuristic.sustained-needs-samples", "heuristic.effectively-zero-rate", "heuristic.sts-elevated"]
+statement = "Activity Task polls effectively never failed during the window, {activity_poll_failures_rate.mean} on average (peak {activity_poll_failures_rate.max}), while schedule-to-start reached {activity_schedule_to_start.max}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.isolated-poll-failures", "heuristic.sts-elevated"]
 when = { all = [
-  { signal = "activity_poll_failures_rate", stat = "max", op = "le", value = 0.01 },
+  { signal = "activity_poll_failures_rate", stat = "mean", op = "le", value = 0.01 },
   { signal = "activity_poll_failures_rate", stat = "samples", op = "ge", value = 3 },
   { signal = "activity_schedule_to_start", stat = "max", op = "ge", value = 5 },
 ] }
@@ -785,7 +795,7 @@ when = { all = [
 [[conclusion]]
 id = "worker-rate-limit-under-fanout"
 title = "Workers' Task Queue rate limit reached under an Activity fan-out"
-statement = "Activity schedule-to-start rose because the rate limit the Workers set for the whole Task Queue ({dispatch_rate_limit.last}) held Activity Tasks back while a fan-out added them at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free throughout (at least {activity_slots_available.min}) and no Activity Task polls failed: every Worker sends the same Task Queue-wide limit, so more Workers would not have raised it."
+statement = "Activity schedule-to-start rose because the rate limit the Workers set for the whole Task Queue ({dispatch_rate_limit.last}) held Activity Tasks back while a fan-out added them at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free throughout (at least {activity_slots_available.min}) and Activity Task polls effectively never failed: every Worker sends the same Task Queue-wide limit, so more Workers would not have raised it."
 when = { all = [
   { hypothesis = "worker-rate-limit", state = ["established"] },
   { hypothesis = "activity-matching-backlog", state = ["established"] },
@@ -860,7 +870,7 @@ claims = ["sdk.task-queue-activities-per-second", "limit.activity-worker-rate"]
 [[conclusion]]
 id = "api-rate-limit"
 title = "Task Queue rate limit set through the API reached"
-statement = "Activity schedule-to-start rose because a queue rate limit set through the API ({dispatch_rate_limit.last}) held Activity Tasks back while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free (at least {activity_slots_available.min}) and no Activity Task polls failed, so neither more Workers nor a different Worker rate would have helped: the API limit overrides the rate Workers send."
+statement = "Activity schedule-to-start rose because a queue rate limit set through the API ({dispatch_rate_limit.last}) held Activity Tasks back while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Activity slots stayed free (at least {activity_slots_available.min}) and Activity Task polls effectively never failed, so neither more Workers nor a different Worker rate would have helped: the API limit overrides the rate Workers send."
 when = { all = [
   { hypothesis = "api-rate-limit", state = ["established"] },
   { hypothesis = "activity-matching-backlog", state = ["established"] },

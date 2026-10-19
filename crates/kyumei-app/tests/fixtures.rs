@@ -38,6 +38,7 @@ async fn every_fixture_replays() {
             "activity-slot-exhaustion",
             "activity-worker-rate-limit",
             "activity-worker-rate-limit-cli",
+            "activity-worker-rate-limit-reconnects",
             "activity-worker-rate-limit-reported",
             "history-approaching-limits",
             "history-cache-full",
@@ -518,6 +519,8 @@ async fn java_workers_get_java_queries() {
     );
     assert_eq!(bodies("poll-failures").len(), 1);
     assert!(bodies("poll-failures")[0].contains("temporal_long_request_failure_total{"));
+    // The Java SDK labels sticky polls `<queue>:sticky`, and their failures count too.
+    assert!(bodies("poll-failures")[0].contains(r#"task_queue=~"order-fulfillment(:sticky)?""#));
     // With one SDK, the instructions need no "applies to" label.
     assert!(java.values().flatten().all(|c| c.applies_to.is_none()));
 
@@ -526,6 +529,18 @@ async fn java_workers_get_java_queries() {
     let sts = &python["wft-schedule-to-start"];
     assert_eq!(sts.len(), 1);
     assert_eq!(sts[0].unit, Some(kyumei_domain::Unit::Milliseconds));
+    // Core labels each poll with its Task Queue, so another queue's failed polls stay out.
+    let failures = &python["poll-failures"];
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0]
+            .body
+            .contains(r#"task_queue="order-fulfillment""#)
+    );
+    // The Go SDK labels its long polls `task_queue="none"`, so its query reads the Namespace.
+    let go = rendered_for(Some("go")).await;
+    assert_eq!(go["poll-failures"].len(), 1);
+    assert!(!go["poll-failures"][0].body.contains("task_queue"));
     assert!(
         !python
             .values()
@@ -547,7 +562,10 @@ async fn an_unknown_sdk_gets_every_variant_labelled() {
         .iter()
         .map(|c| c.applies_to.as_deref())
         .collect();
-    assert_eq!(failures, [Some("Core SDKs, Go SDK"), Some("Java SDK")]);
+    assert_eq!(
+        failures,
+        [Some("Core SDKs"), Some("Go SDK"), Some("Java SDK")]
+    );
     // A gauge's one query applies to every SDK.
     assert_eq!(unknown["workflow-worker-slots"][0].applies_to, None);
 }

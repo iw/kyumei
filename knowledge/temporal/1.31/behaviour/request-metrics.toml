@@ -36,3 +36,25 @@ provenance = [
   { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/tally_metrics_handler.go", line = 60, excerpt = "scope.Counter(counter).Inc(i)" },
   { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1", "temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/metrics/otel_metrics_handler.go", line = 96, excerpt = "c.Add(context.Background(), i, option)" },
 ]
+
+[[statement]]
+id = "behaviour.frontend-connection-age"
+category = "behaviour"
+title = "The Frontend closes each client connection after five minutes"
+statement = "The Frontend's gRPC server closes a client connection once it is frontend.keepAliveMaxConnectionAge old, 5 minutes by default, by sending GOAWAY, and closes it outright frontend.keepAliveMaxConnectionAgeGrace later, 70 seconds by default. A Worker that runs for longer reconnects at least that often."
+scope = { server = ["1.31.0", "1.31.1", "1.31.2", "1.31.3", "1.31.4"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+provenance = [
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 875, excerpt = "\"frontend.keepAliveMaxConnectionAge\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 876, excerpt = "5*time.Minute," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 883, excerpt = "\"frontend.keepAliveMaxConnectionAgeGrace\"," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "common/dynamicconfig/constants.go", line = 884, excerpt = "70*time.Second," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 238, excerpt = "MaxConnectionAge:      serviceConfig.KeepAliveMaxConnectionAge()," },
+  { source = ["temporal-server-v1.31.0", "temporal-server-v1.31.1"], path = "service/frontend/fx.go", line = 239, excerpt = "MaxConnectionAgeGrace: serviceConfig.KeepAliveMaxConnectionAgeGrace()," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 880, excerpt = "\"frontend.keepAliveMaxConnectionAge\"," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 881, excerpt = "5*time.Minute," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 888, excerpt = "\"frontend.keepAliveMaxConnectionAgeGrace\"," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "common/dynamicconfig/constants.go", line = 889, excerpt = "70*time.Second," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 239, excerpt = "MaxConnectionAge:      serviceConfig.KeepAliveMaxConnectionAge()," },
+  { source = ["temporal-server-v1.31.2", "temporal-server-v1.31.3", "temporal-server-v1.31.4"], path = "service/frontend/fx.go", line = 240, excerpt = "MaxConnectionAgeGrace: serviceConfig.KeepAliveMaxConnectionAgeGrace()," },
+]

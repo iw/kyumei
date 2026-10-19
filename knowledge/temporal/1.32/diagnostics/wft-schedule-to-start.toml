@@ -389,20 +389,31 @@ group_by = ["status_code"]
 [[request.collect]]
 method = "promql"
 label = "Failed PollWorkflowTaskQueue attempts per second, by status code"
-sdk_family = ["core", "go"]
-body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\"}[1m]))"
-absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollWorkflowTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+sdk_family = "core"
+body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\", task_queue=\"{task_queue}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollWorkflowTaskQueue", namespace="{namespace}", task_queue="{task_queue}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
 unit = "per_second"
 claims = ["sdk.long_request_failure", "behaviour.frontend-priorities", "sdk.long-poll-failures-counted-on-failure"]
 
 [[request.collect]]
 method = "promql"
 label = "Failed PollWorkflowTaskQueue attempts per second, by status code"
+sdk_family = "go"
+body = "sum by (status_code) (rate(temporal_long_request_failure{operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request{operation="PollWorkflowTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+unit = "per_second"
+claims = ["sdk.long_request_failure", "behaviour.frontend-priorities", "sdk.long-poll-failures-counted-on-failure"]
+note = "covers every Task Queue in the Namespace: the Go SDK labels its long polls task_queue=\"none\""
+
+[[request.collect]]
+method = "promql"
+label = "Failed PollWorkflowTaskQueue attempts per second, by status code"
 sdk_family = "java"
-body = "sum by (status_code) (rate(temporal_long_request_failure_total{operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\"}[1m]))"
-absent_reads_zero = { witness = 'sum(rate(temporal_long_request_total{operation="PollWorkflowTaskQueue", namespace="{namespace}"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
+body = "sum by (status_code) (rate(temporal_long_request_failure_total{operation=\"PollWorkflowTaskQueue\", namespace=\"{namespace}\", task_queue=~\"{task_queue}(:sticky)?\"}[1m]))"
+absent_reads_zero = { witness = 'sum(rate(temporal_long_request_total{operation="PollWorkflowTaskQueue", namespace="{namespace}", task_queue=~"{task_queue}(:sticky)?"}[1m]))', because = "sdk.long-poll-failures-counted-on-failure" }
 unit = "per_second"
 claims = ["sdk.long_request_failure", "sdk.java-metrics-naming", "behaviour.frontend-priorities", "sdk.long-poll-failures-counted-on-failure"]
+note = "includes sticky polls, which the Java SDK labels task_queue=\"{task_queue}:sticky\""
 
 [[request]]
 id = "poll-rejections"
@@ -620,10 +631,10 @@ when = { all = [
 id = "no-poll-failures"
 hypothesis = "poll-throttling"
 effect = "eliminates"
-statement = "No Workflow Task poll failed during the window (at most {poll_failures_rate.max}) while schedule-to-start reached {wft_schedule_to_start.max}."
-claims = ["heuristic.sustained-needs-samples", "heuristic.effectively-zero-rate", "heuristic.sts-elevated"]
+statement = "Workflow Task polls effectively never failed during the window, {poll_failures_rate.mean} on average (peak {poll_failures_rate.max}), while schedule-to-start reached {wft_schedule_to_start.max}."
+claims = ["heuristic.sustained-needs-samples", "heuristic.isolated-poll-failures", "heuristic.sts-elevated"]
 when = { all = [
-  { signal = "poll_failures_rate", stat = "max", op = "le", value = 0.01 },
+  { signal = "poll_failures_rate", stat = "mean", op = "le", value = 0.01 },
   { signal = "poll_failures_rate", stat = "samples", op = "ge", value = 3 },
   { signal = "wft_schedule_to_start", stat = "max", op = "ge", value = 5 },
 ] }
@@ -860,7 +871,7 @@ claims = ["behaviour.pollers-listed-for-ttl", "sdk.core-poll-needs-slot"]
 [[conclusion]]
 id = "dispatch-ceiling-under-signal-flood"
 title = "Task Queue dispatch rate limit reached under a Signal flood"
-statement = "Workflow Task schedule-to-start rose because Matching's dispatch rate limit for the Task Queue ({dispatch_rate_limit.last}) held Workflow Tasks back while a Signal flood added them at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old — the schedule-to-start latency. Worker execution slots stayed free throughout (at least {workflow_slots_available.min}) and no Workflow Task polls failed, so more Workers would not have reduced the latency."
+statement = "Workflow Task schedule-to-start rose because Matching's dispatch rate limit for the Task Queue ({dispatch_rate_limit.last}) held Workflow Tasks back while a Signal flood added them at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old — the schedule-to-start latency. Worker execution slots stayed free throughout (at least {workflow_slots_available.min}) and Workflow Task polls effectively never failed, so more Workers would not have reduced the latency."
 when = { all = [
   { hypothesis = "dispatch-rate-ceiling", state = ["established"] },
   { hypothesis = "matching-backlog", state = ["established"] },
@@ -916,7 +927,7 @@ claims = ["heuristic.slots-headroom"]
 [[conclusion]]
 id = "dispatch-ceiling"
 title = "Task Queue dispatch rate limit reached"
-statement = "Workflow Task schedule-to-start rose because Matching's dispatch rate limit for the Task Queue ({dispatch_rate_limit.last}) held Workflow Tasks back while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Worker execution slots stayed free (at least {workflow_slots_available.min}) and Workflow Task polls did not fail, so more Workers would not have reduced the latency."
+statement = "Workflow Task schedule-to-start rose because Matching's dispatch rate limit for the Task Queue ({dispatch_rate_limit.last}) held Workflow Tasks back while they were added at up to {tasks_add_rate.max}. The excess waited in Matching's backlog, which reached {backlog_age.max} old. Worker execution slots stayed free (at least {workflow_slots_available.min}) and Workflow Task polls effectively never failed, so more Workers would not have reduced the latency."
 when = { all = [
   { hypothesis = "dispatch-rate-ceiling", state = ["established"] },
   { hypothesis = "matching-backlog", state = ["established"] },
@@ -995,7 +1006,7 @@ claims = ["sdk.core-poll-needs-slot"]
 [[conclusion]]
 id = "history-dispatch-delay"
 title = "Workflow Tasks reaching Matching late"
-statement = "Workflow Task schedule-to-start reached {wft_schedule_to_start.max} while Matching's backlog was at most {backlog_age.max} old: the wait accrues before Matching, between History scheduling each Workflow Task and Matching receiving it. Worker slots were free and polls did not fail."
+statement = "Workflow Task schedule-to-start reached {wft_schedule_to_start.max} while Matching's backlog was at most {backlog_age.max} old: the wait accrues before Matching, between History scheduling each Workflow Task and Matching receiving it. Worker slots were free and polls effectively never failed."
 when = { all = [
   { hypothesis = "history-dispatch-delay", state = ["supported", "established"] },
   { hypothesis = "worker-slot-exhaustion", state = ["eliminated"] },
