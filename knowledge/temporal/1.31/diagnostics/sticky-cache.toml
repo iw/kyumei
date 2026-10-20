@@ -324,7 +324,7 @@ note = "the counter has no namespace label; with the OpenTelemetry metrics frame
 id = "replay-elevated"
 hypothesis = "replay-pressure"
 effect = "establishes"
-statement = "Workflow Tasks spent up to {wft_replay_latency.max} replaying history, against about {wft_replay_latency.baseline} before the incident."
+statement = "Workflow Tasks spent up to {wft_replay_latency.max} replaying history[, against about {wft_replay_latency.baseline} before the incident]."
 claims = ["heuristic.replay-latency-elevated", "sdk.workflow_task_replay_latency"]
 when = { signal = "wft_replay_latency", stat = "max", op = "ge", value = 1 }
 
@@ -399,7 +399,7 @@ when = { all = [
 id = "sticky-timeouts-occurring"
 hypothesis = "sticky-timeouts"
 effect = "establishes"
-statement = "History timed out sticky Workflow Tasks at {sticky_timeouts.mean} on average, peaking at {sticky_timeouts.max}, against about {sticky_timeouts.baseline} before the incident: the Workers whose sticky queues they were sent to did not start them."
+statement = "History timed out sticky Workflow Tasks at {sticky_timeouts.mean} on average, peaking at {sticky_timeouts.max}[, against about {sticky_timeouts.baseline} before the incident]: the Workers whose sticky queues they were sent to did not start them."
 claims = ["heuristic.sticky-timeouts-occurring", "server.schedule_to_start_timeout", "behaviour.sticky-queue-routing"]
 when = { signal = "sticky_timeouts", stat = "max", op = "gt", value = 0.01 }
 
@@ -533,7 +533,7 @@ claims = ["sdk.workflow-cache-size", "sdk.full-history-replay"]
 [[conclusion]]
 id = "replay-pressure"
 title = "Workers replaying histories"
-statement = "Workflow Tasks slowed because Workers replay histories, up to {wft_replay_latency.max} per task, against about {wft_replay_latency.baseline} before the incident."
+statement = "Workflow Tasks slowed because Workers replay histories, up to {wft_replay_latency.max} per task[, against about {wft_replay_latency.baseline} before the incident]."
 when = { hypothesis = "replay-pressure", state = ["established"] }
 
 [[conclusion.recommendation]]

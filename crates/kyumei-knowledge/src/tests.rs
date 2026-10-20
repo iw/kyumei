@@ -351,6 +351,78 @@ fn rejects_statements_quoting_unread_signals() {
 }
 
 #[test]
+fn a_baseline_is_quoted_only_where_it_is_certain_or_optional() {
+    let with = |diag: &str| {
+        load(&[
+            ("t/1.31/pack.toml", PACK),
+            ("t/1.31/metrics.toml", METRICS),
+            ("t/1.31/diag.toml", diag),
+        ])
+    };
+    let quoting = |text: &str| DIAG.replace("while sts {sts.max}", text);
+    // The rule reads the maximum only, so the baseline may be missing.
+    let p = problems(
+        with(&quoting(
+            "while sts {sts.max}, against about {sts.baseline} before the incident",
+        ))
+        .expect_err("must fail"),
+    );
+    assert!(
+        p.iter()
+            .any(|m| m.contains("quotes `{sts.baseline}` outside an optional segment")),
+        "{p:?}"
+    );
+    with(&quoting(
+        "while sts {sts.max}[, against about {sts.baseline} before the incident]",
+    ))
+    .expect("an optional comparison loads");
+    // A rule whose condition reads the baseline can quote it plainly.
+    let reads_baseline = quoting("while sts {sts.max} against about {sts.baseline}").replace(
+        "  { signal = \"sts\", stat = \"max\", op = \"ge\", value = 5 },",
+        "  { ratio = { numerator = \"sts.max\", denominator = \"sts.baseline\" }, op = \"ge\", value = 3 },",
+    );
+    with(&reads_baseline).expect("a baseline the condition read loads");
+    // A conclusion can quote it when every rule that puts its hypothesis in the
+    // required state read it.
+    let concluding = |diag: &str| {
+        diag.replace(
+            "statement = \"done\"",
+            "statement = \"sts reached {sts.max}, from about {sts.baseline}\"",
+        )
+    };
+    with(&concluding(&reads_baseline)).expect("the eliminating rule read the baseline");
+    let p = problems(with(&concluding(DIAG)).expect_err("must fail"));
+    assert!(
+        p.iter().any(|m| m.contains("conclusion `c`")
+            && m.contains("quotes `{sts.baseline}` outside an optional segment")),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn rejects_malformed_optional_segments() {
+    for (text, expected) in [
+        ("while sts [{sts.max}", "never closed"),
+        ("while sts {sts.max}]", "closes no optional segment"),
+        ("while sts [{sts.max} [{sts.min}]]", "opens inside another"),
+        ("while sts {sts.max}[ at last]", "no placeholder"),
+    ] {
+        let p = problems(
+            load(&[
+                ("t/1.31/pack.toml", PACK),
+                ("t/1.31/metrics.toml", METRICS),
+                (
+                    "t/1.31/diag.toml",
+                    &DIAG.replace("while sts {sts.max}", text),
+                ),
+            ])
+            .expect_err("must fail"),
+        );
+        assert!(p.iter().any(|m| m.contains(expected)), "{text}: {p:?}");
+    }
+}
+
+#[test]
 fn rejects_hypotheses_off_the_system_path() {
     let bad = DIAG.replace(
         r#"layers = ["workers"] }"#,

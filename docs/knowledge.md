@@ -919,9 +919,27 @@ claims = ["heuristic.simulation-reproduces", "limit.task-queue-dispatch"]
 Rule statements and conclusion text quote facts with placeholders such as
 `{backlog_age.max}`. They are rendered with the fact's unit, for example
 `31.4 s`, `2,000/s` or `50.2 MiB`. `{signal.last}` of a categorical signal
-quotes its value as observed, such as a termination reason. The validator rejects a statement that quotes a signal
-its rule's condition does not read, so every number in a finding is one the
-rule actually tested.
+quotes its value as observed, such as a termination reason. The validator
+rejects a statement that quotes a signal its rule's condition does not read,
+so every number in a finding is one the rule actually tested.
+
+Text in square brackets is an optional segment. It shows, without its
+brackets, only when every placeholder in it has a value:
+
+```toml
+statement = "Writes to the visibility store took up to {write_latency.max}[, against about {write_latency.baseline} before the incident]."
+```
+
+A baseline exists only when the evidence has samples from before the incident
+window, so a statement quotes `{signal.baseline}` outside an optional segment
+only where a baseline is certain:
+
+- in a rule whose condition reads it;
+- in a conclusion whose condition requires a hypothesis state that only rules
+  reading it can lead to;
+- in a clause whose own condition reads it.
+
+Any other statistic of a signal with samples in the window always has a value.
 
 ## Validation
 
@@ -957,6 +975,8 @@ A pack that fails any check does not load. Every problem is reported at once.
     weaken.
   - Two rules with identical conditions cannot have opposing effects.
   - A conclusion must rest on hypothesis states.
+  - A statement's optional segments are closed, not nested, and each quotes a
+    placeholder. A baseline is quoted outside one only where it is certain.
   - Stage orders are unique.
   - Symptom patterns must compile.
   - A request's cost is between 1 and 5.
@@ -966,7 +986,8 @@ packs to check that they are rejected:
 
 - undeclared labels and label values;
 - opposing rules;
-- statements quoting unread signals;
+- statements quoting unread signals, quoting a baseline that may be missing,
+  or with malformed optional segments;
 - verified claims without provenance;
 - heuristics without an authored source;
 - unknown fields;

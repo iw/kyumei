@@ -112,8 +112,13 @@ pub fn conclude(
     let mut statement = render(&def.statement);
     for clause in &def.clauses {
         if clause.when.evaluate(&lookup) == Truth::True {
-            statement.push(' ');
-            statement.push_str(&render(&clause.text));
+            // A clause that is one optional segment renders to nothing
+            // without its values.
+            let text = render(&clause.text);
+            if !text.is_empty() {
+                statement.push(' ');
+                statement.push_str(&text);
+            }
         }
     }
     let by_state = |state: HypothesisState| -> Vec<HypothesisId> {

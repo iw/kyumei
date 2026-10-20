@@ -263,7 +263,7 @@ note = "with the OpenTelemetry metrics framework the counter is named task_error
 id = "load-delayed"
 hypothesis = "load-lag"
 effect = "establishes"
-statement = "Tasks reached memory up to {task_load_latency.max} after they were created or due, against about {task_load_latency.baseline} before the incident."
+statement = "Tasks reached memory up to {task_load_latency.max} after they were created or due[, against about {task_load_latency.baseline} before the incident]."
 claims = ["heuristic.task-stage-delay", "behaviour.history-task-latencies"]
 when = { signal = "task_load_latency", stat = "max", op = "ge", value = 1 }
 
@@ -282,7 +282,7 @@ when = { all = [
 id = "schedule-delayed"
 hypothesis = "scheduler-backlog"
 effect = "establishes"
-statement = "Loaded tasks waited up to {task_schedule_latency.max} for a scheduler worker, against about {task_schedule_latency.baseline} before the incident."
+statement = "Loaded tasks waited up to {task_schedule_latency.max} for a scheduler worker[, against about {task_schedule_latency.baseline} before the incident]."
 claims = ["heuristic.task-stage-delay", "behaviour.history-task-pipeline"]
 when = { signal = "task_schedule_latency", stat = "max", op = "ge", value = 1 }
 
@@ -301,7 +301,7 @@ when = { all = [
 id = "attempts-slow"
 hypothesis = "slow-processing"
 effect = "establishes"
-statement = "Task attempts took up to {task_processing_latency.max} each, against about {task_processing_latency.baseline} before the incident."
+statement = "Task attempts took up to {task_processing_latency.max} each[, against about {task_processing_latency.baseline} before the incident]."
 claims = ["heuristic.task-stage-delay", "server.task_latency_processing"]
 when = { signal = "task_processing_latency", stat = "max", op = "ge", value = 1 }
 
@@ -420,7 +420,7 @@ claims = ["server.task_errors", "behaviour.history-task-retries"]
 [[conclusion]]
 id = "slow-processing"
 title = "History task attempts slow"
-statement = "History's tasks run late because each attempt is slow, up to {task_processing_latency.max} against about {task_processing_latency.baseline} before the incident: the scheduler's workers stay busy and the tasks behind them wait."
+statement = "History's tasks run late because each attempt is slow, up to {task_processing_latency.max}[ against about {task_processing_latency.baseline} before the incident]: the scheduler's workers stay busy and the tasks behind them wait."
 when = { hypothesis = "slow-processing", state = ["established"] }
 
 [[conclusion.clause]]
@@ -434,7 +434,7 @@ claims = ["server.task_latency_processing", "server.persistence_latency"]
 [[conclusion]]
 id = "scheduler-saturated"
 title = "History's task scheduler saturated"
-statement = "History's tasks run late because they wait for a worker of the host's scheduler, up to {task_schedule_latency.max} against about {task_schedule_latency.baseline} before the incident, while each attempt stays fast: the hosts have more tasks to run than their workers get through."
+statement = "History's tasks run late because they wait for a worker of the host's scheduler, up to {task_schedule_latency.max}[ against about {task_schedule_latency.baseline} before the incident], while each attempt stays fast: the hosts have more tasks to run than their workers get through."
 when = { all = [
   { hypothesis = "scheduler-backlog", state = ["established"] },
   { hypothesis = "slow-processing", state = ["eliminated"] },

@@ -385,6 +385,17 @@ A single DescribeTaskQueue capture is one sample at its capture time. It can
 show that dispatch was pinned when the capture was taken, but not that
 something held throughout the window.
 
+### A comparison with before the incident is optional text
+
+A baseline is the mean of a signal's samples from before the incident window.
+Evidence often starts at the incident, as when Prometheus has kept nothing
+older. So a statement that compares with a baseline puts the comparison in an
+optional segment, which is left out without one, rather than printing
+"unknown". The validator works out what a statement's condition ensures is
+known, so a baseline the rule actually read is quoted plainly. A missing value
+elsewhere still renders as "unknown", since any other statistic of a signal
+with samples in the window always has a value.
+
 ### There are five states and no percentages
 
 The states are candidate, supported, weakened, eliminated and established.
