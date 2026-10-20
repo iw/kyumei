@@ -5,7 +5,7 @@
 //! facts is `Unknown`, never `False`, and a rule fires only when its condition
 //! is `True`. Absence of evidence therefore cannot become evidence of absence.
 
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 use kyumei_domain::{HypothesisId, HypothesisState, SignalId, Statistic};
 use serde::Deserialize;
@@ -43,7 +43,7 @@ pub enum Condition {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SignalStat {
     pub signal: SignalId,
     pub stat: Statistic,
@@ -206,6 +206,50 @@ impl Condition {
                 // A dormant hypothesis is in no state.
                 None => Truth::False,
             },
+        }
+    }
+
+    /// The signal statistics known whenever the condition evaluates to
+    /// `truth`. A comparison is only ever True or False over known values, so
+    /// text shown because a condition held can quote what it read. `held` says
+    /// what a hypothesis in one of the given states ensures.
+    pub fn known_when(
+        &self,
+        truth: bool,
+        held: &dyn Fn(&HypothesisId, &[HypothesisState]) -> BTreeSet<SignalStat>,
+    ) -> BTreeSet<SignalStat> {
+        match self {
+            Self::All(items) | Self::Any(items) => {
+                // `all` is True when every item is, and False when one is;
+                // `any` the other way round. When every item has the value,
+                // all of their statistics are known; when only one need have
+                // it, only what they all share.
+                let every = matches!(self, Self::All(_)) == truth;
+                let sets = items.iter().map(|c| c.known_when(truth, held));
+                if every {
+                    sets.flatten().collect()
+                } else {
+                    intersection(sets)
+                }
+            }
+            Self::Not(inner) => inner.known_when(!truth, held),
+            Self::Compare { signal, stat, .. } => BTreeSet::from([SignalStat {
+                signal: signal.clone(),
+                stat: *stat,
+            }]),
+            Self::Ratio {
+                numerator,
+                denominator,
+                ..
+            } => BTreeSet::from([numerator.clone(), denominator.clone()]),
+            Self::Equals { signal, .. } => BTreeSet::from([SignalStat {
+                signal: signal.clone(),
+                stat: Statistic::Last,
+            }]),
+            Self::Hypothesis { hypothesis, states } if truth => held(hypothesis, states),
+            // A dormant hypothesis is in no state, so being outside the states
+            // says nothing about the facts.
+            Self::Hypothesis { .. } => BTreeSet::new(),
         }
     }
 
@@ -484,6 +528,19 @@ impl RawCondition {
     }
 }
 
+/// The statistics every set holds; none when there are no sets, since nothing
+/// is then known to hold.
+pub(crate) fn intersection(
+    mut sets: impl Iterator<Item = BTreeSet<SignalStat>>,
+) -> BTreeSet<SignalStat> {
+    let Some(first) = sets.next() else {
+        return BTreeSet::new();
+    };
+    sets.fold(first, |known, set| {
+        known.intersection(&set).cloned().collect()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -519,6 +576,59 @@ mod tests {
         let c = cmp("slots", Statistic::Min, CompareOp::Ge, 5.0);
         assert_eq!(c.evaluate(&facts), Truth::Unknown);
         assert_eq!(Condition::Not(Box::new(c)).evaluate(&facts), Truth::Unknown);
+    }
+
+    #[test]
+    fn a_condition_that_holds_has_read_its_statistics() {
+        let stat = |signal: &str, stat| SignalStat {
+            signal: signal.into(),
+            stat,
+        };
+        let none = |_: &HypothesisId, _: &[HypothesisState]| BTreeSet::new();
+        let max = cmp("a", Statistic::Max, CompareOp::Ge, 5.0);
+        let ratio = Condition::Ratio {
+            numerator: stat("a", Statistic::Max),
+            denominator: stat("a", Statistic::Baseline),
+            op: CompareOp::Ge,
+            value: 3.0,
+        };
+        let both = Condition::All(vec![max.clone(), ratio.clone()]);
+        assert_eq!(
+            both.known_when(true, &none),
+            BTreeSet::from([stat("a", Statistic::Max), stat("a", Statistic::Baseline)])
+        );
+        // Either item may be the one that holds: only what they share is known.
+        let either = Condition::Any(vec![max.clone(), ratio.clone()]);
+        assert_eq!(
+            either.known_when(true, &none),
+            BTreeSet::from([stat("a", Statistic::Max)])
+        );
+        // `not any` holds only when every item is False, over known values.
+        let neither = Condition::Not(Box::new(either));
+        assert_eq!(
+            neither.known_when(true, &none),
+            both.known_when(true, &none)
+        );
+        let held = |h: &HypothesisId, states: &[HypothesisState]| {
+            if h.as_str() == "h" && states == [HypothesisState::Established] {
+                BTreeSet::from([stat("b", Statistic::Baseline)])
+            } else {
+                BTreeSet::new()
+            }
+        };
+        let established = Condition::Hypothesis {
+            hypothesis: HypothesisId::new("h"),
+            states: vec![HypothesisState::Established],
+        };
+        assert_eq!(
+            established.known_when(true, &held),
+            BTreeSet::from([stat("b", Statistic::Baseline)])
+        );
+        assert!(
+            Condition::Not(Box::new(established))
+                .known_when(true, &held)
+                .is_empty()
+        );
     }
 
     #[test]

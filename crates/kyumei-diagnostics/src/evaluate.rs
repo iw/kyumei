@@ -435,6 +435,48 @@ when = { signal = "slots", stat = "min", op = "ge", value = 5 }
     }
 
     #[test]
+    fn a_missing_baseline_leaves_out_the_comparison() {
+        let pack_text = PACK.replace(
+            "statement = \"Slots stayed free.\"",
+            "statement = \"Slots stayed at {slots.min} or more[, against about {slots.baseline} before the incident].\"",
+        );
+        let kb = KnowledgeBase::from_files(&[("t/pack.toml", &pack_text)]).expect("pack");
+        let pack = &kb.packs()[0];
+        let d = &pack.diagnostics[0];
+        let statement = |values: &[(Statistic, f64)]| {
+            let table = FactTable {
+                facts: [(
+                    SignalId::new("slots"),
+                    Fact {
+                        signal: SignalId::new("slots"),
+                        unit: Unit::Count,
+                        values: values.iter().copied().collect(),
+                        categorical: None,
+                        status: EpistemicStatus::ObservedFact,
+                        observations: Vec::new(),
+                        evidence: Vec::new(),
+                        coverage: None,
+                        fit: WindowFit::Within,
+                        superseded_assertions: Vec::new(),
+                        asserted_typical: None,
+                    },
+                )]
+                .into(),
+                ..FactTable::default()
+            };
+            evaluate(pack, d, &table).findings[0].statement.clone()
+        };
+        assert_eq!(
+            statement(&[(Statistic::Min, 10.0)]),
+            "Slots stayed at 10 or more."
+        );
+        assert_eq!(
+            statement(&[(Statistic::Min, 10.0), (Statistic::Baseline, 12.0)]),
+            "Slots stayed at 10 or more, against about 12 before the incident."
+        );
+    }
+
+    #[test]
     fn states_follow_effects() {
         use Effect::*;
         assert_eq!(state_from(&[]), (HypothesisState::Candidate, false));

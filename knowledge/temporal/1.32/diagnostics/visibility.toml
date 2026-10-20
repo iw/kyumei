@@ -400,7 +400,7 @@ note = "with the OpenTelemetry metrics framework the histogram is task_latency_s
 id = "records-late"
 hypothesis = "records-late"
 effect = "establishes"
-statement = "Visibility records were written up to {visibility_task_latency.max} after the changes they record, against about {visibility_task_latency.baseline} before the incident."
+statement = "Visibility records were written up to {visibility_task_latency.max} after the changes they record[, against about {visibility_task_latency.baseline} before the incident]."
 claims = ["heuristic.visibility-lag-significant", "behaviour.visibility-record-lag"]
 when = { signal = "visibility_task_latency", stat = "max", op = "ge", value = 10 }
 
@@ -495,7 +495,7 @@ when = { all = [
 id = "writes-slow"
 hypothesis = "slow-writes"
 effect = "establishes"
-statement = "Writes to the visibility store took up to {write_latency.max}, against about {write_latency.baseline} before the incident."
+statement = "Writes to the visibility store took up to {write_latency.max}[, against about {write_latency.baseline} before the incident]."
 claims = ["heuristic.visibility-write-slow", "behaviour.visibility-store-writes"]
 when = { any = [
   { signal = "write_latency", stat = "max", op = "ge", value = 2 },
@@ -509,7 +509,7 @@ when = { any = [
 id = "writes-fast"
 hypothesis = "slow-writes"
 effect = "eliminates"
-statement = "Writes to the visibility store stayed fast: at most {write_latency.max}, against about {write_latency.baseline} before the incident."
+statement = "Writes to the visibility store stayed fast: at most {write_latency.max}[, against about {write_latency.baseline} before the incident]."
 claims = ["heuristic.sustained-needs-samples", "heuristic.visibility-write-slow"]
 when = { all = [
   { signal = "write_latency", stat = "samples", op = "ge", value = 3 },
@@ -526,7 +526,7 @@ when = { all = [
 id = "queries-slow"
 hypothesis = "slow-queries"
 effect = "establishes"
-statement = "Listing and counting queries took up to {query_latency.max}, against about {query_latency.baseline} before the incident."
+statement = "Listing and counting queries took up to {query_latency.max}[, against about {query_latency.baseline} before the incident]."
 claims = ["heuristic.visibility-query-slow", "behaviour.visibility-slow-query-log"]
 when = { signal = "query_latency", stat = "max", op = "ge", value = 1 }
 
@@ -545,7 +545,7 @@ when = { all = [
 id = "workers-busy"
 hypothesis = "queue-backlog"
 effect = "establishes"
-statement = "Visibility tasks waited up to {visibility_schedule_latency.max} for one of History's visibility workers, against about {visibility_schedule_latency.baseline} before the incident."
+statement = "Visibility tasks waited up to {visibility_schedule_latency.max} for one of History's visibility workers[, against about {visibility_schedule_latency.baseline} before the incident]."
 claims = ["heuristic.task-stage-delay", "behaviour.visibility-write-path"]
 when = { signal = "visibility_schedule_latency", stat = "max", op = "ge", value = 1 }
 
@@ -628,7 +628,7 @@ claims = ["behaviour.visibility-task-dlq", "server.dlq_writes"]
 [[conclusion]]
 id = "slow-writes"
 title = "Visibility store slow to write"
-statement = "Visibility records fall behind because the visibility store is slow to write them: writes took up to {write_latency.max}, against about {write_latency.baseline} before the incident. Each visibility task holds one of History's visibility workers while it waits, so the tasks behind it wait too."
+statement = "Visibility records fall behind because the visibility store is slow to write them: writes took up to {write_latency.max}[, against about {write_latency.baseline} before the incident]. Each visibility task holds one of History's visibility workers while it waits, so the tasks behind it wait too."
 when = { hypothesis = "slow-writes", state = ["established"] }
 
 [[conclusion.clause]]
@@ -661,7 +661,7 @@ claims = ["limit.visibility-persistence-qps", "dc.system.visibilityPersistenceMa
 [[conclusion]]
 id = "slow-queries"
 title = "Visibility queries slow"
-statement = "Listing and counting calls are slow because their queries take long in the visibility store: up to {query_latency.max}, against about {query_latency.baseline} before the incident."
+statement = "Listing and counting calls are slow because their queries take long in the visibility store: up to {query_latency.max}[, against about {query_latency.baseline} before the incident]."
 when = { hypothesis = "slow-queries", state = ["established"] }
 
 [[conclusion.clause]]
@@ -679,7 +679,7 @@ claims = ["server.visibility_persistence_latency"]
 [[conclusion]]
 id = "queue-backlog"
 title = "History's visibility workers saturated"
-statement = "Visibility records fall behind because visibility tasks wait for a worker of History's visibility scheduler, up to {visibility_schedule_latency.max} against about {visibility_schedule_latency.baseline} before the incident, while writes to the store stay fast: the hosts have more visibility tasks than their workers get through."
+statement = "Visibility records fall behind because visibility tasks wait for a worker of History's visibility scheduler, up to {visibility_schedule_latency.max}[ against about {visibility_schedule_latency.baseline} before the incident], while writes to the store stay fast: the hosts have more visibility tasks than their workers get through."
 when = { all = [
   { hypothesis = "queue-backlog", state = ["established"] },
   { hypothesis = "slow-writes", state = ["eliminated"] },
@@ -697,7 +697,7 @@ claims = ["behaviour.visibility-write-path", "dc.history.visibilityProcessorSche
 [[conclusion]]
 id = "records-late"
 title = "Visibility records written late"
-statement = "Visibility records fall behind the Workflows: they were written up to {visibility_task_latency.max} after the changes they record, against about {visibility_task_latency.baseline} before the incident."
+statement = "Visibility records fall behind the Workflows: they were written up to {visibility_task_latency.max} after the changes they record[, against about {visibility_task_latency.baseline} before the incident]."
 when = { hypothesis = "records-late", state = ["established"] }
 
 [[conclusion.recommendation]]

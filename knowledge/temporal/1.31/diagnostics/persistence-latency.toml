@@ -403,7 +403,7 @@ claims = ["behaviour.sql-pool-wait", "heuristic.persistence-load-rise"]
 [[conclusion]]
 id = "database-slow"
 title = "Database calls slower"
-statement = "Persistence latency rose from about {persistence_latency.baseline} to {persistence_latency.max} because the database calls themselves slowed: History's connection pools had connections to spare, so calls did not wait for one."
+statement = "Persistence latency rose[ from about {persistence_latency.baseline}] to {persistence_latency.max} because the database calls themselves slowed: History's connection pools had connections to spare, so calls did not wait for one."
 when = { all = [
   { hypothesis = "database-slow", state = ["established"] },
   { hypothesis = "pool-saturated", state = ["eliminated"] },

@@ -9,12 +9,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kyumei_domain::{
-    ClaimCategory, Effect, HypothesisId, ServerVersion, SignalId, VerificationMethod,
+    ClaimCategory, Effect, HypothesisId, HypothesisState, ServerVersion, SignalId, Statistic,
+    VerificationMethod,
 };
 use regex::RegexBuilder;
 
 use crate::{
-    condition::Condition,
+    condition::{Condition, SignalStat, intersection},
     model::{
         Claim, DiagnosticDef, Instrument, Pack, ReferenceKind, RuleDef, SourceKind,
         VerificationStatusDef, VersionOf,
@@ -632,7 +633,8 @@ fn validate_diagnostic(pack: &Pack, d: &DiagnosticDef, problems: &mut Vec<String
         if rule.when.signals().is_empty() {
             problems.push(format!("{rat}: a rule must rest on at least one signal"));
         }
-        check_template(d, &rule.statement, Some(&rule.when), &rat, problems);
+        let known = rule.when.known_when(true, &|_, _| BTreeSet::new());
+        check_template(d, &rule.statement, Some(&rule.when), &known, &rat, problems);
         for claim in &rule.claims {
             if !pack.claims.contains_key(claim) {
                 problems.push(format!("{rat}: unknown claim `{claim}`"));
@@ -827,10 +829,14 @@ fn validate_diagnostic(pack: &Pack, d: &DiagnosticDef, problems: &mut Vec<String
                 "{cat}: a conclusion must rest on hypothesis states"
             ));
         }
-        check_template(d, &c.statement, None, &cat, problems);
+        let held = |h: &HypothesisId, states: &[HypothesisState]| reached_through(d, h, states);
+        let known = c.when.known_when(true, &held);
+        check_template(d, &c.statement, None, &known, &cat, problems);
         for clause in &c.clauses {
             check_condition(d, &clause.when, &cat, problems);
-            check_template(d, &clause.text, None, &cat, problems);
+            let mut known = known.clone();
+            known.extend(clause.when.known_when(true, &held));
+            check_template(d, &clause.text, None, &known, &cat, problems);
         }
         for r in &c.recommendations {
             for claim in &r.claims {
@@ -857,32 +863,87 @@ fn check_condition(d: &DiagnosticDef, c: &Condition, at: &str, problems: &mut Ve
     }
 }
 
+/// `known` holds the statistics that are certain to have values whenever the
+/// text is shown.
 fn check_template(
     d: &DiagnosticDef,
     text: &str,
     condition: Option<&Condition>,
+    known: &BTreeSet<SignalStat>,
     at: &str,
     problems: &mut Vec<String>,
 ) {
-    match template::placeholders(text) {
-        Err(e) => problems.push(format!("{at}: statement placeholder: {e}")),
-        Ok(found) => {
-            for p in found {
-                if d.signal(&p.signal).is_none() {
-                    problems.push(format!(
-                        "{at}: statement uses unknown signal `{}`",
-                        p.signal
-                    ));
-                }
-                if let Some(condition) = condition
-                    && !condition.signals().contains(&p.signal)
-                {
-                    problems.push(format!(
-                        "{at}: statement quotes `{}` but the rule's condition does not read it",
-                        p.signal
-                    ));
-                }
+    let parts = match template::parts(text) {
+        Ok(parts) => parts,
+        Err(e) => {
+            problems.push(format!("{at}: statement: {e}"));
+            return;
+        }
+    };
+    for part in parts {
+        let (template::Part::Text(piece) | template::Part::Optional(piece)) = part;
+        let found = match template::placeholders(piece) {
+            Ok(found) => found,
+            Err(e) => {
+                problems.push(format!("{at}: statement placeholder: {e}"));
+                continue;
+            }
+        };
+        let optional = matches!(part, template::Part::Optional(_));
+        if optional && found.is_empty() {
+            problems.push(format!(
+                "{at}: statement has an optional segment with no placeholder, `[{piece}]`, which would always show"
+            ));
+        }
+        for p in found {
+            if d.signal(&p.signal).is_none() {
+                problems.push(format!(
+                    "{at}: statement uses unknown signal `{}`",
+                    p.signal
+                ));
+            }
+            if let Some(condition) = condition
+                && !condition.signals().contains(&p.signal)
+            {
+                problems.push(format!(
+                    "{at}: statement quotes `{}` but the rule's condition does not read it",
+                    p.signal
+                ));
+            }
+            // A baseline needs samples from before the incident window, which
+            // evidence may not reach, so outside an optional segment it is
+            // quoted only where the text's condition ensures there is one.
+            if !optional && p.stat == Statistic::Baseline && !known.contains(&p) {
+                problems.push(format!(
+                    "{at}: statement quotes `{{{p}}}` outside an optional segment, but nothing ensures there is a baseline: put the comparison in [ ]"
+                ));
             }
         }
     }
+}
+
+/// What a hypothesis in one of `states` ensures is known: a hypothesis gets
+/// there only when a rule with an effect that leads there fires, so whatever
+/// every such rule reads. An establishing or eliminating rule that rests on
+/// assertions alone only supports or weakens.
+fn reached_through(
+    d: &DiagnosticDef,
+    hypothesis: &HypothesisId,
+    states: &[HypothesisState],
+) -> BTreeSet<SignalStat> {
+    intersection(states.iter().map(|state| {
+        let effects: &[Effect] = match state {
+            HypothesisState::Established => &[Effect::Establishes],
+            HypothesisState::Eliminated => &[Effect::Eliminates],
+            HypothesisState::Supported => &[Effect::Supports, Effect::Establishes],
+            HypothesisState::Weakened => &[Effect::Weakens, Effect::Eliminates],
+            HypothesisState::Candidate => &[],
+        };
+        intersection(
+            d.rules
+                .iter()
+                .filter(|r| &r.hypothesis == hypothesis && effects.contains(&r.effect))
+                .map(|r| r.when.known_when(true, &|_, _| BTreeSet::new())),
+        )
+    }))
 }
