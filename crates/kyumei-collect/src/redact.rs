@@ -16,7 +16,7 @@ use std::{
     sync::LazyLock,
 };
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use kyumei_samples::Samples;
 use regex::Regex;
 use sha2::Sha256;
@@ -75,7 +75,7 @@ impl Redactor {
             })?,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let mut key = [0u8; 32];
-                getrandom::getrandom(&mut key).map_err(|e| io::Error::other(e.to_string()))?;
+                getrandom::fill(&mut key).map_err(|e| io::Error::other(e.to_string()))?;
                 write_private(&path, &hex(&key))?;
                 key
             }
@@ -85,7 +85,7 @@ impl Redactor {
     }
 
     pub fn pseudonym(&mut self, label: &str, value: &str) -> String {
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&self.key)
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(&self.key)
             .unwrap_or_else(|e| panic!("HMAC takes any key: {e}"));
         mac.update(label.as_bytes());
         mac.update(&[0]);
