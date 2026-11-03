@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use kyumei_app::{
     InvestigationService, LocalInvestigations,
-    dashboards::{GrafanaLinks, evidence_charts},
+    dashboards::{GrafanaLinks, evidence_charts, evidence_panels},
     fixture::{self, Fixture, FixtureClock},
 };
 use kyumei_dashboards::{Library, Origin};
@@ -100,10 +100,23 @@ async fn visibility_lag_is_drawn_as_its_panel() {
     );
     assert!(link.ends_with("&var-namespace=orders"), "{link}");
 
+    // A list of evidence names the same panel, opening in Kyumei, without drawing it.
+    let panels = evidence_panels(&library, &kb, &inv, e1, &links);
+    assert_eq!(panels.len(), 1);
+    assert_eq!(panels[0].panel_title, "Visibility lag");
+    assert_eq!(panels[0].dashboard_title, "Test Visibility v0.1");
+    assert_eq!(panels[0].open_url, chart.panel.open_url);
+    assert_eq!(
+        panels[0].open_url,
+        format!("/investigations/{}/panels/test-visibility/9", inv.id)
+    );
+
     // Evidence no loaded panel reads is not drawn.
     let e2 = inv.evidence(&"E2".into()).expect("E2");
     assert!(evidence_charts(&library, &kb, &inv, e2, &links, &utc).is_empty());
     assert!(evidence_charts(&Library::default(), &kb, &inv, e1, &links, &utc).is_empty());
+    assert!(evidence_panels(&library, &kb, &inv, e2, &links).is_empty());
+    assert!(evidence_panels(&Library::default(), &kb, &inv, e1, &links).is_empty());
 }
 
 /// With the operations repository's dashboards (KYUMEI_OPERATIONS_SOURCE, a checkout

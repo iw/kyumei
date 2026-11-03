@@ -103,6 +103,10 @@ pub async fn diagnosis(w: &Workspace) -> Result<impl View> {
                     }
                 </ul>
             }
+            if !c.watch.is_empty() {
+                <h3>"Watch it recover"</h3>
+                reference_list(refs: &c.watch)
+            }
             if !c.references.is_empty() {
                 <h3>"Runbooks and playbooks"</h3>
                 reference_list(refs: &c.references)
@@ -687,6 +691,11 @@ pub async fn evidence_list(w: &Workspace) -> Result<impl View> {
                                 <div class="fine muted"><time title=(e.submitted_utc.clone())>(e.submitted.clone())</time> " · " (e.origin.clone())</div>
                                 if let Some(q) = &e.query {
                                     <div class="evidence-query"><code title=(q.clone())>(q.clone())</code></div>
+                                }
+                                for p in &e.drawn_as {
+                                    <div class="fine">"Drawn as " <span title=(p.dashboard_title.clone())>"“" (p.panel_title.clone()) "”"</span> " · "
+                                        <a class="open-panel" href=(p.open_url.clone())>"open with live data"</a>
+                                    </div>
                                 }
                             </td>
                             <td class="fine">

@@ -19,6 +19,19 @@ Prometheus and Grafana through an SSH tunnel.
 
 ## What the dev machine needs
 
+- **This repository**, about 4 MB to clone. `demo/` holds the demo's Compose
+  stack (`compose.yaml`, `.env` and `compose/`), Kyumei's profiles for it
+  (`kyumei-config.toml`) and the demo's Rust program, `kyumei-demo`. The
+  program builds in Kyumei's workspace but uses none of Kyumei's crates.
+  Clone it, then work from its root:
+
+  ```bash
+  git clone https://github.com/iw/kyumei
+  ```
+
+  ```bash
+  cd kyumei
+  ```
 - **Docker with Compose.** The first start pulls about 0.9 GB of images from
   Docker Hub: Temporal Server 1.31.2 and its admin tools, the Temporal UI,
   PostgreSQL 17, Prometheus and Grafana. `demo/.env` pins their versions.
@@ -49,10 +62,6 @@ Prometheus and Grafana through an SSH tunnel.
 - **The Temporal CLI** (`brew install temporal`), to describe the payouts
   Task Queue. Kyumei's knowledge of its output is checked against CLI 1.7.0
   to 1.9.1.
-- **This repository.** `demo/` holds the demo's Compose stack
-  (`compose.yaml`, `.env` and `compose/`), Kyumei's profiles for it
-  (`kyumei-config.toml`) and the demo's Rust program, `kyumei-demo`. The
-  program builds in Kyumei's workspace but uses none of Kyumei's crates.
 - **Free local ports**: 7233 (Temporal), 7243 (Temporal's HTTP API), 8233
   (Temporal UI), 9090 (Prometheus), 3000 (Grafana), 9101–9103 (Worker
   metrics) and 7380 (Kyumei). Compose publishes its ports on 127.0.0.1 only,
@@ -114,8 +123,10 @@ healthy baseline run at least that long before breaking anything.
    "connection refused", until the team scales out to a second payouts
    Worker. That is expected.
 
-5. Build Kyumei and start it. `.kyumei-demo` is the demo's own data
-   directory, which Git ignores, so the audience sees only the demo's
+5. Build Kyumei and start it. Beyond the demo's crates, its first build
+   downloads about 31 MB of crates from crates.io, and tempdes, a Git
+   dependency, from GitHub (about 2 MB). `.kyumei-demo` is the demo's own
+   data directory, which Git ignores, so the audience sees only the demo's
    investigations:
 
    ```bash
@@ -174,6 +185,18 @@ Write down the time. Each Worker prints the UTC time it started.
 Give it at least five minutes. The invoices backlog grows by about 2.7 tasks a
 second and the payouts backlog by about 10.
 
+This is what on-call sees. In Grafana, open the Core SDK dashboard from the
+**Temporal** folder, set **Namespace** to `billing`, and expand the
+**Schedule To Start Latencies** row. **Activity Schedule To Start Latency**
+draws a line for each Task Queue, `charge_customer - invoices` and
+`charge_customer - payouts`, and both climb into minutes. The dashboard's
+title doesn't list Rust, but the Rust SDK reports the same Core metrics. The
+panel shows p99 and Kyumei measures p95, so Kyumei's figures are lower.
+Kyumei draws the same panel with its schedule-to-start evidence. The Temporal
+Server dashboard's **Schedule to Start Latencies** panel, under **SDK Workers
+Info**, adds the Namespace's Task Queues together, so it mixes the two
+incidents.
+
 ## In Kyumei
 
 Open `http://127.0.0.1:7380`. Times are in UTC unless you pick another zone
@@ -204,14 +227,18 @@ under **Times in**. The form's labels name the zone it reads.
 
 ### payouts
 
-1. Choose **billing-payouts**, which records two Worker processes. Describe
-   it, for example: *Since about 11:00 UTC, payout activities on the payouts
-   task queue take over a minute to start. We added a second worker and it
-   made no difference. Workers look idle.* Set the same window.
-2. Press **Collect now** for each request until Kyumei asks for **Activity
+1. Under **Environment**, choose **billing-payouts**, which records two
+   Worker processes.
+2. Describe it, for example: *Since about 11:00 UTC, payout activities on the
+   payouts task queue take over a minute to start. We added a second worker
+   and it made no difference. Workers look idle.*
+3. Set the window as for invoices: **Incident from** a minute or two after
+   the break, and **Incident to** about an hour from now.
+4. Open the investigation. Kyumei recognises the same symptom, on payouts.
+5. Press **Collect now** for each request until Kyumei asks for **Activity
    Task Queue backlog, rates and rate limit**. On the way it rules out
    exhausted slots (at least 200 free), missing pollers and failing polls.
-3. That request asks for DescribeTaskQueue. Describe the Task Queue with the
+6. That request asks for DescribeTaskQueue. Describe the Task Queue with the
    Temporal CLI on the dev machine, and paste its JSON under **Output, export
    or text**, with the command under **Query or command used**. Paste it
    straight away: Kyumei takes the time you submit it as the time it was
@@ -226,21 +253,24 @@ under **Times in**. The form's labels name the zone it reads.
    carries the rate its Worker sends, and Kyumei reads the Workers' 5/s from
    them. Keep `--task-queue-type activity`: without it the CLI lists the
    Workflow Task Queue's rows too, and Kyumei leaves them unread.
-4. Kyumei establishes **Workers' Task Queue rate limit reached**: every
+7. Kyumei establishes **Workers' Task Queue rate limit reached**: every
    polling Worker sends 5/s, dispatch is pinned there, and the backlog waits
    behind it, so more Workers would not have raised the limit. It says how
    long the backlog takes to clear at that rate, and advises raising or
    removing the option on *every* Worker, because the latest poll's value
    wins. A limit set through the API, or the system default, stays weakened
    rather than ruled out: either would have to equal the Workers' rate.
-5. **Collect now** for the last request. It compares the Activities
+8. **Collect now** for the last request. It compares the Activities
    Workflows scheduled before and during the incident, rules out a fan-out,
    and completes the diagnosis.
 
 ## Fix both and watch them recover
 
 - **invoices:** stop the Worker and start it with the SDK's default of 100
-  slots. A backlog of about 2,600 drains in about two minutes.
+  slots. They finish about 33 tasks a second against the 6 arriving, so the
+  backlog, which has grown by about 2.7 a second since the break, clears at
+  about 27 a second: in about two minutes if you fix it 20 minutes after the
+  break.
 
   ```bash
   target/release/kyumei-demo worker --task-queue invoices --slots 100 --activity-seconds 3 --metrics-port 9101
@@ -261,9 +291,12 @@ under **Times in**. The form's labels name the zone it reads.
   target/release/kyumei-demo worker --task-queue payouts --slots 200 --activity-seconds 0.1 --metrics-port 9103
   ```
 
-To show the recovery in Kyumei, open the schedule-to-start evidence, choose
-**Open the panel with live data**, and watch the latency fall. Describing
-the payouts Task Queue again with the Temporal CLI then shows no backlog.
+To show the recovery in Kyumei, open either investigation. Under its
+diagnosis, **Watch it recover** lists the panel that draws the symptom,
+Activity Schedule To Start Latency: choose **open with live data**. The panel
+draws a line for each Task Queue, so you watch both latencies fall.
+Describing the payouts Task Queue again with the Temporal CLI then shows no
+backlog.
 
 ## Starting again
 
@@ -294,7 +327,7 @@ Leave at least 20 minutes of healthy baseline before breaking things again.
 - **Kyumei doesn't recognise the description.** Under **Context you already
   know**, set **Symptom** to *Activity schedule-to-start latency is elevated*.
 - **Kyumei keeps asking for the payouts backlog request.** It needs the
-  Temporal CLI's description, pasted, as step 3 under payouts says. Collect
+  Temporal CLI's description, pasted, as step 6 under payouts says. Collect
   now there reads only the backlog's age.
 - **Collect now returns no series.** Check Prometheus's targets page, and
   that the investigation's Namespace and Task Queue are `billing` and
