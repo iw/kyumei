@@ -16,7 +16,9 @@ futures.workspace = true
 gethostname = "1"
 reqwest.workspace = true
 serde_json.workspace = true
-temporalio-client.workspace = true
+# Compiles Temporal's protos with protox, so the build needs no protoc. Kyumei's
+# build does the same, through tokeira-engine.
+temporalio-client = { workspace = true, features = ["vendored-protox"] }
 temporalio-common.workspace = true
 temporalio-macros.workspace = true
 temporalio-sdk.workspace = true

@@ -46,8 +46,6 @@ Prometheus and Grafana through an SSH tunnel.
   ```
 - **Rust**, through [rustup](https://rustup.rs). The repository's
   `rust-toolchain.toml` pins 1.98.1, and rustup fetches it if it's missing.
-  The SDK's build also runs `protoc`, the Protocol Buffers compiler
-  (`brew install protobuf`, or `apt install protobuf-compiler`).
 - **The Temporal CLI** (`brew install temporal`), to describe the payouts
   Task Queue. Kyumei's knowledge of its output is checked against CLI 1.7.0
   to 1.9.1.
@@ -64,7 +62,7 @@ Prometheus and Grafana through an SSH tunnel.
 Run the commands below from the repository root, each in its own terminal
 (or tmux window). Ctrl-C stops any of them.
 
-Build the demo's program once. The first build downloads about 21 MB of
+Build the demo's program once. The first build downloads about 23 MB of
 crates from crates.io:
 
 ```bash
@@ -314,5 +312,3 @@ Leave at least 20 minutes of healthy baseline before breaking things again.
   lists them all. `temporal-schema` and `temporal-namespace` exit with 0 once
   they have done their work. To read the server's log, run
   `docker compose -f demo/compose.yaml logs temporal`.
-- **The build stops in `temporalio-protos`.** It needs `protoc`; install it
-  and build again.
