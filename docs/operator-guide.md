@@ -18,9 +18,9 @@ Open <http://127.0.0.1:7373/>. These options change how it runs:
 | `--addr 0.0.0.0:7373` | Listen elsewhere. There is no authentication, so only expose Kyumei on a network you trust. |
 | `--data-dir DIR` | Where investigations live. The default is `kyumei` in your platform's local data directory; see [Configuration and data](#configuration-and-data). |
 | `--config FILE` | Read preferred time zones and environment profiles from FILE. See [Configuration and data](#configuration-and-data). |
-| `--in-process` | Run without the durable engine. Investigations are journalled as JSON. |
+| `--in-process` | Run without the durable engine, and so without the explainer. Investigations are journalled as JSON. |
 | `--snapshot-interval N` | Seconds between engine snapshots. The default is 5. |
-| `--explainer claude` / `codex` | Have a model reword explanations. See below. |
+| `--explainer claude` / `codex` | Have a model reword explanations. Off by default. See below. |
 | `--no-simulate` | Don't run the simulations that check whether a cause is big enough. See [Simulations](#simulations). |
 | `--demo N` | Preload the reference Workflow Task investigation after N evidence steps. |
 | `--demo-fixture NAME` | Also preload that fixture's investigation, with all its evidence. Repeatable. |
@@ -416,10 +416,11 @@ dashboard v2.15.0+`). Runbooks declare none.
 
 ## Explanations from a model
 
-By default every explanation is written by the deterministic engine. With
-`--explainer claude`, Claude Code rewrites the prose after each assessment. It
-runs through your local `claude` CLI, which must be logged in. `--explainer
-codex` uses the Codex CLI instead.
+The explainer is off by default, so every explanation is written by the
+deterministic engine. With `--explainer claude`, Claude Code rewrites the prose
+after each assessment. It runs through your local `claude` CLI, which must be
+logged in. `--explainer codex` uses the Codex CLI instead. The explainer runs
+on Odori, so `--in-process` has none.
 
 The model sees the structured assessment and may only reword it. A draft is
 rejected if it does any of the following:

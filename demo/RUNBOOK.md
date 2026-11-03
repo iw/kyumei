@@ -124,13 +124,17 @@ healthy baseline run at least that long before breaking anything.
    ```
 
    ```bash
-   target/debug/kyumei serve --addr 127.0.0.1:7380 --data-dir .kyumei-demo --config demo/kyumei-config.toml --prometheus-url http://127.0.0.1:9090 --grafana-url http://127.0.0.1:3000 --dashboards ../temporal-server-operations/observability/dashboards --explainer claude
+   target/debug/kyumei serve --addr 127.0.0.1:7380 --data-dir .kyumei-demo --config demo/kyumei-config.toml --prometheus-url http://127.0.0.1:9090 --grafana-url http://127.0.0.1:3000 --dashboards ../temporal-server-operations/observability/dashboards
    ```
 
    `--grafana-url` opens Kyumei's panels in Grafana, over the incident
-   window. `--explainer claude` rewords Kyumei's text through the `claude`
-   CLI, which must be logged in where Kyumei runs. Leave it out, or use
-   `--explainer none`, to show only the deterministic text.
+   window.
+
+   The explainer is off by default, so Kyumei shows only the text its engine
+   writes from the assessment. To have Claude reword that text, add
+   `--explainer claude` to the command. It runs the `claude` CLI, which must
+   be logged in where Kyumei runs, and Kyumei discards any rewording that
+   doesn't match the assessment.
 
 6. To run Kyumei on a laptop instead, tunnel Prometheus and Grafana from the
    dev machine, then start Kyumei on the laptop as in step 5, but with

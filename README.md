@@ -279,11 +279,11 @@ cargo run -p kyumei-extract --bin gen-sdk-metric-claims -- --core ../sdk-rust \
 
 Kyumei's explanations are deterministic: the engine writes each one from the
 assessment, so the same evidence always reads the same way. The explainer is
-optional. With `--explainer claude` or `--explainer codex`, a model rewords the
-explanations through the authenticated Claude Code or Codex CLI. Its draft is
-checked against the assessment: no new numbers, no unknown findings, no
-contradicted hypothesis states. A draft that fails is discarded and the
-deterministic text stays.
+off by default. With `--explainer claude` or `--explainer codex`, a model
+rewords the explanations through the authenticated Claude Code or Codex CLI.
+Its draft is checked against the assessment: no new numbers, no unknown
+findings, no contradicted hypothesis states. A draft that fails is discarded
+and the deterministic text stays.
 
 The explainer runs on [Odori](https://crates.io/crates/odori)
 ([documentation](https://docs.rs/odori), [source](https://github.com/tokeira/tokeira-odori)),
