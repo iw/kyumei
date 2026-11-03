@@ -173,7 +173,7 @@ request after every submission:
 | Symptom | Reference fixture | Branches |
 | --- | --- | --- |
 | Workflow Task schedule-to-start | `signal-flood-wft-latency`: dispatch ceiling under a Signal flood | `worker-saturation`, `poll-throttling`, `signal-flood-uneven-partitions` (1.32) |
-| Activity schedule-to-start | `activity-worker-rate-limit`: the Workers' Task Queue-wide rate limit, taken for a per-Worker one, under a fan-out | `activity-api-rate-limit`, `activity-slot-exhaustion`, `activity-worker-rate-limit-cli`, `activity-worker-rate-limit-reported` (1.32) |
+| Activity schedule-to-start | `activity-worker-rate-limit`: the Workers' Task Queue-wide rate limit, taken for a per-Worker one, under a fan-out | `activity-api-rate-limit`, `activity-slot-exhaustion`, `activity-worker-rate-limit-cli`, `activity-worker-rate-limit-draining`, `activity-worker-rate-limit-reconnects`, `activity-worker-rate-limit-reported` (1.32) |
 | ResourceExhausted rejections | `namespace-rate-limit-surge`: the namespace rate limit under a surge of Starts | `persistence-host-limit` |
 | Persistence latency | `persistence-pool-saturation`: History's connection pools full under a load rise | `persistence-database-slow` |
 | Workflow Task failures | `nondeterminism-after-deploy`: a deploy that running Workflows cannot replay | `workflow-code-error`, `workflow-task-timeouts` |
@@ -188,8 +188,11 @@ request after every submission:
 `visibility-collected-blocks` replays the visibility reference investigation with
 every answer pasted as a `kyumei-collect` sample block instead of query output.
 `activity-worker-rate-limit-cli` answers the Activity reference investigation's
-Matching request with the Temporal CLI's JSON first, which leaves the rate limit
-open, and then with DescribeTaskQueue through grpcurl. The two 1.32 branches run
+Matching request with the Temporal CLI's JSON alone: it has no rate limit, but
+each poller row carries the rate its Worker sends.
+`activity-worker-rate-limit-draining` reads the Workers' limit the same way from
+a capture taken after the arrivals stopped, and says how long the backlog takes
+to clear. The two 1.32 branches run
 on Temporal 1.32, whose DescribeTaskQueue reports whether the rate limiter held
 dispatch back.
 
@@ -401,7 +404,7 @@ release from 1.27.0 checked by the version sweep; twelve diagnostics (Workflow
 Task and Activity schedule-to-start, persistence latency, ResourceExhausted,
 Workflow Task failures, history limits, Workflow cache misses, History task
 lag, History's Workflow cache, shard ownership churn, visibility lag and
-errors, Java Workflow thread exhaustion) and thirty-six fixtures. Kyumei
+errors, Java Workflow thread exhaustion) and thirty-eight fixtures. Kyumei
 reads metrics from Prometheus or Grafana when it can reach them, and from
 `kyumei-collect` sample blocks when it cannot. Its diagnostics link 98 runbooks,
 playbook sections and panels of [tsurdilo/temporal-server-operations](#temporal-server-operations), and it

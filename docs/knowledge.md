@@ -266,7 +266,7 @@ given as its `contrib/…` directory.
 
 The same check runs as a test when `KYUMEI_VERIFY_SOURCES` lists
 `id=path` pairs separated by `;`. Against the sources at hand, every one of the
-43,519 citations it checks is confirmed at its exact line, the 98 references at
+43,575 citations it checks is confirmed at its exact line, the 98 references at
 `5a71c36` among them. Kyumei's heuristics cite nothing to check, and the
 citations of a source not at hand, such as a Micrometer release, are listed as
 skipped.
@@ -825,7 +825,8 @@ absent_reads_zero = { witness = 'sum(rate(temporal_long_request{…}[1m]))', bec
   (`temporal-cli`), a dynamic config lookup (`dynamic-config`), a log search
   (`logs`) or a check (`operator-check`). The instructions are listed most
   specific first: the DescribeTaskQueue requests put grpcurl, which returns
-  every signal they expect, before the CLI, which leaves the rate limit out.
+  every signal they expect, before the CLI, which leaves the effective rate
+  limit out.
 - **Placeholders.** Bodies may use `{namespace}`, `{task_queue}`, `{start}`,
   `{end}` and `{step}`. Each value is escaped for where it stands. In PromQL,
   a value inside a string is a string literal, or a regex literal in a regex

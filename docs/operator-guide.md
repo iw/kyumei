@@ -254,11 +254,15 @@ serves gRPC reflection, so grpcurl needs only its address, and the response
 is the API's own JSON: Matching's backlog and rates, the effective rate
 limit and where it comes from, and the pollers of the last five minutes. The
 `temporal task-queue describe` command is the second way. The CLI prints the
-backlog, the rates and the pollers, but neither the rate limit nor its
-source, and only for the unversioned queue, so Kyumei asks again for the rate
-limit after reading it. Keep its `--task-queue-type`: without it the CLI
-lists the Workflow and the Activity Task Queue together, and Kyumei leaves
-the rows unread.
+backlog, the rates and the pollers, each poller with the Task Queue rate its
+Worker sends, but neither the effective rate limit nor its source, and only
+for the unversioned queue. When every poller sends the same rate and dispatch
+runs at it, with a backlog waiting or tasks arriving faster, Kyumei takes the
+Workers' rate as the limit in force. A limit set through the API, or the
+system default, would have to equal that rate, so Kyumei leaves both weakened
+rather than ruled out; DescribeTaskQueue's source for the limit settles them.
+Keep the CLI's `--task-queue-type`: without it the CLI lists the Workflow and
+the Activity Task Queue together, and Kyumei leaves the rows unread.
 
 On Temporal 1.32, DescribeTaskQueue's statistics also say whether the rate
 limiter held dispatch back in the 30 seconds before the capture

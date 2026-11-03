@@ -38,6 +38,7 @@ async fn every_fixture_replays() {
             "activity-slot-exhaustion",
             "activity-worker-rate-limit",
             "activity-worker-rate-limit-cli",
+            "activity-worker-rate-limit-draining",
             "activity-worker-rate-limit-reconnects",
             "activity-worker-rate-limit-reported",
             "history-approaching-limits",
@@ -114,6 +115,41 @@ fn named(id: &str) -> Fixture {
         .into_iter()
         .find(|f| f.fixture.id == id)
         .expect("fixture")
+}
+
+/// A backlog dispatched at the rate every Worker sends settles the Workers'
+/// limit from the Temporal CLI's JSON, though nothing more was arriving when it
+/// was captured, and the diagnosis and its advice say how long the backlog
+/// takes to clear at that rate.
+#[tokio::test]
+async fn a_draining_backlog_settles_the_limit_and_says_how_long_it_takes_to_clear() {
+    let kb = kb();
+    let assessment = replayed(&kb, &named("activity-worker-rate-limit-draining")).await;
+    let conclusion = assessment.conclusion.expect("a conclusion");
+    assert_eq!(conclusion.id.as_str(), "worker-rate-limit");
+    for part in [
+        "Every polling Worker sends 5/s.",
+        "Dispatch ran at 4.98/s, pinned at the limit.",
+        "The 25,171 tasks waiting take at least 84 min to clear at 4.98/s.",
+    ] {
+        assert!(
+            conclusion.statement.contains(part),
+            "{}",
+            conclusion.statement
+        );
+    }
+    assert!(
+        !conclusion.statement.contains("unknown"),
+        "{}",
+        conclusion.statement
+    );
+    let advice = &conclusion.recommendations[0].text;
+    assert!(
+        advice.contains(
+            "Until then, the 25,171 tasks already waiting take at least 84 min to clear, and new tasks wait behind them."
+        ),
+        "{advice}"
+    );
 }
 
 /// On 1.32 DescribeTaskQueue says when the rate limiter held dispatch back. With

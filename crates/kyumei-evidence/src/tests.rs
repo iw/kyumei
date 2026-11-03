@@ -1186,7 +1186,7 @@ fn value_of<'e>(e: &'e Evidence, signal: &str) -> &'e ObservedValue {
 }
 
 #[test]
-fn the_cli_json_informs_the_activity_statistics_but_not_the_rate_limit() {
+fn the_cli_json_informs_the_activity_statistics_and_the_workers_rate_but_not_the_limit() {
     for family in ["1.31", "1.32"] {
         let (informed, uninformed, e) = answer_in_pack(
             family,
@@ -1200,13 +1200,21 @@ fn the_cli_json_informs_the_activity_statistics_but_not_the_rate_limit() {
                 "backlog_age",
                 "backlog_count",
                 "tasks_add_rate",
-                "tasks_dispatch_rate"
+                "tasks_dispatch_rate",
+                "worker_task_queue_rate"
             ],
             "{family}"
         );
-        // The CLI never prints the limit, its source or, on 1.32, rateLimitingActive,
-        // so the request stays open for them: a list-shaped `stats` without the flag
-        // is not a protobuf omission.
+        match value_of(&e, "worker_task_queue_rate") {
+            ObservedValue::Scalar { value, unit, .. } => {
+                assert_eq!(*value, 100.0);
+                assert_eq!(*unit, Some(Unit::PerSecond));
+            }
+            other => panic!("{other:?}"),
+        }
+        // The CLI never prints the effective limit, its source or, on 1.32,
+        // rateLimitingActive, so the request stays open for them: a list-shaped
+        // `stats` without the flag is not a protobuf omission.
         let mut left = vec!["dispatch_rate_limit", "rate_limit_source"];
         if family == "1.32" {
             left.push("rate_limiting_active");
@@ -1306,6 +1314,14 @@ fn describe_task_queue_through_grpcurl_informs_every_signal() {
         GRPCURL_ACTIVITY_1_32,
     );
     assert!(uninformed.is_empty(), "{uninformed:?}");
+    // No poller in the last five minutes: the empty list answers the rate the
+    // Workers send, without a value, so the request is not asked again for it.
+    assert_eq!(
+        value_of(&e, "worker_task_queue_rate"),
+        &ObservedValue::Omitted {
+            field: "pollers.ratePerSecond".to_owned()
+        }
+    );
     match value_of(&e, "dispatch_rate_limit") {
         ObservedValue::Scalar { value, .. } => assert_eq!(*value, 100.0),
         other => panic!("{other:?}"),

@@ -65,10 +65,19 @@ provenance = [{ source = "kyumei-heuristics" }]
 [[heuristic]]
 id = "heuristic.dispatch-at-limit"
 title = "Dispatch pinned at the limit"
-statement = "Dispatch at 95% or more of the effective rate limit, while tasks are added at least 2% faster, is treated as the rate limit binding; below 70% as the limit not binding."
-rationale = "The dispatch rate is a 30-second average. A binding limit holds dispatch just below the limit while adds exceed it."
-authored = 2026-09-30
-relies_on = ["api.describe_task_queue.effective_rate_limit", "api.task_queue_stats.tasks_dispatch_rate", "behaviour.partition-dispatch-rate-limit"]
+statement = "Dispatch at 95% or more of the effective rate limit, while tasks are added at least 2% faster or wait in the backlog, is treated as the rate limit binding; below 70% as the limit not binding."
+rationale = "The dispatch rate is a 30-second average. A binding limit holds dispatch just below the limit while there is more work than it lets through: adds that exceed it, or a backlog it drains no faster. A backlog dispatched at the limit shows the limit binding even after the adds have stopped."
+authored = 2026-10-27
+relies_on = ["api.describe_task_queue.effective_rate_limit", "api.task_queue_stats.tasks_dispatch_rate", "api.task_queue_stats.approximate_backlog_count", "behaviour.partition-dispatch-rate-limit"]
+provenance = [{ source = "kyumei-heuristics" }]
+
+[[heuristic]]
+id = "heuristic.limit-matches-worker-rate"
+title = "Dispatch at the rate every Worker sends"
+statement = "When every poller DescribeTaskQueue lists reports the same Task Queue rate, within 1%, and dispatch runs within 5% of it, the Workers' rate is treated as the limit in force, and a limit set through the API or the system default as unlikely."
+rationale = "Matching takes the effective limit from a rate set through the API if there is one, from the latest poll's rate otherwise, and from the system default when neither is below it. Dispatch at exactly the rate every Worker sends leaves the other two only a coincidence: each would have to equal it. Pollers that report different rates overwrite each other's, so no one rate among them can be read as the limit."
+authored = 2026-10-27
+relies_on = ["api.poller_info.rate_per_second", "limit.activity-worker-rate", "api.task_queue_stats.tasks_dispatch_rate"]
 provenance = [{ source = "kyumei-heuristics" }]
 
 [[heuristic]]

@@ -1,0 +1,30 @@
+{
+  "reachability": null,
+  "pollers": [
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "payouts-worker-9102@worker-host",
+      "lastAccessTime": "2026-10-05T10:49:51.516382212Z",
+      "ratePerSecond": 5
+    },
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "identity": "payouts-worker-9103@worker-host",
+      "lastAccessTime": "2026-10-05T10:49:47.517110963Z",
+      "ratePerSecond": 5
+    }
+  ],
+  "stats": [
+    {
+      "buildId": "UNVERSIONED",
+      "taskQueueType": "activity",
+      "approximateBacklogCount": 25171,
+      "approximateBacklogAge": "33m 14.46709238s",
+      "backlogIncreaseRate": -4.9843597,
+      "tasksAddRate": 0,
+      "tasksDispatchRate": 4.9843597
+    }
+  ]
+}

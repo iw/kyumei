@@ -157,11 +157,33 @@ provenance = [
   { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/physical_task_queue_manager.go", line = 663, excerpt = "Pollers: c.GetAllPollerInfo()," },
 ]
 
+[[api_field]]
+id = "api.poller_info.rate_per_second"
+message = "temporal.api.taskqueue.v1.PollerInfo"
+field = "rate_per_second"
+json_name = "ratePerSecond"
+json_path = "pollers.ratePerSecond"
+field_type = "double"
+unit = "per_second"
+purpose = "The Task Queue rate a poller's Worker sent with its latest poll, or 100,000/s, Matching's default dispatch rate, when it sent none. Each poller DescribeTaskQueue lists carries its own."
+returned_by = ["DescribeTaskQueue"]
+notes = [
+  "Matching applies the latest poll's rate to the whole Task Queue unless a queue rate limit set through the API overrides it (limit.activity-worker-rate).",
+  "Temporal CLI 1.7.0 to 1.9.1 print it in each poller row (cli.task-queue-describe).",
+]
+scope = { server = ["1.32.0", "1.32.1"] }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-27 }
+provenance = [
+  { source = "temporal-api-go-v1.63.5", path = "taskqueue/v1/message.pb.go", line = 737, excerpt = "RatePerSecond  float64" },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/poller_history.go", line = 63, excerpt = "RatePerSecond:             defaultRPS(value.taskQueueMetadata.GetMaxTasksPerSecond())," },
+  { source = ["temporal-server-v1.32.0", "temporal-server-v1.32.1"], path = "service/matching/poller_history.go", line = 77, excerpt = "return defaultTaskDispatchRPS" },
+]
+
 [[statement]]
 id = "cli.task-queue-describe"
 category = "cli-command"
 title = "temporal task-queue describe"
-statement = "Temporal CLI 1.7.0 to 1.9.1 describe a Task Queue through the Go SDK's DescribeTaskQueueEnhanced and print rows of their own, not DescribeTaskQueue's response. With `-o json`, `stats` lists a row per Build ID and Task Queue type, with approximateBacklogCount, approximateBacklogAge, tasksAddRate and tasksDispatchRate, and `pollers` lists the Workers that polled, a row each with its Build ID and type. No flag makes them print the effective rate limit, its source or rateLimitingActive."
+statement = "Temporal CLI 1.7.0 to 1.9.1 describe a Task Queue through the Go SDK's DescribeTaskQueueEnhanced and print rows of their own, not DescribeTaskQueue's response. With `-o json`, `stats` lists a row per Build ID and Task Queue type, with approximateBacklogCount, approximateBacklogAge, tasksAddRate and tasksDispatchRate, and `pollers` lists the Workers that polled, a row each with its Build ID, type and ratePerSecond, the Task Queue rate the Worker sent. No flag makes them print the effective rate limit, its source or rateLimitingActive."
 notes = [
   "The Go SDK 1.41.1, which CLI 1.7.0 to 1.8.3 build with, asks for DescribeTaskQueue's enhanced mode, in which the server returns versionsInfo alone, without effectiveRateLimit (behaviour.describe-task-queue-rate-limit).",
   "`--report-config` takes effect only with `--legacy-mode`, whose JSON lists each partition's status, pollers and configuration, without the effective rate limit. `temporal task-queue config get` prints only the queue rate limit set through the API.",
@@ -170,7 +192,7 @@ notes = [
   "The CLI writes its rows with Go's encoding/json: approximateBacklogCount is a number, no pollers is `null`, and approximateBacklogAge is a Go duration with a space after each letter and whole days as `d`, such as `4m 39.240305s`, `450m s` (milliseconds) or `3d 0h 5m 2s`.",
   "backlogIncreaseRate is not a DescribeTaskQueue field: the CLI prints the Go SDK's, which SDK 1.41.1 computes as TasksAddRate minus TasksDispatchRate.",
 ]
-verification = { status = "verified", method = "source-inspection", on = 2026-10-19 }
+verification = { status = "verified", method = "source-inspection", on = 2026-10-27 }
 provenance = [
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 290, excerpt = "resp, err := cl.DescribeTaskQueueEnhanced(cctx, client.DescribeTaskQueueEnhancedOptions{" },
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 252, excerpt = "return cctx.Printer.PrintStructured(descRows, printer.StructuredOptions{})" },
@@ -178,6 +200,8 @@ provenance = [
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 32, excerpt = "type statsRowType struct {" },
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 45, excerpt = 'Stats        []statsRowType                 `json:"stats"`' },
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 44, excerpt = 'Pollers      []pollerRowType                `json:"pollers"`' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 29, excerpt = 'RatePerSecond  float64   `json:"ratePerSecond"`' },
+  { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 119, excerpt = "RatePerSecond:  p.RatePerSecond," },
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 35, excerpt = 'ApproximateBacklogCount int64   `json:"approximateBacklogCount"`' },
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3", "temporal-cli-v1.8.0", "temporal-cli-v1.8.1", "temporal-cli-v1.8.2", "temporal-cli-v1.8.3", "temporal-cli-v1.9.0", "temporal-cli-v1.9.1"], path = "internal/temporalcli/commands.taskqueue.go", line = 163, excerpt = "stats.ApproximateBacklogAge = formatDuration(info.Stats.ApproximateBacklogAge)" },
   { source = ["temporal-cli-v1.7.0", "temporal-cli-v1.7.1", "temporal-cli-v1.7.2", "temporal-cli-v1.7.3"], path = "internal/temporalcli/commands.schedule.go", line = 604, excerpt = 's = reLetters.ReplaceAllString(s, "$0 ")' },
