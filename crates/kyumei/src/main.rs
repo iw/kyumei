@@ -114,10 +114,12 @@ struct ServeArgs {
     /// Windows), read when it exists.
     #[arg(long, value_name = "FILE")]
     config: Option<PathBuf>,
-    /// Run investigations in process (journalled) instead of on Odori.
-    #[arg(long)]
+    /// Run investigations in process (journalled) instead of on Odori, and so
+    /// without the explainer.
+    #[arg(long, conflicts_with = "explainer")]
     in_process: bool,
-    /// Have a model reword explanations (validated against the evidence).
+    /// Have a model reword explanations (validated against the evidence). It runs
+    /// on Odori, so not with --in-process.
     #[arg(long, value_enum, default_value_t = ExplainerArg::None)]
     explainer: ExplainerArg,
     /// Don't run the simulations that check whether a cause is big enough.
@@ -672,5 +674,21 @@ fn knowledge(kb: &KnowledgeBase, command: KnowledgeCommand) -> Result<()> {
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::error::ErrorKind;
+
+    use super::*;
+
+    #[test]
+    fn the_explainer_is_refused_in_process() {
+        let err = Cli::try_parse_from(["kyumei", "serve", "--in-process", "--explainer", "claude"])
+            .expect_err("the explainer runs on Odori");
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+        assert!(Cli::try_parse_from(["kyumei", "serve", "--in-process"]).is_ok());
+        assert!(Cli::try_parse_from(["kyumei", "serve", "--explainer", "claude"]).is_ok());
     }
 }

@@ -1,0 +1,29 @@
+[package]
+name = "kyumei-demo"
+description = "Synthetic incidents for a Kyumei demo, on Temporal's Rust SDK."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+# The SDK's macros expand to code that names futures and temporalio-workflow.
+futures.workspace = true
+gethostname = "1"
+reqwest.workspace = true
+serde_json.workspace = true
+# Compiles Temporal's protos with protox, so the build needs no protoc. Kyumei's
+# build does the same, through tokeira-engine.
+temporalio-client = { workspace = true, features = ["vendored-protox"] }
+temporalio-common.workspace = true
+temporalio-macros.workspace = true
+temporalio-sdk.workspace = true
+temporalio-workflow.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

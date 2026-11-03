@@ -391,6 +391,12 @@ th { font-weight: 500; }
 .trail-conclusion .trail-text { color: var(--accent); font-weight: 600; }
 .trail-superseded, .trail-answered { color: var(--faint); }
 .evidence-table td, .requests-table td { font-size: 0.86rem; }
+/* No width of its own, so a long query cannot widen the table: it fills the
+   cell and ends in an ellipsis. */
+.evidence-query code {
+  display: block; width: 0; min-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 0.76rem; color: var(--muted);
+}
 .runtime { margin-top: 0.4rem; }
 
 /* Evidence page */

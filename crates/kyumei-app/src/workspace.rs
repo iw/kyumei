@@ -188,6 +188,12 @@ pub struct CollectorView {
     pub missing: Option<String>,
     pub queries: usize,
     pub step: String,
+    /// What the queries read, when that is only part of what the request asks
+    /// for: a fallback query may read one value of several.
+    pub reads_only: Vec<String>,
+    /// Kyumei already has everything the queries read, so reading them again
+    /// would bring nothing the request still needs.
+    pub nothing_new: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -249,6 +255,8 @@ pub struct EvidenceRow {
     pub form: String,
     pub origin: String,
     pub responds_to: Option<String>,
+    /// The query or command the operator gave with it.
+    pub query: Option<String>,
     pub subject: String,
     pub bound: Vec<String>,
     pub unbound: usize,
@@ -581,12 +589,42 @@ pub fn build_with(
             missing,
             optional: inv.status == InvestigationStatus::Concluded,
             references: references(ReferenceTarget::Request(&r.definition)),
-            collector: CollectionPlan::for_request(r).map(|p| CollectorView {
-                command: p.command(&inv.id, &r.id),
-                missing: p.missing(),
-                queries: p.queries.len(),
-                step: p.step_text(),
-                unfilled: p.unfilled,
+            collector: CollectionPlan::for_request(r).map(|p| {
+                // A query reads the signals its metric claims are sources of.
+                let read: Vec<&kyumei_domain::SignalId> = r
+                    .expected_signals
+                    .iter()
+                    .filter(|s| {
+                        diagnostic.and_then(|d| d.signal(s)).is_some_and(|signal| {
+                            signal.source.iter().any(|source| {
+                                r.collect.iter().any(|c| {
+                                    c.method == kyumei_domain::CollectionMethod::Promql
+                                        && c.claims.contains(&source.claim)
+                                })
+                            })
+                        })
+                    })
+                    .collect();
+                let partial = !read.is_empty() && read.len() < r.expected_signals.len();
+                CollectorView {
+                    command: p.command(&inv.id, &r.id),
+                    missing: p.missing(),
+                    queries: p.queries.len(),
+                    step: p.step_text(),
+                    unfilled: p.unfilled,
+                    reads_only: if partial {
+                        read.iter()
+                            .map(|s| {
+                                diagnostic
+                                    .and_then(|d| d.signal(s))
+                                    .map_or(s.to_string(), |x| x.title.clone())
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    },
+                    nothing_new: partial && read.iter().all(|s| assessment.facts.get(s).is_some()),
+                }
             }),
             collect_blocked: (r.window.window.is_none()
                 && r.collect
@@ -948,6 +986,13 @@ fn evidence_row(inv: &Investigation, e: &Evidence, zone: &DisplayZone) -> Eviden
         form: e.interpretation.form.label().to_owned(),
         origin: e.origin.describe(),
         responds_to: e.responds_to.as_ref().map(ToString::to_string),
+        query: e
+            .declared
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+            .map(str::to_owned),
         subject: e
             .interpretation
             .observations

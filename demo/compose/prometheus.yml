@@ -1,0 +1,17 @@
+# Prometheus for compose.yaml: the Temporal Server's metrics, and the Workers' on the host.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: temporal
+    static_configs:
+      - targets: ["temporal:9465"]
+  # Only the ports RUNBOOK.md starts Workers on, so that a target that is down is a Worker
+  # yet to start. Another port needs its own line here, which Prometheus reads when it starts.
+  - job_name: workers
+    static_configs:
+      - targets:
+          - host.docker.internal:9101
+          - host.docker.internal:9102
+          - host.docker.internal:9103

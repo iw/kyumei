@@ -12,7 +12,7 @@ use kyumei_domain::{
     EffectiveObservation, EpistemicStatus, EvidenceId, IncidentWindow, ObservationId,
     ObservedValue, SeriesPoint, SeriesSummary, SignalId, Statistic, TimeWindow, Unit,
 };
-use kyumei_knowledge::{CombinePolicy, DiagnosticDef, SignalDef};
+use kyumei_knowledge::{CombinePolicy, DiagnosticDef, SignalDef, template::Value};
 use serde::{Deserialize, Serialize};
 
 /// How a fact's coverage relates to the incident window.
@@ -61,6 +61,14 @@ impl Fact {
             None if stat == Statistic::Last => self.categorical.clone(),
             None => None,
         }
+    }
+
+    /// `stat` as a template renders it, with the number a quotient divides.
+    pub fn value(&self, stat: Statistic, unit: Unit) -> Option<Value> {
+        Some(Value {
+            text: self.display(stat, unit)?,
+            number: self.get(stat).map(|v| (v, stat.unit_of(unit))),
+        })
     }
 }
 

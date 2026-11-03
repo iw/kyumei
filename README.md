@@ -173,7 +173,7 @@ request after every submission:
 | Symptom | Reference fixture | Branches |
 | --- | --- | --- |
 | Workflow Task schedule-to-start | `signal-flood-wft-latency`: dispatch ceiling under a Signal flood | `worker-saturation`, `poll-throttling`, `signal-flood-uneven-partitions` (1.32) |
-| Activity schedule-to-start | `activity-worker-rate-limit`: the Workers' Task Queue-wide rate limit, taken for a per-Worker one, under a fan-out | `activity-api-rate-limit`, `activity-slot-exhaustion`, `activity-worker-rate-limit-cli`, `activity-worker-rate-limit-reported` (1.32) |
+| Activity schedule-to-start | `activity-worker-rate-limit`: the Workers' Task Queue-wide rate limit, taken for a per-Worker one, under a fan-out | `activity-api-rate-limit`, `activity-slot-exhaustion`, `activity-worker-rate-limit-cli`, `activity-worker-rate-limit-draining`, `activity-worker-rate-limit-reconnects`, `activity-worker-rate-limit-reported` (1.32) |
 | ResourceExhausted rejections | `namespace-rate-limit-surge`: the namespace rate limit under a surge of Starts | `persistence-host-limit` |
 | Persistence latency | `persistence-pool-saturation`: History's connection pools full under a load rise | `persistence-database-slow` |
 | Workflow Task failures | `nondeterminism-after-deploy`: a deploy that running Workflows cannot replay | `workflow-code-error`, `workflow-task-timeouts` |
@@ -188,8 +188,11 @@ request after every submission:
 `visibility-collected-blocks` replays the visibility reference investigation with
 every answer pasted as a `kyumei-collect` sample block instead of query output.
 `activity-worker-rate-limit-cli` answers the Activity reference investigation's
-Matching request with the Temporal CLI's JSON first, which leaves the rate limit
-open, and then with DescribeTaskQueue through grpcurl. The two 1.32 branches run
+Matching request with the Temporal CLI's JSON alone: it has no rate limit, but
+each poller row carries the rate its Worker sends.
+`activity-worker-rate-limit-draining` reads the Workers' limit the same way from
+a capture taken after the arrivals stopped, and says how long the backlog takes
+to clear. The two 1.32 branches run
 on Temporal 1.32, whose DescribeTaskQueue reports whether the rate limiter held
 dispatch back.
 
@@ -221,9 +224,13 @@ cargo run -p kyumei -- serve --demo 3 --demo-fixture activity-worker-rate-limit 
 | `kyumei-sim` | Simulated clusters: tempdes runs scraped as Prometheus scrapes them, the PromQL Kyumei's requests use answered over the scrapes, and the scenario for the "big enough?" check (the only crate that runs tempdes) |
 | `kyumei` | The `kyumei` binary |
 | `kyumei-extract` | Maintainer tools: generate knowledge claims from Temporal and SDK source (`gen-dc-claims`, `gen-metric-claims`, `gen-sdk-metric-claims`), reading dynamic configuration with tempdes's parser |
+| `kyumei-demo` | The demo's Temporal application: Workers and a load generator on Temporal's Rust SDK, for Kyumei to investigate, with no dependency on the rest of Kyumei |
 
 Knowledge lives in `knowledge/temporal/1.31/`. Fixtures live in
 `fixtures/investigations/`.
+
+`demo/` holds the [demo](demo/RUNBOOK.md): a Docker Compose stack, Kyumei's
+profiles for it, and the `kyumei-demo` crate.
 
 ## Documentation
 
@@ -231,6 +238,8 @@ Knowledge lives in `knowledge/temporal/1.31/`. Fixtures live in
   investigation.
 - [The reference investigation](docs/reference-investigation.md): the Signal-flood
   scenario, step by step.
+- [The demo runbook](demo/RUNBOOK.md): two live incidents with one symptom, on
+  Temporal Server in Docker Compose, which Kyumei tells apart.
 - [Architecture](docs/architecture.md): crates, the event log, the engine,
   durability on Odori.
 - [Knowledge](docs/knowledge.md): pack format, provenance, verification and
@@ -270,11 +279,11 @@ cargo run -p kyumei-extract --bin gen-sdk-metric-claims -- --core ../sdk-rust \
 
 Kyumei's explanations are deterministic: the engine writes each one from the
 assessment, so the same evidence always reads the same way. The explainer is
-optional. With `--explainer claude` or `--explainer codex`, a model rewords the
-explanations through the authenticated Claude Code or Codex CLI. Its draft is
-checked against the assessment: no new numbers, no unknown findings, no
-contradicted hypothesis states. A draft that fails is discarded and the
-deterministic text stays.
+off by default. With `--explainer claude` or `--explainer codex`, a model
+rewords the explanations through the authenticated Claude Code or Codex CLI.
+Its draft is checked against the assessment: no new numbers, no unknown
+findings, no contradicted hypothesis states. A draft that fails is discarded
+and the deterministic text stays.
 
 The explainer runs on [Odori](https://crates.io/crates/odori)
 ([documentation](https://docs.rs/odori), [source](https://github.com/tokeira/tokeira-odori)),
@@ -293,8 +302,8 @@ execution engine compatible with Temporal, through the Temporal Rust SDK.
 
 Without Odori, `kyumei serve --in-process` runs the same investigations in
 process, journalled as JSON in the data directory, with the same diagnostics,
-evidence and simulations. Its explanations are the deterministic ones, since the
-explainer needs Odori.
+evidence and simulations. Its explanations are the deterministic ones: the
+explainer needs Odori, so Kyumei refuses `--explainer` with `--in-process`.
 
 ## Testing
 
@@ -401,7 +410,7 @@ release from 1.27.0 checked by the version sweep; twelve diagnostics (Workflow
 Task and Activity schedule-to-start, persistence latency, ResourceExhausted,
 Workflow Task failures, history limits, Workflow cache misses, History task
 lag, History's Workflow cache, shard ownership churn, visibility lag and
-errors, Java Workflow thread exhaustion) and thirty-six fixtures. Kyumei
+errors, Java Workflow thread exhaustion) and thirty-eight fixtures. Kyumei
 reads metrics from Prometheus or Grafana when it can reach them, and from
 `kyumei-collect` sample blocks when it cannot. Its diagnostics link 98 runbooks,
 playbook sections and panels of [tsurdilo/temporal-server-operations](#temporal-server-operations), and it

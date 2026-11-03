@@ -1,0 +1,149 @@
+# Temporal Server 1.31.2 on PostgreSQL, with the Temporal UI, Prometheus and Grafana, for the
+# Kyumei demo. The Workers and the load run on the host, as RUNBOOK.md describes.
+#
+#   docker compose up -d --wait   start everything; returns once the billing Namespace exists
+#   docker compose down           stop; Temporal's data goes, and -v also deletes Prometheus's
+#
+# Where each image comes from, its version, and the dashboards' location are in .env. Every
+# port is published on 127.0.0.1 only, because this Grafana gives anyone who reaches it admin
+# rights.
+
+name: kyumei-demo
+
+services:
+  postgresql:
+    image: ${POSTGRES_IMAGE}:${POSTGRES_VERSION}
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    # Temporal's databases live in memory, so every start begins empty and a stopped demo
+    # leaves no Workflows behind for the next one.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "temporal", "-d", "temporal"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # Creates the temporal and temporal_visibility databases and brings both schemas up to this
+  # release. Each step leaves an up-to-date database as it is, so this runs on every `up`.
+  temporal-schema:
+    image: ${TEMPORAL_ADMIN_TOOLS_IMAGE}:${TEMPORAL_VERSION}
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      SQL_PLUGIN: postgres12_pgx
+      SQL_HOST: postgresql
+      SQL_PORT: "5432"
+      SQL_USER: temporal
+      SQL_PASSWORD: temporal
+    command:
+      - sh
+      - -ec
+      - |
+        temporal-sql-tool --db temporal setup-schema -v 0.0
+        temporal-sql-tool --db temporal update-schema --schema-name postgresql/v12/temporal
+        temporal-sql-tool --db temporal_visibility create
+        temporal-sql-tool --db temporal_visibility setup-schema -v 0.0
+        temporal-sql-tool --db temporal_visibility update-schema --schema-name postgresql/v12/visibility
+
+  # Frontend, History, Matching and Worker in one process, as on the dev server, so the demo's
+  # profiles still record one host of each.
+  temporal:
+    image: ${TEMPORAL_SERVER_IMAGE}:${TEMPORAL_VERSION}
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    environment:
+      DB: postgres12_pgx
+      POSTGRES_SEEDS: postgresql
+      DB_PORT: "5432"
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      PROMETHEUS_ENDPOINT: 0.0.0.0:9465
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/dynamicconfig.yaml
+      LOG_LEVEL: warn
+    volumes:
+      - ./compose/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/dynamicconfig.yaml:ro
+    ports:
+      - 127.0.0.1:7233:7233
+      # The HTTP API, which `kyumei-demo describe` reads.
+      - 127.0.0.1:7243:7243
+
+  # Creates the demo's Namespace once the Frontend is serving.
+  temporal-namespace:
+    image: ${TEMPORAL_ADMIN_TOOLS_IMAGE}:${TEMPORAL_VERSION}
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    command:
+      - sh
+      - -ec
+      - |
+        until temporal operator cluster health 2>/dev/null | grep -q SERVING; do sleep 1; done
+        temporal operator namespace describe --namespace billing >/dev/null 2>&1 ||
+          temporal operator namespace create --namespace billing --retention 24h
+
+  temporal-ui:
+    image: ${TEMPORAL_UI_IMAGE}:${TEMPORAL_UI_VERSION}
+    depends_on:
+      temporal-namespace:
+        condition: service_completed_successfully
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_DEFAULT_NAMESPACE: billing
+    ports:
+      - 127.0.0.1:8233:8080
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE}:${PROMETHEUS_VERSION}
+    # The Workers serve their metrics on the host.
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ./compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    ports:
+      - 127.0.0.1:9090:9090
+
+  grafana:
+    image: ${GRAFANA_IMAGE}:${GRAFANA_VERSION}
+    depends_on:
+      - prometheus
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/temporal-server.json
+      # Stop Grafana's own calls out: plugin installs at start, update checks, usage reports
+      # and the news feed.
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./compose/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./compose/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      # The same files `kyumei serve --dashboards` reads. If one is missing, `up` fails rather
+      # than creating an empty directory in your checkout.
+      - type: bind
+        source: ${OPS_DASHBOARDS}/server/temporal-server.json
+        target: /var/lib/grafana/dashboards/temporal-server.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${OPS_DASHBOARDS}/sdk/temporal-sdk-core.json
+        target: /var/lib/grafana/dashboards/temporal-sdk-core.json
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - 127.0.0.1:3000:3000
+
+volumes:
+  prometheus:

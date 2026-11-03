@@ -18,9 +18,9 @@ Open <http://127.0.0.1:7373/>. These options change how it runs:
 | `--addr 0.0.0.0:7373` | Listen elsewhere. There is no authentication, so only expose Kyumei on a network you trust. |
 | `--data-dir DIR` | Where investigations live. The default is `kyumei` in your platform's local data directory; see [Configuration and data](#configuration-and-data). |
 | `--config FILE` | Read preferred time zones and environment profiles from FILE. See [Configuration and data](#configuration-and-data). |
-| `--in-process` | Run without the durable engine. Investigations are journalled as JSON. |
+| `--in-process` | Run without the durable engine. Investigations are journalled as JSON. The explainer needs the engine, so Kyumei refuses `--explainer` with this option. |
 | `--snapshot-interval N` | Seconds between engine snapshots. The default is 5. |
-| `--explainer claude` / `codex` | Have a model reword explanations. See below. |
+| `--explainer claude` / `codex` | Have a model reword explanations. Off by default, and refused with `--in-process`. See below. |
 | `--no-simulate` | Don't run the simulations that check whether a cause is big enough. See [Simulations](#simulations). |
 | `--demo N` | Preload the reference Workflow Task investigation after N evidence steps. |
 | `--demo-fixture NAME` | Also preload that fixture's investigation, with all its evidence. Repeatable. |
@@ -224,7 +224,11 @@ For PromQL queries there are two more ways, described in
   samples and the time they cover), the values, what changed in the
   assessment and what comes next, and the next-evidence box keeps a line
   saying which request was answered and by what. Without an incident window
-  with both ends, the box says so instead of offering the button.
+  with both ends, the box says so instead of offering the button. A request's
+  queries can read only part of what it asks for: the backlog request's
+  fallback reads only the backlog's age. The box then says what they give,
+  and once Kyumei has it, it stops offering them and points to the other
+  ways.
 - **kyumei-collect.** Copy the command shown under the queries and run it
   where your metrics can be read. Paste the block of text it prints under
   **Paste**. The block holds the samples exactly, and says which request it
@@ -254,11 +258,18 @@ serves gRPC reflection, so grpcurl needs only its address, and the response
 is the API's own JSON: Matching's backlog and rates, the effective rate
 limit and where it comes from, and the pollers of the last five minutes. The
 `temporal task-queue describe` command is the second way. The CLI prints the
-backlog, the rates and the pollers, but neither the rate limit nor its
-source, and only for the unversioned queue, so Kyumei asks again for the rate
-limit after reading it. Keep its `--task-queue-type`: without it the CLI
-lists the Workflow and the Activity Task Queue together, and Kyumei leaves
-the rows unread.
+backlog, the rates and the pollers, each poller with the Task Queue rate its
+Worker sends, but neither the effective rate limit nor its source, and only
+for the unversioned queue. When every poller sends the same rate and dispatch
+runs at it, with a backlog waiting or tasks arriving faster, Kyumei takes the
+Workers' rate as the limit in force. A limit set through the API, or the
+system default, would have to equal that rate, so Kyumei leaves both weakened
+rather than ruled out; DescribeTaskQueue's source for the limit settles them.
+Keep the CLI's `--task-queue-type`: without it the CLI lists the Workflow and
+the Activity Task Queue together, and Kyumei leaves the rows unread.
+
+Each piece of evidence under **Evidence** shows the query or command you gave
+with it, and its own page shows what Kyumei read from it.
 
 On Temporal 1.32, DescribeTaskQueue's statistics also say whether the rate
 limiter held dispatch back in the 30 seconds before the capture
@@ -405,10 +416,12 @@ dashboard v2.15.0+`). Runbooks declare none.
 
 ## Explanations from a model
 
-By default every explanation is written by the deterministic engine. With
-`--explainer claude`, Claude Code rewrites the prose after each assessment. It
-runs through your local `claude` CLI, which must be logged in. `--explainer
-codex` uses the Codex CLI instead.
+The explainer is off by default, so every explanation is written by the
+deterministic engine. With `--explainer claude`, Claude Code rewrites the prose
+after each assessment. It runs through your local `claude` CLI, which must be
+logged in. `--explainer codex` uses the Codex CLI instead. The explainer runs
+on Odori, so Kyumei refuses `--explainer` with `--in-process` rather than start
+without it.
 
 The model sees the structured assessment and may only reword it. A draft is
 rejected if it does any of the following:

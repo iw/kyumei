@@ -1,0 +1,32 @@
+# Kyumei configuration for the demo: `kyumei serve --config kyumei-config.toml`.
+time_zones = ["Europe/London"]
+
+[[profile]]
+name = "billing-invoices"
+description = "Temporal 1.31.2 in Docker Compose on the demo machine: the invoices Task Queue"
+server_version = "1.31.2"
+namespace = "billing"
+task_queue = "invoices"
+deployment = "self-hosted"
+frontend_hosts = 1
+history_hosts = 1
+matching_hosts = 1
+persistence = "PostgreSQL 17"
+sdk_language = "rust"
+sdk_version = "1.0.0"
+worker_processes = 1
+
+[[profile]]
+name = "billing-payouts"
+description = "Temporal 1.31.2 in Docker Compose on the demo machine: the payouts Task Queue"
+server_version = "1.31.2"
+namespace = "billing"
+task_queue = "payouts"
+deployment = "self-hosted"
+frontend_hosts = 1
+history_hosts = 1
+matching_hosts = 1
+persistence = "PostgreSQL 17"
+sdk_language = "rust"
+sdk_version = "1.0.0"
+worker_processes = 2

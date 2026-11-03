@@ -15,6 +15,7 @@ members = [
     "crates/kyumei-extract",
     "crates/kyumei-web",
     "crates/kyumei",
+    "demo",
 ]
 
 [workspace.package]

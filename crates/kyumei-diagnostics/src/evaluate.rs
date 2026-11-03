@@ -256,7 +256,7 @@ fn finding(
     let mut statement = template::render(&rule.statement, |ss| {
         let fact = facts.get(&ss.signal)?;
         let unit = d.signal(&ss.signal).map_or(fact.unit, |s| s.unit);
-        fact.display(ss.stat, unit)
+        fact.value(ss.stat, unit)
     });
     if let Some(original) = firing.downgraded_from {
         let why = if reads_simulated(&rule.when, facts) {

@@ -1,0 +1,153 @@
+# The Workers' Task Queue rate limit, read from the Temporal CLI after the
+# arrivals stopped.
+#
+# A release of the payouts Workers sets max_task_queue_activities_per_second to
+# 5, which limits the whole Task Queue, while Workflows schedule about 15
+# payouts a second. A second Worker from the same release changes nothing. By
+# the time the operator describes the Task Queue with
+# `temporal task-queue describe -o json`, nothing more is arriving: the CLI
+# reports no tasks added, 25,171 waiting and 4.98 a second dispatched, and each
+# poller row carries the 5/s its Worker sends.
+#
+# The backlog dispatched at the rate every Worker sends must establish the
+# Workers' limit without an add rate above it and without DescribeTaskQueue,
+# and the diagnosis must say how long the backlog takes to clear.
+
+[fixture]
+id = "activity-worker-rate-limit-draining"
+title = "Payouts held at the Workers' Task Queue rate limit, read from the Temporal CLI after the arrivals stopped"
+description = "Rust Workers on Temporal 1.31.2 send a Task Queue rate of 5/s. The Matching request is answered with the Temporal CLI's JSON, captured once nothing more was arriving. Six evidence submissions take the investigation to a final diagnosis."
+investigation = "inv-activity-rate-limit-draining"
+
+[open]
+at = 2026-10-05T10:35:00Z
+description = "Since about 10:02 UTC, payout activities on the payouts task queue (namespace billing) take over a minute to start. We added a second worker and it made no difference. Workers look idle."
+server_version = "1.31.2"
+sdks = [{ language = "rust", version = "1.0.0" }]
+namespaces = ["billing"]
+task_queues = ["payouts"]
+window_start = 2026-10-05T10:02:00Z
+window_end = 2026-10-05T11:00:00Z
+
+[open.topology]
+deployment = "self_hosted_other"
+frontend_hosts = 1
+history_hosts = 1
+matching_hosts = 1
+worker_processes = 2
+persistence = "PostgreSQL 17"
+
+[open.expect]
+next_request = "activity-worker-slots"
+conclusion = "none"
+concluded = false
+
+# E1 — Activity execution capacity: 200 slots a Worker, nearly all free.
+[[step]]
+at = 2026-10-05T10:36:00Z
+answers = "activity-worker-slots"
+file = "evidence/e1-activity-slots.json"
+channel = "paste"
+query = 'sum by (task_queue) (temporal_worker_task_slots_available{worker_type="ActivityWorker", namespace="billing", task_queue="payouts"})'
+
+[step.expect]
+next_request = "activity-schedule-to-start"
+bound_signals = ["activity_slots_available"]
+
+# E2 — Activity schedule-to-start, in Core's milliseconds.
+[[step]]
+at = 2026-10-05T10:36:30Z
+answers = "activity-schedule-to-start"
+file = "evidence/e2-schedule-to-start.json"
+channel = "paste"
+unit = "milliseconds"
+query = 'histogram_quantile(0.95, sum by (le) (rate(temporal_activity_schedule_to_start_latency_bucket{namespace="billing", task_queue="payouts"}[1m])))'
+
+[step.expect]
+next_request = "activity-pollers"
+findings = ["F-slots-headroom"]
+bound_signals = ["activity_schedule_to_start"]
+
+[step.expect.states]
+activity-slot-exhaustion = "eliminated"
+
+# E3 — Activity Task pollers: five a Worker.
+[[step]]
+at = 2026-10-05T10:37:00Z
+answers = "activity-pollers"
+file = "evidence/e3-activity-pollers.json"
+channel = "paste"
+query = 'sum(temporal_num_pollers{poller_type="activity_task", namespace="billing", task_queue="payouts"})'
+
+[step.expect]
+next_request = "activity-poll-failures"
+findings = ["F-pollers-present"]
+bound_signals = ["activity_pollers"]
+
+[step.expect.states]
+activity-pollers-absent = "eliminated"
+
+# E4 — Activity poll failures seen by the Workers: none.
+[[step]]
+at = 2026-10-05T10:37:30Z
+answers = "activity-poll-failures"
+file = "evidence/e4-poll-failures.json"
+channel = "paste"
+query = 'sum by (status_code) (rate(temporal_long_request_failure{operation="PollActivityTaskQueue", namespace="billing", task_queue="payouts"}[1m]))'
+
+[step.expect]
+next_request = "activity-queue-stats"
+findings = ["F-no-poll-failures"]
+bound_signals = ["activity_poll_failures_rate"]
+
+[step.expect.states]
+activity-poll-throttling = "eliminated"
+
+# E5 — The Temporal CLI's description once the arrivals had stopped: no tasks
+# added, a backlog dispatched at the 5/s every poller sends. The Workers' limit
+# is settled, a limit from the API or the system default is left weakened, and
+# the investigation moves on to the fan-out.
+[[step]]
+at = 2026-10-05T10:50:00Z
+answers = "activity-queue-stats"
+file = "evidence/e5-cli-describe-task-queue.json"
+channel = "paste"
+window_start = 2026-10-05T10:49:53Z
+note = "Captured at 10:49:53 UTC with temporal task-queue describe --namespace billing --task-queue payouts --task-queue-type activity -o json"
+
+[step.expect]
+next_request = "scheduled-activities"
+findings = ["F-backlog-carries-latency", "F-matching-accounts-for-latency", "F-dispatch-at-worker-rate", "F-worker-rate-in-force", "F-worker-rate-capped-not-pollers", "F-api-limit-would-match-workers", "F-system-limit-would-match-workers"]
+bound_signals = ["backlog_age", "backlog_count", "tasks_add_rate", "tasks_dispatch_rate", "worker_task_queue_rate"]
+conclusion = "worker-rate-limit"
+concluded = false
+
+[step.expect.states]
+activity-matching-backlog = "established"
+activity-history-delay = "eliminated"
+dispatch-rate-limited = "established"
+worker-rate-limit = "established"
+api-rate-limit = "weakened"
+system-rate-limit = "weakened"
+activity-poller-starvation = "eliminated"
+
+# E6 — Activities scheduled by Workflows, before and during the incident: no
+# fan-out, then the payouts stop arriving.
+[[step]]
+at = 2026-10-05T10:52:00Z
+answers = "scheduled-activities"
+file = "evidence/e6-scheduled-activities.json"
+channel = "paste"
+query = 'sum(rate(command{commandType="ScheduleActivityTask", namespace="billing"}[1m]))'
+
+[step.expect]
+next_request = "none"
+findings = ["F-no-fanout"]
+bound_signals = ["scheduled_activities_rate"]
+conclusion = "worker-rate-limit"
+concluded = true
+
+[step.expect.states]
+activity-fanout = "eliminated"
+worker-rate-limit = "established"
+activity-matching-backlog = "established"

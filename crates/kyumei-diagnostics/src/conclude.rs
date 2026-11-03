@@ -106,7 +106,7 @@ pub fn conclude(
     let render = |text: &str| {
         template::render(text, |ss| {
             let fact = facts.get(&ss.signal)?;
-            fact.display(ss.stat, fact.unit)
+            fact.value(ss.stat, fact.unit)
         })
     };
     let mut statement = render(&def.statement);

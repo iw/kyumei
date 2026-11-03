@@ -978,13 +978,18 @@ Pins move only by a reviewed change to the sources, verified like any other.
   Core's OTLP exporter, Java's other registries and tally reporters, and the
   .NET, Ruby and TypeScript wrappers' own options are not covered. Their names
   in Prometheus can differ.
-- **The Temporal CLI describes one version, without the rate limit.**
+- **The Temporal CLI describes one version, without the effective rate limit.**
   `temporal task-queue describe` is verified against CLI 1.7.0 to 1.9.1. It
   covers only the unversioned queue, or the default Build ID's, and Kyumei
   cannot tell from its output whether the Workers are versioned: with Worker
   Deployment Versions its backlog and pollers can fall short. Its JSON never
-  informs the rate limit or its source. The requests ask for grpcurl first,
-  whose DescribeTaskQueue merges every version.
+  informs the effective rate limit or its source, only the rate each poller's
+  Worker sends. Kyumei settles the Workers' limit from that only when every
+  poller sends the same rate and dispatch runs at it, and leaves a limit set
+  through the API, or the system default, weakened: either would have to equal
+  the Workers' rate, which the evidence cannot rule out. The requests ask for
+  grpcurl first, whose DescribeTaskQueue merges every version and reports
+  where the limit comes from.
 - **Most metrics are names and types only.** Kyumei recognises evidence for
   any of a pack's server metrics (552 in the 1.31 pack, 611 in the 1.32 pack)
   and 61 SDK metrics by name. Only the 44 server

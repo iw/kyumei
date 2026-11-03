@@ -436,7 +436,7 @@ caution = "A stuck Workflow retries when its current attempt times out: the Work
 claims = ["sdk.nondeterminism-cause", "behaviour.wft-retried-without-limit", "dc.history.workflowTaskRetryMaxInterval"]
 
 [[conclusion.recommendation]]
-text = "Find the change from the failure message: nondeterminism errors begin with [TMPRL1100] and say which command or event no longer matches. A stuck Workflow's history keeps the WorkflowTaskFailed event of its first failed attempt, with that message."
+text = "Find the change from the failure message: nondeterminism errors begin with TMPRL1100 and say which command or event no longer matches. A stuck Workflow's history keeps the WorkflowTaskFailed event of its first failed attempt, with that message."
 claims = ["sdk.nondeterminism-cause", "behaviour.wft-retries-leave-no-events"]
 
 [[conclusion.recommendation]]
@@ -520,7 +520,7 @@ when = { hypothesis = "stuck-retrying", state = ["eliminated"] }
 text = "No task went past its second attempt, so the retries succeeded: the same history replayed differently on different attempts. That happens when Workers run different versions of the code, as during a rolling deploy, or when Workflow code is not deterministic itself."
 
 [[conclusion.recommendation]]
-text = "Find the change from the failure message: nondeterminism errors begin with [TMPRL1100] and say which command or event no longer matches. A failing Workflow's history keeps the WorkflowTaskFailed event of its first failed attempt, with that message."
+text = "Find the change from the failure message: nondeterminism errors begin with TMPRL1100 and say which command or event no longer matches. A failing Workflow's history keeps the WorkflowTaskFailed event of its first failed attempt, with that message."
 claims = ["sdk.nondeterminism-cause", "behaviour.wft-retries-leave-no-events"]
 
 [[conclusion.recommendation]]

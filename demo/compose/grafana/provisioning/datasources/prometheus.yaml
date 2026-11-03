@@ -1,0 +1,13 @@
+# The Prometheus in compose.yaml, as Grafana's default datasource, which the dashboards'
+# DS_PROMETHEUS variable picks. The scrape interval stays at Grafana's default of 15 s, the
+# interval Kyumei assumes for $__rate_interval, so Grafana and Kyumei draw a panel alike.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

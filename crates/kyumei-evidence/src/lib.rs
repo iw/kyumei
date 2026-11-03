@@ -1029,7 +1029,7 @@ impl<'a> Builder<'a> {
             for field in flat.iter().filter(|f| !in_mixed(&f.path)) {
                 matched += usize::from(self.field(&field.path, &field.key, &field.value));
             }
-            matched += self.omitted_flags(&flat, first);
+            matched += self.omitted_flags(&flat, first, mixed.is_empty());
             if !mixed.is_empty() {
                 let lists: Vec<String> =
                     mixed.iter().map(|(list, _)| format!("`{list}`")).collect();
@@ -1083,14 +1083,17 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Record the boolean fields a response leaves out. Protobuf JSON omits a
-    /// boolean when it is false, so a response that has the field's parent (a
-    /// DescribeTaskQueue `stats`, say) but not the field answers it, though not
-    /// with a value: rules read it as unknown, and the request is not asked again.
-    /// The parent must be an object: the Temporal CLI prints `stats` as a list
-    /// of its own rows, which never carry the field, so there its absence says
-    /// nothing. Returns how many were recorded.
-    fn omitted_flags(&mut self, flat: &[fields::FieldValue], first: usize) -> usize {
+    /// Record the fields a response answers without a value. Protobuf JSON omits
+    /// a boolean when it is false, so a response that has the field's parent (a
+    /// DescribeTaskQueue `stats`, say) but not the field answers it. The parent
+    /// must be an object: the Temporal CLI prints `stats` as a list of its own
+    /// rows, which never carry the field, so there its absence says nothing.
+    /// Likewise a list that is there but empty, or `null` as the CLI prints no
+    /// pollers, answers the fields of its elements: no poller, no rate. Rules
+    /// read such a field as unknown, and the request is not asked again for it.
+    /// `lists` is false when the response's rows mix Task Queue types and are
+    /// left unread. Returns how many were recorded.
+    fn omitted_flags(&mut self, flat: &[fields::FieldValue], first: usize, lists: bool) -> usize {
         let Some(diagnostic) = self.ctx.diagnostic else {
             return 0;
         };
@@ -1098,6 +1101,23 @@ impl<'a> Builder<'a> {
             flat.iter().any(|f| {
                 f.path.starts_with(&format!("{prefix}.")) || f.path.contains(&format!(".{prefix}."))
             })
+        };
+        let repeated = |list: &str| {
+            self.ctx.pack.claims.values().any(|c| {
+                matches!(c, kyumei_knowledge::Claim::ApiField(a)
+                    if a.json_path.as_deref() == Some(list) && a.field_type.starts_with("repeated"))
+            })
+        };
+        let empty = |list: &str| {
+            lists
+                && repeated(list)
+                && flat.iter().any(|f| {
+                    (f.path == list || f.path.ends_with(&format!(".{list}")))
+                        && matches!(
+                            f.value,
+                            fields::FieldScalar::Count(0) | fields::FieldScalar::Null
+                        )
+                })
         };
         let mut omitted = Vec::new();
         for signal in &diagnostic.signals {
@@ -1116,7 +1136,7 @@ impl<'a> Builder<'a> {
                 else {
                     continue;
                 };
-                if f.field_type == "bool" && under(parent) {
+                if (f.field_type == "bool" && under(parent)) || empty(parent) {
                     omitted.push((
                         signal.id.clone(),
                         source.claim.clone(),

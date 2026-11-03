@@ -38,6 +38,7 @@ async fn every_fixture_replays() {
             "activity-slot-exhaustion",
             "activity-worker-rate-limit",
             "activity-worker-rate-limit-cli",
+            "activity-worker-rate-limit-draining",
             "activity-worker-rate-limit-reconnects",
             "activity-worker-rate-limit-reported",
             "history-approaching-limits",
@@ -114,6 +115,109 @@ fn named(id: &str) -> Fixture {
         .into_iter()
         .find(|f| f.fixture.id == id)
         .expect("fixture")
+}
+
+/// A backlog dispatched at the rate every Worker sends settles the Workers'
+/// limit from the Temporal CLI's JSON, though nothing more was arriving when it
+/// was captured, and the diagnosis and its advice say how long the backlog
+/// takes to clear at that rate.
+#[tokio::test]
+async fn a_draining_backlog_settles_the_limit_and_says_how_long_it_takes_to_clear() {
+    let kb = kb();
+    let assessment = replayed(&kb, &named("activity-worker-rate-limit-draining")).await;
+    let conclusion = assessment.conclusion.expect("a conclusion");
+    assert_eq!(conclusion.id.as_str(), "worker-rate-limit");
+    for part in [
+        "Every polling Worker sends 5/s.",
+        "Dispatch ran at 4.98/s, pinned at the limit.",
+        "The 25,171 tasks waiting take at least 84 min to clear at 4.98/s.",
+    ] {
+        assert!(
+            conclusion.statement.contains(part),
+            "{}",
+            conclusion.statement
+        );
+    }
+    assert!(
+        !conclusion.statement.contains("unknown"),
+        "{}",
+        conclusion.statement
+    );
+    let advice = &conclusion.recommendations[0].text;
+    assert!(
+        advice.contains(
+            "Until then, the 25,171 tasks already waiting take at least 84 min to clear, and new tasks wait behind them."
+        ),
+        "{advice}"
+    );
+}
+
+/// The backlog request's PromQL fallback reads only the backlog's age. Before it
+/// runs, the request says so; once Kyumei has the age, it offers no second
+/// reading, which would bring nothing the request still needs. The evidence
+/// list shows the query each piece of evidence came from.
+#[tokio::test]
+async fn a_fallback_query_already_read_is_not_offered_again() {
+    let kb = kb();
+    let mut fx = named("activity-worker-rate-limit-draining");
+    let poll_failures = fx
+        .steps
+        .iter()
+        .position(|s| s.answers == "activity-poll-failures")
+        .expect("the poll failures step");
+    fx.steps.truncate(poll_failures + 1);
+    let collector = |fx: &Fixture| {
+        let kb = kb.clone();
+        let fx = fx.clone();
+        async move {
+            let (svc, clock) = service(&kb, &fx);
+            let (id, _) = fixture::replay(&kb, &svc, &fx, Some(&clock), true)
+                .await
+                .expect("replay");
+            let snapshot = svc.snapshot(&id).await.expect("snapshot");
+            let assessment = kyumei_app::core::current_assessment(&kb, &snapshot.investigation)
+                .expect("assessment");
+            let ws = kyumei_app::workspace::build(&kb, &snapshot, &assessment);
+            let next = ws.next.expect("the backlog request");
+            assert_eq!(next.definition, "activity-queue-stats");
+            (next.collector.expect("its PromQL fallback"), ws.evidence)
+        }
+    };
+
+    let (before, _) = collector(&fx).await;
+    assert_eq!(before.reads_only, ["Matching backlog age"]);
+    assert!(!before.nothing_new);
+
+    // The fallback's samples, as Collect now adds them.
+    let mut step = fx.steps[poll_failures].clone();
+    step.answers = "activity-queue-stats".to_owned();
+    step.at = "2026-10-05T10:38:00Z".parse().expect("time");
+    step.query = Some(
+        r#"max(approximate_backlog_age_seconds{namespace="billing", taskqueue="payouts", task_type="Activity"})"#
+            .to_owned(),
+    );
+    step.expect = Default::default();
+    let start = 1_791_194_520_i64; // 10:02:00
+    let values: Vec<serde_json::Value> = (0..=70)
+        .map(|i| serde_json::json!([start + i * 30, format!("{}", 60 + i * 29)]))
+        .collect();
+    let samples = serde_json::json!({ "status": "success", "data": { "resultType": "matrix",
+        "result": [{ "metric": {}, "values": values }] } });
+    let path = std::env::temp_dir().join(format!("kyumei-backlog-age-{}.json", std::process::id()));
+    std::fs::write(&path, samples.to_string()).expect("write samples");
+    step.file = Some(path.display().to_string());
+    fx.steps.push(step);
+    let (after, evidence) = collector(&fx).await;
+    std::fs::remove_file(&path).expect("remove samples");
+    assert_eq!(after.reads_only, ["Matching backlog age"]);
+    assert!(after.nothing_new, "{after:?}");
+    assert!(
+        evidence.iter().any(|e| e
+            .query
+            .as_deref()
+            .is_some_and(|q| q.starts_with("max(approximate_backlog_age_seconds"))),
+        "{evidence:?}"
+    );
 }
 
 /// On 1.32 DescribeTaskQueue says when the rate limiter held dispatch back. With
