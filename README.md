@@ -229,8 +229,8 @@ Knowledge lives in `knowledge/temporal/1.31/`. Fixtures live in
 `fixtures/investigations/`.
 
 `demo/` holds the [demo](demo/RUNBOOK.md): a Docker Compose stack, and a Rust
-program on Temporal's SDK that is a crate of its own outside this workspace, so
-Kyumei's builds and `Cargo.lock` leave the SDK out.
+program on Temporal's SDK with a workspace of its own, which Kyumei's builds
+and CI leave out.
 
 ## Documentation
 
