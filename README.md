@@ -302,8 +302,8 @@ execution engine compatible with Temporal, through the Temporal Rust SDK.
 
 Without Odori, `kyumei serve --in-process` runs the same investigations in
 process, journalled as JSON in the data directory, with the same diagnostics,
-evidence and simulations. Its explanations are the deterministic ones, since the
-explainer needs Odori.
+evidence and simulations. Its explanations are the deterministic ones: the
+explainer needs Odori, so Kyumei refuses `--explainer` with `--in-process`.
 
 ## Testing
 
