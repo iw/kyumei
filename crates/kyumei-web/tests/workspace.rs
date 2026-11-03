@@ -128,6 +128,33 @@ async fn golden_investigation_through_the_interface() {
         page.body
             .contains("Task Queue dispatch rate limit reached under a Signal flood")
     );
+    // The diagnosis offers the panel that draws the symptom, for the investigation's
+    // SDK, to watch it recover once the change is made.
+    let watch = page
+        .body
+        .split_once("Watch it recover")
+        .and_then(|(_, rest)| rest.split_once("Rests on findings"))
+        .map(|(section, _)| section)
+        .expect("the diagnosis offers the symptom's panel");
+    assert!(
+        watch.contains("Workflow Task Schedule To Start Latency"),
+        "{watch}"
+    );
+    assert!(
+        watch.contains(&format!(
+            "/investigations/{id}/panels/temporal-sdk-core-v1/22"
+        )),
+        "{watch}"
+    );
+    assert!(!watch.contains("temporal-sdk-go-v1"), "{watch}");
+    let md = send(
+        &router,
+        Method::GET,
+        &format!("/investigations/{id}/export.md"),
+        None,
+    )
+    .await;
+    assert!(md.body.contains("### Watch it recover"), "{}", md.body);
     assert!(page.body.contains("<svg"), "diagrams render inline");
     // A 1.31 investigation's claims link to the 1.31 knowledge.
     assert!(page.body.contains("/knowledge?pack=temporal-1.31"));

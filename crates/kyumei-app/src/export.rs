@@ -77,6 +77,10 @@ pub fn markdown(w: &Workspace) -> String {
             }
             let _ = writeln!(o);
         }
+        if !c.watch.is_empty() {
+            let _ = writeln!(o, "### Watch it recover\n");
+            references(&mut o, &c.watch);
+        }
         if !c.references.is_empty() {
             let _ = writeln!(o, "### Runbooks and playbooks\n");
             references(&mut o, &c.references);

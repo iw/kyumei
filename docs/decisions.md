@@ -854,6 +854,14 @@ layer plans the reading and draws it; only the interface reaches the network,
 as for Collect now. A panel's reading becomes evidence only when the operator
 adds it, and then exactly as Collect now's does, citing the panel.
 
+Once there is a diagnosis, the operator makes the change and wants to see the
+symptom recover, so the diagnosis offers the panels that draw the symptom: those
+linked to the requests that measure the symptom's signal. They come from links the
+knowledge already has, so no pack declares them twice. The same panels appear in
+the next evidence only while their request is outstanding, and an evidence page
+shows its chart only to someone who knows which evidence to open, so the
+**Evidence** panel also names the panel beside each evidence it draws.
+
 ### Times are UTC, shown in the operator's zone
 
 Kyumei stores and reasons in UTC. A cookie keeps each browser's zone, and

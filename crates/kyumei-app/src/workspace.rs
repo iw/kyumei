@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use kyumei_dashboards::Library;
 use kyumei_diagnostics::{Assessment, DiagnosticExplanation, Fact, explain};
 use kyumei_diagrams::DiagramKind;
 use kyumei_domain::{
@@ -20,7 +21,9 @@ use serde::Serialize;
 use crate::service::{ExplanationStatus, InvestigationSnapshot};
 use crate::{
     collect::CollectionPlan,
-    dashboards::{GrafanaLinks, ReferenceView, reference_views},
+    dashboards::{
+        EvidencePanelView, GrafanaLinks, ReferenceView, evidence_panels, reference_views,
+    },
     zone::localize,
 };
 
@@ -143,6 +146,8 @@ pub struct ConclusionView {
     pub evidence: Vec<String>,
     /// Runbooks, playbook sections and panels for this conclusion.
     pub references: Vec<ReferenceView>,
+    /// The panels that draw the symptom, to watch it recover once the change is made.
+    pub watch: Vec<ReferenceView>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -257,6 +262,8 @@ pub struct EvidenceRow {
     pub responds_to: Option<String>,
     /// The query or command the operator gave with it.
     pub query: Option<String>,
+    /// The panels its series are drawn as, each opening in Kyumei with live data.
+    pub drawn_as: Vec<EvidencePanelView>,
     pub subject: String,
     pub bound: Vec<String>,
     pub unbound: usize,
@@ -317,15 +324,24 @@ pub fn build(
     snapshot: &InvestigationSnapshot,
     assessment: &Assessment,
 ) -> Workspace {
-    build_with(kb, snapshot, assessment, None, &DisplayZone::utc())
+    build_with(
+        kb,
+        snapshot,
+        assessment,
+        &Library::default(),
+        None,
+        &DisplayZone::utc(),
+    )
 }
 
-/// The workspace with times in `zone`, and dashboard panels linked into the
-/// operator's Grafana at `grafana`.
+/// The workspace with times in `zone`, each evidence named with the panels of
+/// `library` that draw it, and dashboard panels linked into the operator's Grafana
+/// at `grafana`.
 pub fn build_with(
     kb: &KnowledgeBase,
     snapshot: &InvestigationSnapshot,
     assessment: &Assessment,
+    library: &Library,
     grafana: Option<&str>,
     zone: &DisplayZone,
 ) -> Workspace {
@@ -476,22 +492,53 @@ pub fn build_with(
         })
         .collect();
     let provisional = inv.status != InvestigationStatus::Concluded;
-    let conclusion = assessment.conclusion.as_ref().map(|c| ConclusionView {
-        title: c.title.clone(),
-        statement: text(&c.statement),
-        provisional,
-        recommendations: c
-            .recommendations
+    // Once the change is made, the operator watches the symptom recover on the panels
+    // linked to the requests that measure it.
+    let symptom_signal = inv
+        .symptom
+        .classification
+        .as_ref()
+        .and_then(|c| pack.diagnostic_for(&c.signature))
+        .map(|(_, s)| s.signal.clone());
+    let mut symptom_panels: Vec<ReferenceView> = Vec::new();
+    for r in diagnostic.iter().flat_map(|d| &d.requests) {
+        if !symptom_signal
+            .as_ref()
+            .is_some_and(|s| r.signals.contains(s))
+        {
+            continue;
+        }
+        for p in references(ReferenceTarget::Request(&r.id)) {
+            if p.panel.is_some() && !symptom_panels.iter().any(|q| q.id == p.id) {
+                symptom_panels.push(p);
+            }
+        }
+    }
+    let conclusion = assessment.conclusion.as_ref().map(|c| {
+        let own = references(ReferenceTarget::Conclusion(&c.id));
+        let watch = symptom_panels
             .iter()
-            .map(|r| RecommendationView {
-                text: text(&r.text),
-                caution: r.caution.as_deref().map(&text),
-                claims: r.claims.iter().map(&claim).collect(),
-            })
-            .collect(),
-        findings: c.findings.iter().map(ToString::to_string).collect(),
-        references: references(ReferenceTarget::Conclusion(&c.id)),
-        evidence: c.evidence.iter().map(ToString::to_string).collect(),
+            .filter(|p| !own.iter().any(|r| r.id == p.id))
+            .cloned()
+            .collect();
+        ConclusionView {
+            title: c.title.clone(),
+            statement: text(&c.statement),
+            provisional,
+            recommendations: c
+                .recommendations
+                .iter()
+                .map(|r| RecommendationView {
+                    text: text(&r.text),
+                    caution: r.caution.as_deref().map(&text),
+                    claims: r.claims.iter().map(&claim).collect(),
+                })
+                .collect(),
+            findings: c.findings.iter().map(ToString::to_string).collect(),
+            references: own,
+            watch,
+            evidence: c.evidence.iter().map(ToString::to_string).collect(),
+        }
     });
 
     // Findings.
@@ -680,7 +727,7 @@ pub fn build_with(
     let evidence = inv
         .evidence
         .iter()
-        .map(|e| evidence_row(inv, e, zone))
+        .map(|e| evidence_row(inv, e, zone, evidence_panels(library, kb, inv, e, &links)))
         .collect();
     let requests = inv
         .requests
@@ -967,7 +1014,12 @@ fn sources_for(
     out
 }
 
-fn evidence_row(inv: &Investigation, e: &Evidence, zone: &DisplayZone) -> EvidenceRow {
+fn evidence_row(
+    inv: &Investigation,
+    e: &Evidence,
+    zone: &DisplayZone,
+    drawn_as: Vec<EvidencePanelView>,
+) -> EvidenceRow {
     let effective = e.effective_observations(&inv.corrections);
     let bound: Vec<String> = effective
         .iter()
@@ -993,6 +1045,7 @@ fn evidence_row(inv: &Investigation, e: &Evidence, zone: &DisplayZone) -> Eviden
             .map(str::trim)
             .filter(|q| !q.is_empty())
             .map(str::to_owned),
+        drawn_as,
         subject: e
             .interpretation
             .observations

@@ -291,13 +291,12 @@ under **Times in**. The form's labels name the zone it reads.
   target/release/kyumei-demo worker --task-queue payouts --slots 200 --activity-seconds 0.1 --metrics-port 9103
   ```
 
-To show the recovery in Kyumei, open the invoices investigation's
-schedule-to-start evidence: in its **Evidence** panel, click the ID of the
-row that informs `activity_schedule_to_start`. Under **As your dashboards
-draw it**, the chart's caption ends with **Open the panel with live data**.
-The panel draws a line for each Task Queue, so you watch both latencies
-fall. Describing the payouts Task Queue again with the Temporal CLI then
-shows no backlog.
+To show the recovery in Kyumei, open either investigation. Under its
+diagnosis, **Watch it recover** lists the panel that draws the symptom,
+Activity Schedule To Start Latency: choose **open with live data**. The panel
+draws a line for each Task Queue, so you watch both latencies fall.
+Describing the payouts Task Queue again with the Temporal CLI then shows no
+backlog.
 
 ## Starting again
 

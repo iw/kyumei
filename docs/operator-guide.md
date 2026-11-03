@@ -342,7 +342,10 @@ appear where they apply:
 - under **Where operators look** in the next evidence, the panels that show
   what the request asks for, on the dashboard for your SDK, and the runbooks
   that check it;
-- under the diagnosis, the runbooks and playbook sections for what was found.
+- under the diagnosis, **Watch it recover** lists the panels that draw the
+  symptom, on the dashboard for your SDK, to watch it recover once you make
+  the change, and **Runbooks and playbooks** lists the runbooks and playbook
+  sections for what was found.
 
 Each one says why it applies, and links to the repository at the commit Kyumei
 checked it at. Kyumei does not copy the repository's text: follow the link.
@@ -366,7 +369,9 @@ A panel qualifies only if its query reads that metric alone (not a ratio of
 two), as a quantile when the evidence is one, and keeps at least one of the
 series through its filters. Under each chart Kyumei says which panel, which
 dashboard and version, and where the dashboard came from. With `--grafana-url`,
-a link opens the panel in your Grafana over the evidence's window.
+a link opens the panel in your Grafana over the evidence's window. The
+investigation's **Evidence** panel names the panel beside each evidence Kyumei
+draws this way.
 
 Values are written in the panel's unit: a lag Kyumei holds in seconds is drawn
 in milliseconds on a milliseconds panel. A legend that names series by a label
@@ -389,7 +394,8 @@ the findings):
 
 **Linked panels, live.** Every panel Kyumei links to opens in Kyumei, with live
 data: follow its title, or **open with live data**, wherever a panel is
-listed, and **Open the panel with live data** under an evidence chart. The
+listed, the **Evidence** panel included, and **Open the panel with live data**
+under an evidence chart. The
 panel page runs the panel's queries through the endpoint Collect now uses and
 draws them as the panel does, with its legend, unit, thresholds and legend
 statistics.

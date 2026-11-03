@@ -280,6 +280,15 @@ pub struct PanelCitation {
     pub open_url: String,
 }
 
+/// A panel an evidence's series are drawn as, as a list of evidence names it.
+#[derive(Clone, Debug, Serialize)]
+pub struct EvidencePanelView {
+    pub panel_title: String,
+    pub dashboard_title: String,
+    /// The panel opened in Kyumei, with live data.
+    pub open_url: String,
+}
+
 /// Classic dashboard series colours, in order.
 pub(crate) const PALETTE: &[&str] = &[
     "#7eb26d", "#eab839", "#6ed0e0", "#ef843c", "#e24d42", "#1f78c1", "#ba43a9", "#705da0",
@@ -297,6 +306,72 @@ pub fn evidence_charts(
     links: &GrafanaLinks,
     zone: &DisplayZone,
 ) -> Vec<ChartView> {
+    with_choices(library, kb, inv, evidence, |pack, chosen| {
+        distinct_panels(chosen)
+            .iter()
+            .enumerate()
+            .map(|(n, (uid, id))| {
+                let parts: Vec<&Choice<'_>> = chosen
+                    .iter()
+                    .filter(|(m, _, _)| &m.entry.dashboard.uid == uid && m.panel.id == *id)
+                    .collect();
+                draw(
+                    &format!("{}-chart-{}", evidence.id, n + 1),
+                    &parts,
+                    inv,
+                    pack,
+                    links,
+                    zone,
+                )
+            })
+            .collect()
+    })
+}
+
+/// The panels `evidence_charts` draws an evidence's series as, without drawing them,
+/// so a list of evidence can say which it can open with live data.
+pub fn evidence_panels(
+    library: &Library,
+    kb: &KnowledgeBase,
+    inv: &Investigation,
+    evidence: &Evidence,
+    links: &GrafanaLinks,
+) -> Vec<EvidencePanelView> {
+    with_choices(library, kb, inv, evidence, |_, chosen| {
+        distinct_panels(chosen)
+            .into_iter()
+            .filter_map(|(uid, id)| {
+                let (m, _, _) = chosen
+                    .iter()
+                    .find(|(m, _, _)| m.entry.dashboard.uid == uid && m.panel.id == id)?;
+                Some(EvidencePanelView {
+                    panel_title: m.panel.title.clone(),
+                    dashboard_title: m.entry.dashboard.title.clone(),
+                    open_url: links.open(&uid, id),
+                })
+            })
+            .collect()
+    })
+}
+
+/// A group of an evidence's series of one metric, the panel that draws it, and the
+/// evidence's query that reads the panel's metric.
+type Choice<'a> = (
+    PanelMatch<'a>,
+    Vec<&'a kyumei_domain::Observation>,
+    Option<String>,
+);
+
+/// Each group of an evidence's series of one metric, with the best matching chart
+/// panel of the loaded dashboards, handed to `f`. Groups no panel can draw are left
+/// out.
+fn with_choices<T>(
+    library: &Library,
+    kb: &KnowledgeBase,
+    inv: &Investigation,
+    evidence: &Evidence,
+    f: impl FnOnce(&Pack, &[Choice<'_>]) -> Vec<T>,
+) -> Vec<T> {
     if library.is_empty() {
         return Vec::new();
     }
@@ -340,12 +415,8 @@ pub fn evidence_charts(
         }
     };
 
-    // The panel for each group, then the groups each panel draws.
-    let mut chosen: Vec<(
-        PanelMatch<'_>,
-        Vec<&kyumei_domain::Observation>,
-        Option<String>,
-    )> = Vec::new();
+    // The panel for each group.
+    let mut chosen: Vec<Choice<'_>> = Vec::new();
     for (key, observations) in groups {
         let claim: Option<ClaimId> = key.strip_prefix("claim:").map(ClaimId::new);
         let mut names: Vec<String> = observations
@@ -410,35 +481,19 @@ pub fn evidence_charts(
             chosen.push((best, observations, query));
         }
     }
+    f(pack, &chosen)
+}
+
+/// The panels chosen, each once, in the order first chosen.
+fn distinct_panels(chosen: &[Choice<'_>]) -> Vec<(String, i64)> {
     let mut panels: Vec<(String, i64)> = Vec::new();
-    for (m, _, _) in &chosen {
+    for (m, _, _) in chosen {
         let key = (m.entry.dashboard.uid.clone(), m.panel.id);
         if !panels.contains(&key) {
             panels.push(key);
         }
     }
     panels
-        .iter()
-        .enumerate()
-        .map(|(n, (uid, id))| {
-            let parts: Vec<&(
-                PanelMatch<'_>,
-                Vec<&kyumei_domain::Observation>,
-                Option<String>,
-            )> = chosen
-                .iter()
-                .filter(|(m, _, _)| &m.entry.dashboard.uid == uid && m.panel.id == *id)
-                .collect();
-            draw(
-                &format!("{}-chart-{}", evidence.id, n + 1),
-                &parts,
-                inv,
-                pack,
-                links,
-                zone,
-            )
-        })
-        .collect()
 }
 
 /// Time-axis ticks at round times in `zone`, labelled with its clock.

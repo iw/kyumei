@@ -154,6 +154,14 @@ async fn dashboards_are_uploaded_kept_checked_and_drawn() {
     // The diagnosis links its runbooks at the pinned commit.
     let workspace = send(&router, Method::GET, &format!("/investigations/{id}"), None).await;
     assert!(workspace.body.contains("Runbooks and playbooks"));
+    // The evidence list says which evidence the panel draws, and opens it live.
+    assert!(workspace.body.contains("Drawn as"));
+    assert!(workspace.body.contains("“Visibility lag”"));
+    assert!(
+        workspace
+            .body
+            .contains(&format!("/investigations/{id}/panels/test-visibility/9"))
+    );
     assert!(workspace.body.contains("https://github.com/tsurdilo/temporal-server-operations/blob/5a71c3656cc0bca831b61142b64c3672cc974b1b/observability/alerts/server/runbooks/84-visibility-store-not-acknowledging-writes.md"));
     assert!(
         workspace

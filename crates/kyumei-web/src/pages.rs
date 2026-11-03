@@ -488,7 +488,14 @@ pub async fn workspace_page(cx: &Cx) -> Result<impl View> {
     let current = kyumei_app::core::current_assessment(&st.kb, &snapshot.investigation)
         .map_err(|e| topcoat::Error::msg(e.to_string()))?;
     let z = zone(cx);
-    let w = workspace::build_with(&st.kb, &snapshot, &current, st.grafana_url.as_deref(), &z);
+    let w = workspace::build_with(
+        &st.kb,
+        &snapshot,
+        &current,
+        &st.library(),
+        st.grafana_url.as_deref(),
+        &z,
+    );
     let q = query_params::<WorkspaceQuery>(cx)?;
     let window = &snapshot.investigation.window;
     let window_inputs = (
@@ -1752,6 +1759,7 @@ pub async fn export(cx: &Cx) -> Result<([(HeaderName, HeaderValue); 2], String)>
         &st.kb,
         &snapshot,
         &current,
+        &st.library(),
         st.grafana_url.as_deref(),
         &zone(cx),
     );
