@@ -224,7 +224,11 @@ For PromQL queries there are two more ways, described in
   samples and the time they cover), the values, what changed in the
   assessment and what comes next, and the next-evidence box keeps a line
   saying which request was answered and by what. Without an incident window
-  with both ends, the box says so instead of offering the button.
+  with both ends, the box says so instead of offering the button. A request's
+  queries can read only part of what it asks for: the backlog request's
+  fallback reads only the backlog's age. The box then says what they give,
+  and once Kyumei has it, it stops offering them and points to the other
+  ways.
 - **kyumei-collect.** Copy the command shown under the queries and run it
   where your metrics can be read. Paste the block of text it prints under
   **Paste**. The block holds the samples exactly, and says which request it
@@ -263,6 +267,9 @@ system default, would have to equal that rate, so Kyumei leaves both weakened
 rather than ruled out; DescribeTaskQueue's source for the limit settles them.
 Keep the CLI's `--task-queue-type`: without it the CLI lists the Workflow and
 the Activity Task Queue together, and Kyumei leaves the rows unread.
+
+Each piece of evidence under **Evidence** shows the query or command you gave
+with it, and its own page shows what Kyumei read from it.
 
 On Temporal 1.32, DescribeTaskQueue's statistics also say whether the rate
 limiter held dispatch back in the 30 seconds before the capture

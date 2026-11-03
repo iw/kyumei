@@ -266,26 +266,42 @@ pub async fn read_queries(
     let names = c.unfilled.join(" and ");
     let them = if c.unfilled.len() == 1 { "it" } else { "them" };
     let action = format!("/investigations/{investigation}/requests/{request}/collect");
+    let gives = match c.reads_only.as_slice() {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    };
+    let reads = if c.queries == 1 {
+        "The query here reads"
+    } else {
+        "The queries here read"
+    };
     Ok(view! {
         <div class="read-queries">
-            if let Some(source) = source {
-                if c.unfilled.is_empty() {
-                    <form method="post" action=(action) class="collect-now">
-                        <button type="submit" class="btn btn-primary">"Collect now"</button>
-                        <span class="fine">"Reads " (queries.clone()) " from " (source.to_owned()) " over the window, every " (c.step.clone()) ", and adds the samples as evidence."</span>
-                    </form>
-                } else {
-                    <p class="fine">"Collect now can read " (queries.clone()) " from " (source.to_owned()) " once Kyumei knows " (missing.clone()) ": add " (them) " under Edit context."</p>
+            if c.nothing_new {
+                <p class="fine">(reads) " only " (gives.clone()) ", which Kyumei already has. For the rest, use another way above or add evidence below."</p>
+            } else {
+                if let Some(source) = source {
+                    if c.unfilled.is_empty() {
+                        <form method="post" action=(action) class="collect-now">
+                            <button type="submit" class="btn btn-primary">"Collect now"</button>
+                            <span class="fine">"Reads " (queries.clone()) " from " (source.to_owned()) " over the window, every " (c.step.clone()) ", and adds the samples as evidence."
+                                if !gives.is_empty() { " It gives only " (gives.clone()) "; for the rest, use another way above or add evidence below." }
+                            </span>
+                        </form>
+                    } else {
+                        <p class="fine">"Collect now can read " (queries.clone()) " from " (source.to_owned()) " once Kyumei knows " (missing.clone()) ": add " (them) " under Edit context."</p>
+                    }
                 }
-            }
-            <p class="fine">
-                if source.is_some() { "Or run" } else { "Run" }
-                " this where your metrics can be read, and paste the block it prints. "
-                <code>"kyumei-collect"</code> " reads Prometheus or Grafana and nothing else."
-            </p>
-            code_block(id: "collect-command", body: &c.command)
-            if !c.unfilled.is_empty() {
-                <p class="flag">"Put the " (names.clone()) " after " if c.unfilled.len() == 1 { "the" } else { "each" } " " <code>"="</code> "."</p>
+                <p class="fine">
+                    if source.is_some() { "Or run" } else { "Run" }
+                    " this where your metrics can be read, and paste the block it prints. "
+                    <code>"kyumei-collect"</code> " reads Prometheus or Grafana and nothing else."
+                </p>
+                code_block(id: "collect-command", body: &c.command)
+                if !c.unfilled.is_empty() {
+                    <p class="flag">"Put the " (names.clone()) " after " if c.unfilled.len() == 1 { "the" } else { "each" } " " <code>"="</code> "."</p>
+                }
             }
         </div>
     })
@@ -669,6 +685,9 @@ pub async fn evidence_list(w: &Workspace) -> Result<impl View> {
                             <td>
                                 <div>(e.form.clone()) if let Some(r) = &e.responds_to { <span class="fine muted">" → " (r.clone())</span> }</div>
                                 <div class="fine muted"><time title=(e.submitted_utc.clone())>(e.submitted.clone())</time> " · " (e.origin.clone())</div>
+                                if let Some(q) = &e.query {
+                                    <div class="evidence-query"><code title=(q.clone())>(q.clone())</code></div>
+                                }
                             </td>
                             <td class="fine">
                                 if e.bound.is_empty() { <span class="muted">"informs no signal"</span> } else { (e.bound.join(", ")) }
