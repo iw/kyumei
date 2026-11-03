@@ -224,13 +224,13 @@ cargo run -p kyumei -- serve --demo 3 --demo-fixture activity-worker-rate-limit 
 | `kyumei-sim` | Simulated clusters: tempdes runs scraped as Prometheus scrapes them, the PromQL Kyumei's requests use answered over the scrapes, and the scenario for the "big enough?" check (the only crate that runs tempdes) |
 | `kyumei` | The `kyumei` binary |
 | `kyumei-extract` | Maintainer tools: generate knowledge claims from Temporal and SDK source (`gen-dc-claims`, `gen-metric-claims`, `gen-sdk-metric-claims`), reading dynamic configuration with tempdes's parser |
+| `kyumei-demo` | The demo's Temporal application: Workers and a load generator on Temporal's Rust SDK, for Kyumei to investigate, with no dependency on the rest of Kyumei |
 
 Knowledge lives in `knowledge/temporal/1.31/`. Fixtures live in
 `fixtures/investigations/`.
 
-`demo/` holds the [demo](demo/RUNBOOK.md): a Docker Compose stack, and a Rust
-program on Temporal's SDK with a workspace of its own, which Kyumei's builds
-and CI leave out.
+`demo/` holds the [demo](demo/RUNBOOK.md): a Docker Compose stack, Kyumei's
+profiles for it, and the `kyumei-demo` crate.
 
 ## Documentation
 

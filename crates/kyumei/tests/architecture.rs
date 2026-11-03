@@ -12,7 +12,9 @@
 //! The domain knows nothing of frameworks; Topcoat appears only in the web
 //! crate; Odori and the Temporal SDK only in the orchestration crate. The
 //! knowledge extractor (`kyumei-extract`) stands apart: it writes knowledge files
-//! and nothing depends on it.
+//! and nothing depends on it. The demo's program (`kyumei-demo`) stands apart too:
+//! it is the Temporal application the demo investigates, built on the Temporal SDK,
+//! and it and Kyumei's crates never use each other.
 //!
 //! The companion collector stands apart too. `kyumei-samples` is the sample
 //! block format alone, which the evidence interpreter reads; `kyumei-collect`
@@ -172,6 +174,15 @@ fn dependency_direction_is_preserved() {
                 "{krate} must not depend on kyumei-extract"
             );
         }
+    }
+    // The demo's program is the application Kyumei investigates in the demo, not
+    // part of Kyumei.
+    forbid(&deps, "kyumei-demo", &["kyumei-*"]);
+    for (krate, own) in &deps {
+        assert!(
+            !own.iter().any(|d| d == "kyumei-demo"),
+            "{krate} must not depend on kyumei-demo"
+        );
     }
     forbid(&deps, "kyumei-sim", &frameworks);
     let sim = &deps["kyumei-sim"];

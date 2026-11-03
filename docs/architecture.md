@@ -80,14 +80,19 @@ be reworded by a model under guard, and investigations are durable.
   `gen-sdk-metric-claims`). It reads dynamic configuration with tempdes's
   `config::registry_gen` and lexes Go with its helpers. It depends on no
   Kyumei crate, and none depends on it.
+- **kyumei-demo**, in `demo/`, is the [demo](../demo/RUNBOOK.md)'s Temporal
+  application: Workers and a load generator on Temporal's Rust SDK, whose
+  incidents Kyumei investigates. It depends on no Kyumei crate, and none
+  depends on it.
 
 `crates/kyumei/tests/architecture.rs` enforces these rules with `cargo metadata`:
 
 - the domain has no framework dependencies;
 - Topcoat appears only in `kyumei-web`;
-- Odori and the Temporal SDK appear only in `kyumei-odori`;
+- Odori and the Temporal SDK appear only in `kyumei-odori`, except that the
+  demo's program is built on the SDK;
 - the engine never depends on the application layers;
-- `kyumei-extract` is independent in both directions;
+- `kyumei-extract` and `kyumei-demo` are independent in both directions;
 - `kyumei-samples` depends on no framework and no other Kyumei crate, and
   `kyumei-collect` on no Kyumei crate but `kyumei-samples`;
 - only `kyumei-web` and the `kyumei` binary use `kyumei-collect`, so only

@@ -21,17 +21,18 @@ Prometheus and Grafana through an SSH tunnel.
 
 - **Docker with Compose.** The first start pulls about 0.9 GB of images from
   Docker Hub: Temporal Server 1.31.2 and its admin tools, the Temporal UI,
-  PostgreSQL 17, Prometheus and Grafana. `.env` pins their versions. Another
-  1.31.x release also works: change `TEMPORAL_VERSION` in `.env` and
-  `server_version` in `kyumei-config.toml` to match. `.env` also says where
-  each image comes from. To pull through a mirror or from a private registry,
-  set `TEMPORAL_SERVER_IMAGE` and the other `_IMAGE` variables there, or in
-  your shell, which Compose prefers to `.env`.
+  PostgreSQL 17, Prometheus and Grafana. `demo/.env` pins their versions.
+  Another 1.31.x release also works: change `TEMPORAL_VERSION` in
+  `demo/.env` and `server_version` in `demo/kyumei-config.toml` to match.
+  `demo/.env` also says where each image comes from. To pull through a
+  mirror or from a private registry, set `TEMPORAL_SERVER_IMAGE` and the
+  other `_IMAGE` variables there, or in your shell, which Compose prefers to
+  the file.
 - **Your copy of
   [tsurdilo/temporal-server-operations](https://github.com/tsurdilo/temporal-server-operations)**,
   at `5a71c36`, the commit whose panels Kyumei links. Grafana loads its
   Temporal Server and Core SDK dashboards from it, and so does Kyumei. It has
-  no licence, so this repository includes none of it. `.env` expects it
+  no licence, so this repository includes none of it. `demo/.env` expects it
   beside this repository; if it lives elsewhere, set `OPS_DASHBOARDS` there
   and give Kyumei's `--dashboards` the same directory. From the repository
   root:
@@ -50,24 +51,24 @@ Prometheus and Grafana through an SSH tunnel.
 - **The Temporal CLI** (`brew install temporal`), to describe the payouts
   Task Queue. Kyumei's knowledge of its output is checked against CLI 1.7.0
   to 1.9.1.
-- **This repository.** Kyumei builds from its root. `demo/` holds the
-  demo's Compose stack (`compose.yaml`, `.env` and `compose/`), Kyumei's
-  profiles for it (`kyumei-config.toml`) and the demo's Rust program, a crate
-  of its own outside Kyumei's workspace.
+- **This repository.** `demo/` holds the demo's Compose stack
+  (`compose.yaml`, `.env` and `compose/`), Kyumei's profiles for it
+  (`kyumei-config.toml`) and the demo's Rust program, `kyumei-demo`. The
+  program builds in Kyumei's workspace but uses none of Kyumei's crates.
 - **Free local ports**: 7233 (Temporal), 7243 (Temporal's HTTP API), 8233
   (Temporal UI), 9090 (Prometheus), 3000 (Grafana), 9101–9103 (Worker
   metrics) and 7380 (Kyumei). Compose publishes its ports on 127.0.0.1 only,
   because its Grafana gives anyone who reaches it admin rights, so a laptop
   reaches them through an SSH tunnel (step 6).
 
-Run the commands below from `demo/`, except where a step says otherwise, each
-in its own terminal (or tmux window). Ctrl-C stops any of them.
+Run the commands below from the repository root, each in its own terminal
+(or tmux window). Ctrl-C stops any of them.
 
-Build the demo's program once. The first build downloads about 51 MB of
+Build the demo's program once. The first build downloads about 21 MB of
 crates from crates.io:
 
 ```bash
-cargo build --release --locked
+cargo build --release --locked -p kyumei-demo
 ```
 
 ## Before the audience arrives (at least 30 minutes ahead)
@@ -80,7 +81,7 @@ healthy baseline run at least that long before breaking anything.
    clear the last run first, as **Starting again** describes.
 
    ```bash
-   docker compose up -d --wait
+   docker compose -f demo/compose.yaml up -d --wait
    ```
 
    The Temporal UI is at <http://127.0.0.1:8233>, Prometheus at
@@ -115,9 +116,9 @@ healthy baseline run at least that long before breaking anything.
    "connection refused", until the team scales out to a second payouts
    Worker. That is expected.
 
-5. From the repository root, build Kyumei and start it. `.kyumei-demo` is the
-   demo's own data directory, which Git ignores, so the audience sees only the
-   demo's investigations:
+5. Build Kyumei and start it. `.kyumei-demo` is the demo's own data
+   directory, which Git ignores, so the audience sees only the demo's
+   investigations:
 
    ```bash
    cargo build --locked -p kyumei
@@ -268,12 +269,21 @@ the payouts Task Queue again with the Temporal CLI then shows no backlog.
 
 ## Starting again
 
-Stop the load and the Workers, then the stack with `docker compose stop`.
-Temporal's databases live in memory, so the next `docker compose up -d --wait`
-starts with an empty `billing` Namespace. Prometheus keeps its data: for a
-clean slate, run `docker compose down -v` to delete it too, then stop Kyumei
-and delete `.kyumei-demo` in the repository root. Leave at least 20 minutes
-of healthy baseline before breaking things again.
+Stop the load and the Workers, then the stack:
+
+```bash
+docker compose -f demo/compose.yaml stop
+```
+
+Temporal's databases live in memory, so the stack starts again with an empty
+`billing` Namespace. Prometheus keeps its data. For a clean slate, delete it
+too, then stop Kyumei and delete `.kyumei-demo`:
+
+```bash
+docker compose -f demo/compose.yaml down -v
+```
+
+Leave at least 20 minutes of healthy baseline before breaking things again.
 
 ## If something looks wrong
 
@@ -295,13 +305,14 @@ of healthy baseline before breaking things again.
   baseline before the incident was shorter than 20 minutes, so Kyumei can't
   rule out a fan-out. The diagnosis itself still stands.
 - **`docker compose up` stops on "bind source path does not exist".**
-  `OPS_DASHBOARDS` in `.env` doesn't point at your copy's
-  `observability/dashboards`.
+  `OPS_DASHBOARDS` in `demo/.env` doesn't point at your copy's
+  `observability/dashboards`. A relative path there is relative to `demo/`.
 - **`docker compose up` can't pull an image.** If Docker Hub is out of reach,
   pull through your mirror or registry: set the image's `_IMAGE` variable in
-  `.env`, or in your shell.
-- **A service seems missing.** `docker compose ps -a` lists them all.
-  `temporal-schema` and `temporal-namespace` exit with 0 once they have
-  done their work. `docker compose logs temporal` shows the server's log.
+  `demo/.env`, or in your shell.
+- **A service seems missing.** `docker compose -f demo/compose.yaml ps -a`
+  lists them all. `temporal-schema` and `temporal-namespace` exit with 0 once
+  they have done their work. To read the server's log, run
+  `docker compose -f demo/compose.yaml logs temporal`.
 - **The build stops in `temporalio-protos`.** It needs `protoc`; install it
   and build again.
