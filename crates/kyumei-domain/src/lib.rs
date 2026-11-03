@@ -60,7 +60,7 @@ pub use request::{
 };
 pub use symptom::{ClassificationBasis, Symptom, SymptomClassification};
 pub use time::{DisplayZone, IncidentWindow, TimeWindow};
-pub use units::{Statistic, Unit, format_number};
+pub use units::{Statistic, Unit, format_duration, format_number};
 
 /// Domain invariant violations.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

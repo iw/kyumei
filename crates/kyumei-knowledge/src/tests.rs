@@ -400,6 +400,28 @@ fn a_baseline_is_quoted_only_where_it_is_certain_or_optional() {
 }
 
 #[test]
+fn rejects_a_quotient_whose_unit_kyumei_cannot_name() {
+    // Seconds over seconds has no unit Kyumei renders; a count over a rate,
+    // a duration, would.
+    let p = problems(
+        load(&[
+            ("t/1.31/pack.toml", PACK),
+            ("t/1.31/metrics.toml", METRICS),
+            (
+                "t/1.31/diag.toml",
+                &DIAG.replace("while sts {sts.max}", "while sts {sts.max/sts.min}"),
+            ),
+        ])
+        .expect_err("must fail"),
+    );
+    assert!(
+        p.iter()
+            .any(|m| m.contains("divides `sts.max` by `sts.min`, but Kyumei names no unit")),
+        "{p:?}"
+    );
+}
+
+#[test]
 fn rejects_malformed_optional_segments() {
     for (text, expected) in [
         ("while sts [{sts.max}", "never closed"),

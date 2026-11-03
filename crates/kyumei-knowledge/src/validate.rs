@@ -839,6 +839,7 @@ fn validate_diagnostic(pack: &Pack, d: &DiagnosticDef, problems: &mut Vec<String
             check_template(d, &clause.text, None, &known, &cat, problems);
         }
         for r in &c.recommendations {
+            check_template(d, &r.text, None, &known, &cat, problems);
             for claim in &r.claims {
                 if !pack.claims.contains_key(claim) {
                     problems.push(format!(
@@ -896,27 +897,40 @@ fn check_template(
             ));
         }
         for p in found {
-            if d.signal(&p.signal).is_none() {
-                problems.push(format!(
-                    "{at}: statement uses unknown signal `{}`",
-                    p.signal
-                ));
+            for ss in p.stats() {
+                if d.signal(&ss.signal).is_none() {
+                    problems.push(format!(
+                        "{at}: statement uses unknown signal `{}`",
+                        ss.signal
+                    ));
+                }
+                if let Some(condition) = condition
+                    && !condition.signals().contains(&ss.signal)
+                {
+                    problems.push(format!(
+                        "{at}: statement quotes `{}` but the rule's condition does not read it",
+                        ss.signal
+                    ));
+                }
+                // A baseline needs samples from before the incident window, which
+                // evidence may not reach, so outside an optional segment it is
+                // quoted only where the text's condition ensures there is one.
+                if !optional && ss.stat == Statistic::Baseline && !known.contains(ss) {
+                    problems.push(format!(
+                        "{at}: statement quotes `{{{ss}}}` outside an optional segment, but nothing ensures there is a baseline: put the comparison in [ ]"
+                    ));
+                }
             }
-            if let Some(condition) = condition
-                && !condition.signals().contains(&p.signal)
-            {
-                problems.push(format!(
-                    "{at}: statement quotes `{}` but the rule's condition does not read it",
-                    p.signal
-                ));
-            }
-            // A baseline needs samples from before the incident window, which
-            // evidence may not reach, so outside an optional segment it is
-            // quoted only where the text's condition ensures there is one.
-            if !optional && p.stat == Statistic::Baseline && !known.contains(&p) {
-                problems.push(format!(
-                    "{at}: statement quotes `{{{p}}}` outside an optional segment, but nothing ensures there is a baseline: put the comparison in [ ]"
-                ));
+            if let Some(per) = &p.per {
+                let unit = |ss: &SignalStat| d.signal(&ss.signal).map(|s| ss.stat.unit_of(s.unit));
+                if let (Some(a), Some(b)) = (unit(&p.stat), unit(per))
+                    && a.per(b).is_none()
+                {
+                    problems.push(format!(
+                        "{at}: statement divides `{}` by `{per}`, but Kyumei names no unit for {a} over {b}",
+                        p.stat
+                    ));
+                }
             }
         }
     }

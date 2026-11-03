@@ -941,6 +941,18 @@ only where a baseline is certain:
 
 Any other statistic of a signal with samples in the window always has a value.
 
+A placeholder can divide one value by another where Kyumei can name the
+quotient's unit. A count over a rate a second is how long the count takes at
+that rate, and reads in minutes or hours once it is long:
+
+```toml
+text = "The {backlog_count.last} tasks waiting take at least {backlog_count.last/tasks_dispatch_rate.last} to clear at {tasks_dispatch_rate.last}."
+```
+
+A quotient by zero has no value, so it belongs in an optional segment or in a
+clause whose condition ensures a divisor above zero. Recommendations are
+rendered from the same facts, and checked like statements.
+
 ## Validation
 
 A pack that fails any check does not load. Every problem is reported at once.
@@ -977,6 +989,7 @@ A pack that fails any check does not load. Every problem is reported at once.
   - A conclusion must rest on hypothesis states.
   - A statement's optional segments are closed, not nested, and each quotes a
     placeholder. A baseline is quoted outside one only where it is certain.
+    A quotient divides values whose units Kyumei can divide.
   - Stage orders are unique.
   - Symptom patterns must compile.
   - A request's cost is between 1 and 5.
@@ -987,7 +1000,8 @@ packs to check that they are rejected:
 - undeclared labels and label values;
 - opposing rules;
 - statements quoting unread signals, quoting a baseline that may be missing,
-  or with malformed optional segments;
+  dividing values whose quotient has no unit, or with malformed optional
+  segments;
 - verified claims without provenance;
 - heuristics without an authored source;
 - unknown fields;

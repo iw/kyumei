@@ -48,6 +48,15 @@ impl Unit {
         }
     }
 
+    /// The unit of a value in `self` divided by one in `denominator`, where
+    /// Kyumei can name it: tasks over tasks a second is how long they take.
+    pub fn per(self, denominator: Unit) -> Option<Unit> {
+        match (self, denominator) {
+            (Self::Count, Self::PerSecond) => Some(Self::Seconds),
+            _ => None,
+        }
+    }
+
     /// Render a value in this unit for humans (`31.2 s`, `4,812/s`, `180`).
     pub fn format_value(self, value: f64) -> String {
         let number = format_number(value);
@@ -207,6 +216,25 @@ pub fn format_number(value: f64) -> String {
     group_thousands(&rendered)
 }
 
+/// A span of seconds as an estimate reads best: seconds under two minutes,
+/// whole minutes under two hours, then hours and minutes.
+pub fn format_duration(seconds: f64) -> String {
+    if !seconds.is_finite() || seconds < 120.0 {
+        return Unit::Seconds.format_value(seconds);
+    }
+    let minutes = (seconds / 60.0).round();
+    if minutes < 120.0 {
+        return format!("{} min", format_number(minutes));
+    }
+    let hours = (minutes / 60.0).floor();
+    let rest = minutes - hours * 60.0;
+    if rest == 0.0 {
+        format!("{} h", format_number(hours))
+    } else {
+        format!("{} h {} min", format_number(hours), format_number(rest))
+    }
+}
+
 fn group_thousands(rendered: &str) -> String {
     let (sign, rest) = rendered
         .strip_prefix('-')
@@ -250,6 +278,16 @@ mod tests {
         assert_eq!(Unit::Seconds.format_value(0.0), "0 s");
         assert_eq!(Unit::Flag.format_value(1.0), "yes");
         assert_eq!(Unit::Flag.format_value(0.0), "no");
+    }
+
+    #[test]
+    fn formats_durations_for_estimates() {
+        assert_eq!(format_duration(95.0), "95 s");
+        assert_eq!(format_duration(5_054.0), "84 min");
+        assert_eq!(format_duration(7_200.0), "2 h");
+        assert_eq!(format_duration(9_000.0), "2 h 30 min");
+        assert_eq!(Unit::Count.per(Unit::PerSecond), Some(Unit::Seconds));
+        assert_eq!(Unit::Seconds.per(Unit::Seconds), None);
     }
 
     #[test]
