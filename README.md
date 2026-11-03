@@ -228,12 +228,18 @@ cargo run -p kyumei -- serve --demo 3 --demo-fixture activity-worker-rate-limit 
 Knowledge lives in `knowledge/temporal/1.31/`. Fixtures live in
 `fixtures/investigations/`.
 
+`demo/` holds the [demo](demo/RUNBOOK.md): a Docker Compose stack, and a Rust
+program on Temporal's SDK that is a crate of its own outside this workspace, so
+Kyumei's builds and `Cargo.lock` leave the SDK out.
+
 ## Documentation
 
 - [Operator guide](docs/operator-guide.md): running Kyumei and working an
   investigation.
 - [The reference investigation](docs/reference-investigation.md): the Signal-flood
   scenario, step by step.
+- [The demo runbook](demo/RUNBOOK.md): two live incidents with one symptom, on
+  Temporal Server in Docker Compose, which Kyumei tells apart.
 - [Architecture](docs/architecture.md): crates, the event log, the engine,
   durability on Odori.
 - [Knowledge](docs/knowledge.md): pack format, provenance, verification and

@@ -1,6 +1,9 @@
 /target/
 # Investigation data from `kyumei serve --data-dir .kyumei`.
 /.kyumei/
+# The demo's Kyumei data and its program's build, as demo/RUNBOOK.md runs them.
+/.kyumei-demo/
+/demo/target/
 *.tmp
 .DS_Store
 # Claude Code's worktrees and local settings.

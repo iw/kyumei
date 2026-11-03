@@ -1,0 +1,3 @@
+# Dynamic config for the Temporal Server in compose.yaml. It is empty, so the server runs with
+# its defaults. The server rereads this file every minute, and most settings apply without a
+# restart.
